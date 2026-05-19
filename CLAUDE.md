@@ -1,0 +1,131 @@
+# calendar-flex — Working Notes for Claude
+
+A cross-platform shared-calendar product. This file captures the non-obvious facts an AI assistant needs to do useful work in this repo. The full design lives in `docs/00-overview.md` through `docs/05-risks-and-open-questions.md` — read those before making non-trivial changes.
+
+## What the product is
+
+A calendar service whose events are editable from three places at once:
+
+1. The project's own iOS, Android, and web apps.
+2. The stock calendar apps on iPhone (Apple Calendar), Samsung (Samsung Calendar), and Google Pixel (Google Calendar).
+3. Shared between multiple users with near-real-time sync.
+
+## The one architectural rule everything follows
+
+**CalDAV (RFC 4791) is the source of truth.** This is non-negotiable and drives every other technology choice. The reason: requirement #2 above. Stock calendar apps don't accept plugins, so the only way to be editable in all three is to speak a protocol they already speak, and CalDAV is the only one that fits.
+
+Consequences:
+
+- Events are stored as iCalendar (`VEVENT`, `VTODO`, `VTIMEZONE`) on a CalDAV server.
+- The project's own clients are **also CalDAV clients** — usually through a thin REST/GraphQL API layer that fronts CalDAV for better UX.
+- Stock apps bypass the REST layer entirely and hit CalDAV directly. Anything built in the API layer is for the custom clients only.
+- The CalDAV server must be reachable on the public internet on port 443 with a real TLS cert. iOS will not connect otherwise without a configuration profile that trusts the CA.
+
+## Repo status
+
+As of writing, this repo contains **docs only** — no code has been committed yet. `README.md` is a one-line stub. The docs describe the intended architecture and a phased implementation plan; treat them as the spec.
+
+## Planned stack (from `docs/02-technology-choices.md`)
+
+- **CalDAV server**: Radicale for prototyping, then SabreDAV (embedded) or Baïkal for production. Nextcloud and Xandikos are also-rans.
+- **Backend API**: Node + TypeScript (Fastify or NestJS) or Go (chi/echo). Thin layer; auth, push fan-out, sharing UI, REST/GraphQL facade over CalDAV.
+- **iCalendar parsing**: `ical.js` (Node). Do not roll your own — recurrence rules are the #2 risk in the project.
+- **CalDAV client lib (server-side)**: `tsdav` on Node; hand-rolled on Go.
+- **Web**: React + TypeScript + Vite, FullCalendar for the grid, TanStack Query for server state.
+- **iOS**: Swift + SwiftUI, iOS 16+. URLSession + async/await. SwiftData/Core Data for offline. HorizonCalendar is the most viable third-party grid.
+- **Android**: Kotlin + Jetpack Compose, minSdk 26. Ktor or Retrofit. Room for offline. `kizitonwose/Calendar` for the grid.
+- **Push**: APNs (`node-apn` or HTTP/2 directly), FCM (Firebase Admin SDK). CalDAV has **no native push** — the API layer polls and fans out.
+- **Auth**: Auth0 / Clerk / Keycloak / Ory. The API translates app-level auth to CalDAV credentials internally.
+- **Hosting**: small VPS (Hetzner, Fly.io, Railway) + Caddy/Traefik for TLS. Public 443 required.
+
+Flutter is the recommended single-codebase fallback if maintaining three native apps is too much; the Android sync adapter still ends up in Kotlin.
+
+## Data model — stick to iCalendar native fields
+
+Round-tripping with stock apps must be lossless, so the canonical model is iCalendar:
+
+| Concept    | Field                          | Notes                                           |
+|------------|--------------------------------|-------------------------------------------------|
+| Event      | `VEVENT`                       | One object per event / recurrence master.       |
+| Title      | `SUMMARY`                      |                                                 |
+| Start/end  | `DTSTART` / `DTEND`            | Always with `TZID`, or `Z` for UTC.             |
+| Recurrence | `RRULE` / `RDATE` / `EXDATE`   | RFC 5545.                                       |
+| Attendees  | `ATTENDEE`                     | Drives iTIP/iMIP invites.                       |
+| Location   | `LOCATION`                     |                                                 |
+| Alarms     | `VALARM`                       | All three stock apps honor these.               |
+| Identity   | `UID`                          | Globally unique. Preserve across edits.         |
+| Versioning | ETag + `SEQUENCE`              | ETag for sync, `SEQUENCE` for iTIP.             |
+
+Custom fields go in `X-` properties. Stock apps preserve them on round-trip but won't display them — do not use them for anything user-facing on stock apps.
+
+## Sync model
+
+- Initial load: CalDAV `REPORT` with `calendar-query` for a date window.
+- Incremental: WebDAV-Sync (`sync-collection` REPORT) with a sync-token (RFC 6578). Cheap; supported by every major CalDAV server.
+- Push to the project's own clients: the API layer polls CalDAV (every ~30s) and pushes deltas over WebSocket / APNs / FCM. Stock apps use their own polling cadence — out of our control.
+
+## Sharing model
+
+Two options; the docs recommend the second for any serious product:
+
+1. Shared account, multiple humans log in. Simple, no per-user identity on events.
+2. Per-user accounts + shared calendar collection via WebDAV ACL or Apple-style sharing invites. Apple Calendar's "Add Person…" UI requires the **Apple calendar-sharing extensions** — SabreDAV and Baïkal implement these; Radicale's support is partial.
+
+Treat the API layer's sharing model as the source of truth and have CalDAV ACLs reflect it.
+
+## Native-app integration cheat sheet
+
+| Stock app         | CalDAV?                  | Onboarding step                                                  |
+|-------------------|--------------------------|------------------------------------------------------------------|
+| Apple Calendar    | Yes, natively            | `.mobileconfig` profile (signed) or manual add in Settings.      |
+| Samsung Calendar  | Via Android sync adapter | DAVx⁵, or our own sync adapter shipped in the Android app.       |
+| Google Calendar   | Via Android sync adapter | DAVx⁵, or our own sync adapter shipped in the Android app.       |
+
+Google Calendar is **not** a general-purpose CalDAV client; pointing it at our server directly will not work. Web Google Calendar can subscribe to read-only `.ics` feeds — useful as a viewing-only fallback.
+
+The Android sync adapter (writing into `CalendarContract` via `AbstractThreadedSyncAdapter`) is the **single largest piece of work in the plan**. Recommendation in the docs: tell users to install DAVx⁵ for v1; build the in-app sync adapter only when onboarding friction starts to hurt.
+
+## Implementation phases (current plan)
+
+0. **Spike (1–3 days)** — Radicale on a VPS with real TLS; round-trip an event through Apple Calendar, Samsung/Google Calendar via DAVx⁵. Do not skip.
+1. **Server foundation (1–2 weeks)** — SabreDAV or stay on Radicale, Postgres, auth, sharing model, `.ics` feeds, Apple sharing extensions.
+2. **Web client (2–3 weeks)** — React/Vite/FullCalendar, REST/GraphQL over CalDAV, WebSocket/SSE updates, sharing UI, downloadable `.mobileconfig`.
+3. **iOS app (3–4 weeks)** — SwiftUI, REST API client, offline cache, APNs, auto-install of `.mobileconfig` on login.
+4. **Android app (3–4 weeks)** — Compose, REST API client, Room cache, FCM, the CalendarContract sync adapter.
+5. **Polish & scale (ongoing)** — recurrence-editing UX, DST regression tests, Postgres-backed CalDAV storage, conflict resolution, observability, backups.
+
+Explicitly deferred: `VFREEBUSY`, `VTODO`, rich change notifications ("Alice moved dinner"), native macOS/Windows.
+
+## Risks to keep in mind whenever writing code
+
+1. **Recurrence rules** (`RRULE`) are deceptively hard. Always use a vetted library (`ical.js` / `iCal4j` / `python-icalendar` + `dateutil.rrule`). Add round-trip tests against the three stock apps for any change in recurrence handling.
+2. **Timezones**: always store `DTSTART` with an explicit `TZID` (IANA names) or `Z` for UTC. Test the day of every DST switch. All-day vs. midnight-to-midnight events are different things — don't conflate them.
+3. **No CalDAV push** — the API layer is the push fan-out, not the CalDAV server.
+4. **Sharing UX differs per platform** — Apple Calendar expects Apple extensions, DAVx⁵ surfaces shared calendars differently. Expect per-client polish.
+5. **`.mobileconfig` should be signed** — unsigned works but shows scary warnings. An Apple Developer cert is needed for the iOS app anyway.
+6. **TLS strictness** — iOS won't talk to a server with a bad cert. Caddy + Let's Encrypt is the path of least resistance.
+7. **iTIP/iMIP email invites** require working outbound SMTP (SES/Postmark) with SPF/DKIM. SabreDAV supports this; the server must be configured for it.
+8. **Backups** — events lost = product dead. Bake this in from Phase 1.
+
+## Open questions still unanswered in the docs
+
+These affect architecture; check the docs / ask before building anything that assumes a particular answer:
+
+- Self-hosted vs. multi-tenant SaaS?
+- Free or paid?
+- Target user: individuals, families, small teams, or enterprises?
+- End-to-end encryption? A "yes" kills the stock-app integration story entirely and forces a custom-apps-only architecture.
+- Are tasks (`VTODO`) in scope, or only events?
+
+## Conventions for this repo
+
+- Documentation in `docs/` is numbered (`NN-topic.md`) and the numbering is the intended reading order. When adding a new top-level design doc, continue the sequence.
+- The README is intentionally minimal right now; the docs are the spec until code lands.
+- License: MIT (see `LICENSE`).
+
+## What Claude should usually do
+
+- Before changing architecture or tech choices, re-read the relevant numbered doc — it almost certainly already addresses the question.
+- Keep the iCalendar model authoritative. Don't invent shadow fields in the API layer that diverge from `VEVENT`.
+- When in doubt about whether something belongs in the CalDAV layer or the API layer: stock-app-visible behavior goes in CalDAV; everything else (push, custom sharing UI, app auth) goes in the API layer.
+- Treat the Phase 0 spike as a real prerequisite, not a formality.
