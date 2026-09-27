@@ -1,0 +1,182 @@
+# ADR 0001 — Calendar privacy modes
+
+- **Status**: Accepted
+- **Date**: 2026-09-27
+- **Relates to**: [`00-overview.md`](../00-overview.md) (central constraint), [`01-architecture.md`](../01-architecture.md) (sharing model), [`03-native-calendar-integration.md`](../03-native-calendar-integration.md), [`04-implementation-phases.md`](../04-implementation-phases.md) (Phase 5), [`05-risks-and-open-questions.md`](../05-risks-and-open-questions.md) (closes the E2EE open question)
+
+## Context
+
+**The requirement is a marketing claim, not a threat model**: *"it's safe — we cannot see your calendar content without you knowing."* There is no specific adversary and no compliance regime forcing it. That does not make it soft: because the claim is the product, it must be literally true and defensible. Encryption at rest with server-held keys does not qualify, and the claim has to be scoped to exactly what is true, per calendar, and visible in the UI.
+
+**Encryption and stock-app editing cannot coexist on the same calendar.** CalDAV assumes the server can read event data. A participant who installs nothing can never hold a key, so serving them readable iCalendar requires the server to hold plaintext. Nothing engineers this away: there is no iCalendar encryption standard and none in progress — IETF CALEXT's active work is JSCalendar conversion, property dependencies, relations and event publishing — and no stock calendar app will ever decrypt anything without our code on the device.
+
+Prior art divides on exactly this line:
+
+| Product | E2EE | Stock-app write |
+|---|---|---|
+| Proton Calendar, Tuta | Yes | **No** — own apps only, inbound `.ics` subscription at best |
+| EteSync / SilentSuite | Yes | Yes, **except iOS** — a local bridge decrypts on-device and serves CalDAV to localhost, which iOS cannot host |
+
+**The privacy need and the interop need peak on different calendars.** A personal health calendar is highly sensitive and has no interop problem — it is only you, and you have the app on your own devices. A family calendar shared across Apple Calendar, our Android app and the Google Calendar app needs interop and is only mildly sensitive. That observation is what this ADR is built on.
+
+### Hard and negotiable requirements
+
+| Requirement | Status |
+|---|---|
+| Editable in stock calendar apps on iPhone, Samsung and Pixel (`00-overview.md` #2) | **Hard**, satisfied by the Shared mode rather than by every calendar |
+| iOS *and* Android stock-app support | **Hard** — no design may serve one and not the other |
+| Near-real-time sharing between users (#3) | **Hard** for Shared; Private is near-real-time between our own clients |
+| The privacy claim must be literally true | **Hard** — it is the product |
+| We host the instance; users do not self-host | **Hard** — self-hosting is not available as the privacy story |
+| Every calendar is encrypted | **Negotiable, and negotiated away** — the constraint this ADR relaxes |
+
+### Effect on the CalDAV-is-source-of-truth rule
+
+The rule survives with its justification narrowed. CLAUDE.md makes CalDAV non-negotiable *because* of requirement #2, and that reasoning now applies to Shared and Published calendars only. A Private calendar has no third-party readers, so the protocol argument does not force CalDAV there.
+
+We keep CalDAV as the store for all modes anyway, for practical reasons: one storage engine, one sync mechanism (WebDAV-Sync `sync-token`), one data model, and mode switching as a metadata change rather than a migration. Stock-app round-tripping is unaffected, since the only calendars stock apps see are Shared and Published, both plaintext iCalendar exactly as `00`–`05` describe.
+
+## Decision
+
+**Privacy is a per-calendar mode, chosen explicitly when the calendar is created and switchable afterwards. There is no default** — the choice is presented as a constraint on who can participate, not as a feature toggle.
+
+| | **Private** | **Shared** | **Published** |
+|---|---|---|---|
+| Encryption | E2EE; server cannot read content | None; server reads everything | None, or busy-only from a Private calendar |
+| Clients | Our apps only | Any CalDAV client, including stock apps | Anything that subscribes to `.ics` |
+| Editing | Yes, in our apps | Yes, everywhere | No, read-only |
+| Requires our app | Yes, on every device | No | No |
+| Typical use | Health, therapy, interviews, co-parenting | Family weekends, school, teams | A grandparent's iPhone, a public team feed |
+
+**Recovery posture is a separate, account-level setting**, because escrow wraps the user's key rather than any one calendar. It applies to every Private calendar that user can read.
+
+### Private calendars — cryptography
+
+```
+  user password                         recovery code (shown once)
+        |                                         |
+     Argon2id                                  HKDF
+   (per-user salt)                                |
+        v                                         v
+      KEK_pw                                   KEK_rc
+        |                                         |
+        +------------------+----------------------+
+                           |
+              both independently unwrap
+                           v
+             user X25519 private key            <-- wrapped copies stored
+                           |                        server-side
+                  crypto_box_seal_open
+                           v
+          CCK[calendar, epoch]  (32 bytes)       <-- one sealed copy per member
+                           |
+            XChaCha20-Poly1305 open
+                           v
+                event content plaintext
+```
+
+- **AEAD**: XChaCha20-Poly1305, one envelope per event over a canonical JSON payload using **JSCalendar (RFC 8984) field names** — the same information as iCalendar, and it keeps the JMAP path open.
+- **AAD**: `"calflex-v1" || UID || epoch || canonical(DTSTART, DTEND, RRULE)`. Binding the cleartext skeleton makes server-side tampering with timing detectable, and it is safe here precisely because no stock app ever edits a Private calendar.
+- **Key wrapping**: libsodium sealed boxes (`crypto_box_seal`, X25519). HPKE (RFC 9180) would be more modern but Dart has no maintained implementation.
+- **Rotation**: removing a member starts epoch N+1 for new writes. They keep whatever they already downloaded; no design prevents that.
+- **Libraries**: `sodium_libs` (Flutter), `libsodium-wrappers` WASM (web), `lazysodium-android` (Kotlin, only if Phase 6 mirroring ships). The API layer and CalDAV server link no crypto library for this purpose — a useful property to be able to state.
+
+Envelope bytes, stored as one `bytea`:
+
+```
+ offset  size  contents
+ ------  ----  --------------------------------------------
+      0     1  envelope version (0x01)
+      1     4  CCK epoch, big-endian uint32
+      5    24  XChaCha20 nonce (random per write)
+     29     n  ciphertext
+   29+n    16  Poly1305 tag
+```
+
+Sidecar table keyed `(calendar_id, uid, recurrence_id)`, written and read only by clients. `recurrence_id` is `NULL` for the master and set per override, because overrides are separate `VEVENT`s sharing a `UID` — get this wrong and an edited instance of a recurring event shows the master's title.
+
+### Recovery — escrowed by default, strict E2EE opt-in
+
+**Tier 1, escrowed (default).** The private key is additionally wrapped to an escrow key in a cloud HSM. We *can* decrypt, so the guarantee is procedural rather than mathematical, and release requires all of: a user-initiated request; second-factor verification; notification to every registered device and email; a cancellable **72-hour delay**; and a user-readable append-only audit record.
+
+This is what makes *"without you knowing"* true at this tier — not blindness, but unavoidable disclosure. The copy must say **"we can recover your calendar for you, and we will always tell you when we do"**, never "we cannot read it".
+
+**Tier 2, strict (opt-in).** Destroys the escrow record, and requires at least one recovery method to exist first — Apple enforces the same precondition for Advanced Data Protection, for the same reason. In the order they work in practice:
+
+1. **Recovery code.** 128 bits as a BIP39-style word list so it transcribes without error. Shown once, forced acknowledgement. The baseline; its weakness is that people lose it.
+2. **Trusted contacts with a threshold.** A copy of the key wrapped to *n* family members' public keys under a k-of-n Shamir split (2-of-3), so no single contact can act alone. **The best fit for this product** — the social graph recovery needs already exists in the sharing model. Precedents: Apple's Recovery Contact, Bitwarden's Emergency Access.
+3. **Passkey with the WebAuthn `prf` extension.** Derives a stable secret from a passkey the platform already syncs under its own E2EE, giving "recover with my Apple or Google account" while we hold nothing. Needs a native module (see ADR 0002).
+4. **HSM-backed PIN vault.** The only safe way to protect a key with a short secret: an HSM enforces a hard attempt limit and destroys the record after N failures. Security comes from the hardware limit, not the PIN. Credibility requires destroying the HSM's admin credentials and publishing the design, as Apple did for its Cloud Key Vault and Signal does for SVR. Heavy; defer.
+
+**Security questions are rejected outright.** A plaintext answer to "your first school" is low-entropy, frequently discoverable and often misremembered, and it would become the weakest link in the entire key hierarchy. Entropy must come from the recovery code or from a hardware-enforced attempt limit; there is no third source.
+
+Tier 1 → Tier 2 is **not retroactive**: anything we held while escrowed, we could already read.
+
+### Published feeds
+
+Published calendars cannot be E2EE — a subscribing app reads plaintext, so "encrypted feed" can only mean TLS in transit plus an unguessable capability URL, which our server serves and therefore reads. Two variants:
+
+- **Full detail, from a Shared calendar.** Real titles at a secret URL. Exposes nothing new, since a Shared calendar is already server-readable. This is the answer to *"share the family calendar with a grandparent who will never install an app"*.
+- **Busy-only, from a Private calendar.** The client publishes free/busy blocks only: times, no content. The server learns nothing beyond the timing already in the skeleton, so the Private claim survives intact, and it is the only way a Private calendar reaches a keyless participant.
+
+Feed URLs must be revocable and rotatable, since URL secrecy is the whole access control.
+
+### Mode switching
+
+| Transition | Rule |
+|---|---|
+| Shared → Private | Encrypts going forward. **Not retroactive** — that plaintext was already on our server and in our backups. Say so at the point of switching, not in a help page. |
+| Private → Shared | Requires explicit owner confirmation and notification to every member, because it exposes their contributions to us. |
+| Either direction | Logged and announced to members. A silent mode change would break the *"without you knowing"* half of the claim. |
+
+### What we can and cannot claim
+
+| | Can we read it? | Recovery if the user forgets everything | Honest claim |
+|---|---|---|---|
+| Shared / Published | Yes | Trivial | "Encrypted in transit and at rest" |
+| Private, Tier 1 | Yes, via audited release | Yes, with notice and a cancellable delay | "We can recover it, and we always tell you" |
+| Private, Tier 2 | **No** | **Data is lost** | "We cannot read it" |
+
+Even at Tier 2, "zero knowledge" is not available: we still see event count, timing, recurrence, modification times and the share graph. The overall story — *"private calendars are end-to-end encrypted; calendars that work with Apple and Google Calendar are not, and the app always tells you which is which"* — is honest because the mode is visible in the product.
+
+## Consequences
+
+- **Search is client-side only** on Private calendars, over the decrypted local cache. The API layer keeps auth, sync tokens, polling and push fan-out but cannot read content, so the "friendlier API for your own clients" in `01-architecture.md` is thinner there.
+- **Rich change notifications are impossible** server-side for Private calendars; a push carries "calendar X changed" and the client resolves the detail. Already deferred in `04`.
+- **No iTIP/iMIP invites and no Apple calendar-sharing extensions** on Private calendars — both need the server to read `ATTENDEE`, or to mediate a collection it cannot decrypt. Sharing lives in the API layer, which `01-architecture.md` already prefers.
+- **Plaintext exists on every member's device**, in our app's cache. E2EE here means a blind server, not device confidentiality, and the copy must say so.
+- **Encryption is Phase 5, not Phase 1, and it gates open signup.** The friends-and-family test group accepts plaintext shared history, and most such groups contain an Apple or Google Calendar user, so they run in Shared mode regardless. A stranger signing up does not accept it, and retrofitting leaves a plaintext history — so the deadline is the first user who did not knowingly choose plaintext, not a phase boundary.
+- **Phase 1 reserves structure** so the reordering is safe: the `mode` column exists (accepting `shared` and `published` only at first), the sidecar table exists and stays empty, and `UID`s are random UUIDv4 from day one — a content-derived `UID` would leak titles retroactively and cannot be changed later without breaking every client's sync state.
+- **Tier 1 escrow eases migration**: because we hold a wrapped key, promoting an existing plaintext calendar to Private can be done server-side. Tier 2 needs a client with keys online.
+- **The Android sync adapter stays in Phase 4, scoped to Shared calendars.** DAVx⁵ holds no keys, so the "recommend DAVx⁵ for v1" guidance in `03-native-calendar-integration.md` remains correct for Shared and irrelevant for Private.
+- **ADR 0002 (Flutter) stands**, with a revisit trigger recorded there.
+- **Phase 0 is unchanged** and now understood to validate the Shared mode, which is the mode carrying requirement #2.
+
+### Optional Phase 6 — mirroring Private calendars into the device calendar store
+
+A Private calendar can be made visible in stock apps without weakening encryption: our app decrypts locally and writes plaintext into `EKCalendar` (iOS, EventKit) or `CalendarContract` (Android, extending the Phase 4 adapter). The server stays blind; the stock app reads a local mirror. Valuable for the personal-sensitive case, where the user owns every device. Gated on, in order:
+
+1. **The `EKSource` spike.** The calendar must live in EventKit's *local* source so plaintext never leaves the device. A writable local source has historically been unreliable when iCloud Calendar is enabled; the iCloud source would upload plaintext titles to Apple and the subscribed source is read-only. **If this fails, iOS mirroring is dead** and the item is Android-only.
+2. **Event identity** anchored in `EKCalendarItem.url` (`calflex://event/<uid>`), since `calendarItemExternalIdentifier` is read-only and `eventIdentifier` is not stable across edits. Shadow table on `eventIdentifier` as secondary index. Expect duplicate-event bugs here.
+3. **Change detection** by shadow table plus windowed enumeration — `EKEventStoreChanged` carries no delta, deletions are visible only by full enumeration, and predicates cap at a four-year span.
+4. **Reverse-direction latency.** No API wakes a suspended app, so an edit made in Apple Calendar reaches us in minutes to hours. Android has no such problem (`CalendarContract` has a `DIRTY` column). This is why the enhancement is optional rather than core.
+5. **Recurrence fidelity.** `EKRecurrenceRule` is narrower than RFC 5545. Skeleton plus envelope is authority; EventKit is a projection, never read back as truth.
+
+New disclosure if it ships: plaintext then sits in the OS calendar store and therefore in iCloud device backups, where Apple holds the keys unless Advanced Data Protection is on. The user can also drag an event out of our calendar into iCloud, which we see as a deletion and cannot prevent.
+
+## Alternatives considered
+
+- **Encrypt every calendar, with a padlock placeholder in stock apps.** **Rejected**: Apple Calendar shows `🔒 Private`, so the event is not viewable, and editing what you cannot identify is not editing. It collapses into a free/busy overlay while claiming stock-app support.
+- **Encrypt every calendar, with user-chosen cleartext hints** ("Appointment", "Work"). **Rejected**: a family member holds the key and would still see only a hint in their own preferred app. That is a defective client, not a privacy trade-off.
+- **Encrypted only, our apps only** (Proton's answer). **Rejected**: cannot serve a family whose members deliberately use different calendar apps.
+- **Local decrypt bridge as the architecture** (EteSync model, CalDAV on localhost). **Rejected as a requirement**; retained as the optional Phase 6 mirroring. iOS cannot host the localhost bridge at all, so it needs the EventKit route regardless.
+- **Per-user encryption at rest with keys in our KMS.** **Rejected**: we could still decrypt, so it does not support the claim that is the point of the requirement.
+- **Exchange ActiveSync instead of CalDAV.** Natively supported by Apple Calendar and Samsung Calendar, with real push. **Rejected**: Microsoft-licensed protocol IP, substantially more complex, and Microsoft is narrowing its client surface (EAS 16.1 required for Exchange Online from March 2026).
+- **No encryption at all.** Still correct if Private finds no users — Shared mode *is* this, so the downside is bounded and we can ship Shared first and learn.
+
+## Open questions
+
+1. **Does a Private calendar keep a cleartext skeleton?** Recommended **yes** — `DTSTART`/`DTEND`/`RRULE` in the clear keeps one storage and sync engine across modes, makes switching a metadata change, enables CalDAV date-window queries, and makes the busy-only feed possible. Encrypting the timing too yields a stronger claim ("we know how many events you have, not when") at the cost of client-side-only windowing and a second sync path.
+2. **Is `ATTENDEE`/`ORGANIZER` encrypted on Private calendars?** Encrypting hides the social graph but kills invites. Recommendation: encrypt, and accept no email invites there.
+3. **Which Tier 2 recovery methods ship first** beyond the recovery code. Trusted-contact threshold recovery is recommended as the second.
+4. **Is the busy-only published feed in v1?** Neither Published variant is on the critical path.

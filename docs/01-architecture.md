@@ -60,8 +60,8 @@ The native stock apps bypass this layer entirely and talk straight to the CalDAV
 
 ### 3. Client Apps
 - **Web** — React or Svelte SPA hitting your REST API.
-- **iOS** — Swift/SwiftUI, native app hitting your REST API. Optionally also offers to add the CalDAV account to the system Calendar app via a configuration profile.
-- **Android** — Kotlin/Jetpack Compose, same pattern. Can use Android's sync adapter framework so events appear in the system CalendarProvider (and therefore in Google/Samsung Calendar) without requiring DAVx⁵.
+- **iOS + Android** — one Flutter app hitting your REST API. On iOS it offers to add the CalDAV account to the system Calendar app via a configuration profile.
+- **Android sync adapter** — native Kotlin module inside the Flutter app's Android project. Uses Android's sync adapter framework so events appear in the system CalendarProvider (and therefore in Google/Samsung Calendar) without requiring DAVx⁵. It speaks CalDAV directly rather than going through the REST API, because it runs in the background without a Flutter engine.
 
 ## Data Model
 
