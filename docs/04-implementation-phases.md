@@ -4,7 +4,6 @@ Phased so that the first release is an **Android app that stores family calendar
 
 | Phase | Content | Duration | Runs in parallel with | Ends at |
 |---|---|---|---|---|
-| 0 | Integration spike | 1–3 days | Phases 1–3 | M0 |
 | 1 | Server core | 1.5–2 weeks | Phase 2 | — |
 | 2 | Crypto core (Dart) | ~2 weeks | Phase 1 | — |
 | 3 | Android app with Private calendars | 6–7 weeks | — | **M1: family v1** |
@@ -15,20 +14,6 @@ Phased so that the first release is an **Android app that stores family calendar
 | 8 | Polish and scale | ongoing | — | — |
 
 Estimated time to M1: **about 8–10 weeks**.
-
-## Phase 0 — Spike: Prove the integration story (1–3 days, in parallel)
-
-Goal: end-to-end CalDAV round-trip with a stock app on each platform. Build nothing of our own yet.
-
-- [ ] Deploy Radicale on a VPS at a public hostname with a real TLS cert (Caddy + Let's Encrypt is the fastest).
-- [ ] Create one user, one calendar collection, two events via Thunderbird.
-- [ ] Add the account to a real iPhone via Settings. Edit an event, confirm round-trip.
-- [ ] Install DAVx⁵ on an Android phone (Samsung and/or Pixel), add the account, confirm events show up in the stock calendar app and edits round-trip.
-- [ ] Document any quirks (TLS, discovery URLs, weird recurrence behavior).
-
-Exit criteria: a screenshot of the same event in Apple Calendar, Samsung/Google Calendar, and a Radicale event file, all in sync. **Do not skip this phase.**
-
-This spike validates the **Shared** mode from [`adr/0001`](adr/0001-calendar-privacy-modes.md), the mode that carries requirement #2. Private calendars need no stock-app round-trip, so Phases 1–3 do not wait for it. **M0 must be reached before Phase 4 starts**, and its quirks feed into the Phase 4 work.
 
 ## Phase 1 — Server core (1.5–2 weeks)
 

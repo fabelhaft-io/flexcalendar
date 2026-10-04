@@ -16,6 +16,10 @@ For each layer, a recommended pick and the realistic alternatives.
 
 Radicale validates the native-app integration story in the Phase 0 spike. Production uses **SabreDAV** as a library inside our own service from the start: Phase 1 already needs custom auth (D-05), the mode-aware write guard and the change outbox, and switching servers later would mean migrating stored family data.
 
+**Maintenance status (checked 2026-10-04).** Upstream is slow but alive: 4.7.1 shipped in July 2026. Nextcloud depends on SabreDAV, and that is the practical guarantee it keeps up with new PHP releases. So keep all our code in SabreDAV plugins and backends and never patch vendor code, which keeps an upgrade to a Composer bump. [Stalwart](https://stalw.art/) (Rust) has shipped CalDAV since v0.12 and is the only modern alternative. It is still pre-1.0, and it has no extension point for D-05, the write guard or the outbox. Revisit it after its 1.0, not before.
+
+**SabreDAV brings a second recurrence engine.** SabreDAV answers `calendar-query` time-range filters, and stores each object's first and last occurrence, with `sabre/vobject`'s own recurrence iterator. Stock apps that query by date range therefore get `vobject`'s expansion, while our apps get `ical.js`'s. If the two disagree on an `RRULE`, a stock app can see a different set of events than our app shows. E15-R03 runs `vobject` in its differential test for this reason.
+
 ## Backend API Layer
 
 **Pinned (D-01): Node.js 24 LTS + TypeScript with Fastify; move to Node 26 once it is promoted to LTS (late October 2026).** Go is ruled out: `ical.js`, the single recurrence authority applied by the API (ADR 0002), needs a JavaScript runtime.
@@ -95,3 +99,59 @@ The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-priv
 - Pinned (D-10): a Hetzner VPS in the EU for the CalDAV service, API, Keycloak and Postgres, plus a staging twin. From Phase 7, an HSM-backed **AWS KMS** key in `eu-central-1` for Tier 1 escrow.
 - TLS: Caddy or Traefik, automatic Let's Encrypt. iOS in particular is fussy about TLS — no self-signed certs without a profile.
 - The CalDAV server **must be reachable on the public internet on port 443** for stock apps to talk to it. This is a real constraint: no internal-only deployments unless you also ship a VPN profile.
+
+### Sizing and cost
+
+Re-checked on 2026-10-04. On 15 June 2026 Hetzner repriced its cloud for new orders. The shared-vCPU CPX line rose about 2.4–2.75× (CPX22 from €7.99 to €19.49, CPX32 from €13.99 to €35.49). The cost-optimised CX and CAX lines are listed as "currently not available". OVH and Netcup raised VPS prices in 2026 as well, so this is a market-wide move driven by memory prices, not a reason to change provider. **D-10 stands; what changed is the budget.**
+
+The whole stack fits on one 8 GB host: Keycloak needs about 1–1.5 GB, Postgres 1–2 GB, and the API and CalDAV service a few hundred MB each, plus Caddy and the monitoring agents. 4 GB is too tight with Keycloak, so use it for staging only. Every component has arm64 and amd64 images, so order whichever 8 GB line is available when E08-R01 is done.
+
+| Item | €/month (list price, excl. VAT, 2026-10-04) |
+|---|---|
+| Production, 8 GB (CPX32) | ~35.50 |
+| Hetzner server backups (+20 % of the server price) | ~7 |
+| Staging, 4 GB (CPX22) | ~19.50 |
+| 2 × primary IPv4 | 1 |
+| Hetzner Object Storage, backup repository 1 (1 TB included) | 6.49 |
+| Second EU object store, backup repository 2 (a few GB) | ~1–2 |
+| **Total until M1** | **~70** |
+
+- If CAX21 (€7.99) becomes orderable again, the total drops to about €25.
+- Hetzner bills a powered-off server, so staging is cheaper deleted than stopped. Because deploys are code (E08-R02), it can be deleted between test runs and recreated in minutes.
+- Later additions are small. Phase 4 adds SES mail at cents per thousand messages. Use SES in `eu-central-1` rather than Postmark, since the AWS account exists for KMS anyway. Phase 7 adds the KMS key at about $1/month plus requests. FCM is free.
+- **People's time is the larger cost.** Budget 4–8 hours a month of routine operations: the quarterly Keycloak upgrade, Renovate PRs, OS patches, and reviewing restore checks. This does not include incidents.
+
+Not chosen for now:
+- **Dedicated servers** (Hetzner auction, about €40–55 for 64 GB). They have no snapshots, a hardware fault means a manual rebuild, and the capacity is far beyond what we need.
+- **Managed Postgres.** It costs more, and it adds another vendor that holds plaintext Shared calendars from Phase 4 on.
+- **Kubernetes.**
+- **A standby replica before M5.** The 1-hour RTO is reachable from backups plus deploy-as-code. Revisit when open signup opens.
+
+### Runtime layout
+
+- Docker Compose on the host, the same shape as the local stack (E02-R03). Images are built in CI and pinned by digest, and systemd keeps the stack running.
+- For the CalDAV service, consider [FrankenPHP](https://frankenphp.dev/) instead of nginx + php-fpm. It is a PHP app server built on Caddy, which we already run, and it now sits under the PHP Foundation. Use classic mode, not worker mode: SabreDAV was written for one request per process lifetime, and worker mode would first need an audit for state that leaks between requests.
+- **Keycloak is the component with the most upkeep.** Since 26.0 it ships four minor releases a year and has no LTS, so only the newest release gets security fixes. That means an upgrade every quarter, without exception. Keep upgrades routine: no custom SPIs, themes by CSS only, realm configuration as code, and staging before production (E08-R08).
+
+### Backups and recovery (D-11)
+
+All durable state is in **one Postgres cluster**: CalDAV objects, sidecar envelopes, metadata, the audit log and Keycloak's database. One consistent backup therefore captures everything. Keep it that way, with no durable state on local disk outside Postgres.
+
+- **Tool**: [pgBackRest](https://pgbackrest.org/), with WAL-G as an acceptable alternative.
+  - Continuous WAL archiving with `archive_timeout = 60s` gives an RPO of about 1 minute against the 5-minute target.
+  - Nightly backups, kept for 30 days.
+  - Client-side encryption (repository cipher). The cipher key lives in the secret store, with an offline copy.
+- **Two repositories, at two providers:**
+  1. Hetzner Object Storage, in a different location from the server (for example, server in Falkenstein, bucket in Helsinki). Turn on Object Lock, with a lock period shorter than pgBackRest's retention so expiry still works.
+  2. A second EU object store (for example Backblaze B2 EU or Scaleway), with credentials that can write but not delete. This protects against a Hetzner account suspension, and against an attacker on the host deleting backups.
+- **Hetzner server backups** are crash-consistent disk images. They speed up a rebuild and are never the data backup.
+- **State outside Postgres**: the secrets need their own backup in the secret store. These are the D-05 HMAC key, the Firebase service account, the APNs key, the DKIM key, the `.mobileconfig` signing certificate and the backup cipher key. Caddy's certificates can be regenerated.
+- **Restore verification**:
+  - Weekly, automated: restore the latest backup into a throwaway instance, check it (`pg_amcheck`, row counts, a sample CalDAV `GET`) and destroy it.
+  - Quarterly: the human drill stays.
+  - **Never restore production into staging.** From Phase 4, Shared calendars are plaintext, and staging is not where family data belongs.
+- **Private calendars** back up as ciphertext. The backups protect against our failures, not against a user losing their keys.
+- **Phase 7, the KMS key**:
+  - Block key deletion by IAM policy. KMS deletion is in any case only scheduled, with a 7–30 day waiting period; use the maximum.
+  - Consider a multi-Region replica key in a second EU region.
+  - Losing this key loses every Tier 1 escrow copy, and no database backup can restore them.

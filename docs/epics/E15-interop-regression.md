@@ -23,8 +23,9 @@ A table-driven suite over the zones Europe/Berlin, America/New_York, America/Sao
 - Accept: the API (E05-R05), mobile (E10-R04), web (E09-R02) and adapter (E11-R05) all run the same table and agree.
 
 ### E15-R03 · Differential recurrence testing   `agent`
-A corpus of hard `RRULE`s (`BYSETPOS`, ordinal `BYDAY`, `BYMONTHDAY=-1`, `UNTIL` in UTC against a zoned `DTSTART`, `COUNT` with `EXDATE`, the `05` "every second Tuesday except…" example, plus overrides) is expanded by `ical.js` and by `iCal4j` over a 5-year window, and the results are compared.
+A corpus of hard `RRULE`s (`BYSETPOS`, ordinal `BYDAY`, `BYMONTHDAY=-1`, `UNTIL` in UTC against a zoned `DTSTART`, `COUNT` with `EXDATE`, the `05` "every second Tuesday except…" example, plus overrides) is expanded by `ical.js`, by `iCal4j` and by `sabre/vobject` over a 5-year window, and the results are compared.
 - Accept: any disagreement fails CI and must be resolved by a written ruling in `spec/ical-fixtures/RULINGS.md` citing the RFC section.
+- Notes: `vobject` is in the comparison because SabreDAV uses it to answer `calendar-query` time-range filters. Stock apps that query by date range see its expansion, not `ical.js`'s (`02` § CalDAV Server). Where `vobject` is wrong, the fix is to correct the stored first and last occurrence or patch it upstream. We never fork it.
 
 ### E15-R04 · Fixture capture tool   `agent`
 `scripts/capture-fixtures.sh <account> <calendar> <client-name>` pulls raw objects from staging and sanitises them (replacing emails and names, keeping structure).

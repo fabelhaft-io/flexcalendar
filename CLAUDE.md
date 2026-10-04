@@ -42,7 +42,8 @@ As of writing, this repo contains **docs only** — no code has been committed y
 - **Android sync adapter**: native Kotlin module in the Flutter app's `android/` project, no Dart in the sync path. `dav4jvm` + `iCal4j`, talks CalDAV directly. Pigeon for the Dart ↔ Kotlin bridge.
 - **Push**: Firebase Admin SDK (FCM, which relays to APNs on iOS); data-only change pings, no event content. CalDAV has **no native push** — the API layer polls and fans out.
 - **Auth**: self-hosted Keycloak, OIDC + PKCE (D-03). Stock apps use per-device app passwords (D-04, Phase 4). The login password never feeds a key derivation (D-17, INV-12).
-- **Hosting**: Hetzner VPS in the EU plus a staging twin, Caddy for TLS (D-10). Public 443 required. Tier 1 escrow (Phase 7) uses an HSM-backed AWS KMS key in `eu-central-1`.
+- **Hosting**: Hetzner VPS in the EU plus a staging twin, Caddy for TLS (D-10). Public 443 required. Tier 1 escrow (Phase 7) uses an HSM-backed AWS KMS key in `eu-central-1`. One 8 GB host runs everything on Docker Compose; no Kubernetes. Hetzner's June 2026 repricing puts the budget at about €70/month until M1 (`02` § Sizing and cost).
+- **Backups**: all durable state, Keycloak included, lives in one Postgres cluster. pgBackRest archives continuously to **two object stores at two providers**, with Object Lock and credentials that can't delete. Restores are verified weekly into a throwaway instance, never into staging (`02` § Backups and recovery, E08-R04).
 
 The web client stays React — Flutter Web was rejected (canvas rendering, accessibility, FullCalendar maturity).
 
