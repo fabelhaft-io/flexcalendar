@@ -1,6 +1,9 @@
 # calendar-flex Agent Team — Rules
 
-These rules bind every agent this harness runs. They are short on purpose: the requirement,
+These rules bind every agent in both harnesses: the Mastra team in `agent-team/` and the Claude
+Code `/dev-team` skill with its `.claude/agents/`. Where they enforce something differently (the
+Mastra harness has a bwrap sandbox and a "Known environment" block; the Claude Code agents don't),
+the agent's own definition says so. They are short on purpose: the requirement,
 its epic, the `06` working agreement and the INV-* table are handed to you in the task prompt
 verbatim, and those are the spec. `CLAUDE.md` and everything under `docs/` are readable from
 your worktree. When this file and the docs disagree, the docs win; say so in `openQuestions`.

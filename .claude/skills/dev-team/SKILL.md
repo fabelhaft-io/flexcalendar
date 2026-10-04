@@ -1,58 +1,65 @@
 ---
 name: dev-team
-description: Run the agentic dev team on one FEATURES.md ticket end-to-end (implement, test, document, PR) with the Claude Code harness. Use when the user says "/dev-team <TICKET-ID>", "work ticket P?-???", or asks to hand a backlog ticket to the dev team.
+description: Run calendar-flex's agent team on one requirement (E<nn>-R<nn> from docs/epics/) with the Claude Code harness — implement, review, fix cycles, and a PR after a PASS. Use when the user says "/dev-team <ID>", "work E03-R01", or asks to hand a backlog requirement to the dev team.
 ---
 
 # /dev-team — Claude Code harness coordinator
 
-You (the invoking session) are the **coordinator**. This skill's job is to take one ticket from
-`FEATURES.md` all the way to a PR (or a documented blocker) by orchestrating the `dev-frontend`,
-`dev-backend`, and `dev-reviewer` agents (`.claude/agents/dev-*.md`) — without stopping for
-step-by-step approval. Read `agent-team/src/prompts/guardrails.md` now; it is the shared
-contract this skill and both implementer/reviewer agents follow, and this skill enforces the
-parts of it that are the coordinator's job specifically (worktree isolation, scope, retry
-bound, who's allowed to open the PR).
+You (the invoking session) are the **coordinator**. Take one requirement from `docs/epics/` to
+a PR, or to a documented blocker, by orchestrating the `dev-implementer` and `dev-reviewer`
+agents (`.claude/agents/`). This is the Claude Code twin of the Mastra harness in `agent-team/`;
+both follow `agent-team/src/prompts/guardrails.md`, so read it now. The spec is
+`docs/06-implementation-backlog.md` (working agreement, `D-*`, `INV-*`) and `docs/epics/`.
 
-`args` is the ticket ID, e.g. `P6-007`. If not given, ask the user which open ticket to run (list
-a few unchecked ones from `FEATURES.md` as options) — this is the one point where it's fine to
-ask, since everything after this is meant to run unattended.
+`args`: `<ID> [--paths <prefix>,...]`, e.g. `E03-R01 --paths server/caldav/,infra/dev/`. If the
+ID is missing, ask which Ready requirement to run. If `--paths` is missing, propose the narrowest
+set the requirement needs and confirm it with the user once.
 
 ## Steps
 
-1. **Look up the ticket.** Grep `FEATURES.md` for `[TICKET-<args>]`. If it doesn't exist, stop
-   and tell the user — do not guess which ticket they meant.
-2. **Create the worktree.** From the repo root:
+1. **Look up the requirement.** Find `### <ID> · …` in `docs/epics/E<nn>-*.md`. If it doesn't
+   exist, stop and say so; don't guess which one was meant.
+2. **Check it is Ready.** Every `Deps` entry is Done (epic Status tables), and every `D-*` it or
+   its epic cites is `Pinned` in `06`. If not, or if anything is ambiguous, stop and ask the
+   user. Never guess: open questions change the architecture.
+3. **Create or reuse the worktree** from the repo root:
    ```
-   git worktree add ../bread-sheet-agent-<TICKET-ID> -b agent/<TICKET-ID> main
+   git worktree add ../calendar-flex-agent-<ID> -b feat/<ID>-<slug> main
    ```
-   If the branch or worktree already exists (a previous run), reuse it rather than erroring —
-   this is what makes a `BLOCKED` retry resume cleanly. **When reusing, first bring the branch
-   up to date with `main`** (`git -C ../bread-sheet-agent-<TICKET-ID> merge --no-edit main`).
-   Agents read `agent-team/src/prompts/guardrails.md` from the worktree by relative path, so a
-   branch cut before a contract change has them following a superseded contract — and guardrail
-   changes tend to land right after a bad run, i.e. exactly when a `BLOCKED` branch is waiting
-   to be re-run. If that merge conflicts, `git merge --abort`, stop, and hand it back to the
-   user: resolving it is theirs to do, not an agent's.
-3. **Decide pillar(s).** Read the ticket's goal/implementation notes. If it mentions both an API
-   surface and a screen/UI, it's both; if only one pillar's files are implicated, spawn only that
-   implementer. When genuinely unsure, spawn both.
-4. **Spawn implementer(s).** Use the `Agent` tool with `subagent_type: "dev-frontend"` and/or
-   `"dev-backend"` (parallel tool calls in one message if both apply). Give each the full ticket
-   text, its acceptance criteria, and the absolute worktree path — the agent's own definition
-   already knows to `cd` there and follow the guardrails doc.
-5. **Spawn the reviewer.** Once implementer(s) report done, spawn `subagent_type: "dev-reviewer"`
-   against the same worktree path.
-6. **Handle the outcome.**
-   - PR opened → done. Report the PR URL to the user.
-   - `BLOCKED` → re-spawn the implicated implementer with the reviewer's findings doc as input,
-     then re-run the reviewer. Allow at most **2** such fix cycles total for this ticket; if
-     still blocked after that, stop and report the findings doc path and its open questions —
-     do not keep looping, and do not open a PR yourself.
-7. Never run `gh pr create`, `git push`, or edit ticket boxes yourself in this skill — those are
-   the reviewer's actions, kept in the reviewer agent so the "who's allowed to declare success"
-   boundary stays in one place.
+   `<slug>` is the requirement title in lowercase kebab-case. When reusing, first
+   `git -C ../calendar-flex-agent-<ID> merge --no-edit main`. On a conflict, `git merge --abort`,
+   stop, and hand it to the user. Refuse to start on a dirty worktree.
+4. **Spawn `dev-implementer`** (`subagent_type: "dev-implementer"`). Give it:
+   - the requirement text verbatim;
+   - the absolute worktree path;
+   - the writable paths;
+   - on a fix cycle, the path of `docs/reviews/<ID>.md`.
+5. **Settle its output yourself.** The agent doesn't commit. Run
+   `git -C <worktree> status --porcelain --untracked-files=all`:
+   - Commit only files under the writable paths, never secrets, `.env*` (except `.env.example`),
+     `agent-team/` or `.claude/`. Message: `<ID>: implementer run <n> (<status>)`, the agent's
+     summary in the body, trailer `Agent-Run: implementer`.
+   - Anything else: move a copy to `agent-team/runs/<ID>/run-<n>/out-of-scope/`, then restore or
+     remove it in the worktree, and tell the reviewer.
+6. **Spawn `dev-reviewer`** against the same worktree, with the base branch and the writable
+   paths. It runs the stack-dependent checks and writes `docs/reviews/<ID>.md`. Read the doc
+   yourself before acting on the verdict. A PASS on a runtime criterion that wasn't executed is
+   a BLOCKED. Commit the doc on the branch.
+7. **On BLOCKED:** re-spawn `dev-implementer` with the findings doc, then re-review. At most
+   **2** fix cycles after the first attempt. After that, stop and hand the branch and findings
+   doc to the user. Don't fix product code yourself.
+8. **On PASS:**
+   - set the requirement's progress in its epic's Status cell, on the same branch;
+   - push the branch and open the PR (`gh pr create --base main`). Title names the requirement
+     ID. The body links `docs/reviews/<ID>.md` and ends with the attribution line your system
+     prompt specifies;
+   - for `agent+review` requirements, say in the PR body that a human must approve it before
+     merge;
+   - never merge, force-push or skip hooks.
+9. Tell the user one short line: started, review verdict, then the PR link or the blocker.
 
 ## Scope discipline
 
-Don't expand the ticket, don't "helpfully" fix unrelated things you notice in the worktree, and
-don't merge the PR. If the user wants the next ticket, they run `/dev-team` again.
+Don't expand the requirement, don't fix unrelated things you notice, and never change a Pinned
+`D-*` (that needs the user and an ADR). Nothing outward-facing beyond the push and PR in step 8:
+not the server, DNS or cloud accounts.
