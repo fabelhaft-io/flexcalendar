@@ -41,6 +41,17 @@
     not CalDAV directly, for better UX)
 ```
 
+## C4 diagrams
+
+The ASCII diagram above shows the target system at a glance. The C4 model views are in [`diagrams/`](diagrams/) as PlantUML:
+
+| File | View |
+|---|---|
+| [`c4-1-context.puml`](diagrams/c4-1-context.puml) | System context: people, stock apps and external services, with what arrives after M1 drawn dashed. |
+| [`c4-2-containers-m1.puml`](diagrams/c4-2-containers-m1.puml) | Containers at M1 ([ADR 0003](adr/0003-android-first-private-first-delivery.md)): the Android app and the server, Private calendars only, with the trust boundary between the phone (plaintext) and the VPS (skeletons and ciphertext). |
+| [`c4-3-containers-target.puml`](diagrams/c4-3-containers-target.puml) | Containers after Phase 7: web and iOS clients, the sync adapter, the change worker, the escrow release service and the external services. |
+| [`c4-4-dynamic-private-write.puml`](diagrams/c4-4-dynamic-private-write.puml) | Editing a Private event in the D-06 write order, and another member picking it up. |
+
 ## Layers
 
 ### 1. Storage / Source of Truth
@@ -60,8 +71,8 @@ The native stock apps bypass this layer entirely and talk straight to the CalDAV
 
 ### 3. Client Apps
 - **Web** — React or Svelte SPA hitting your REST API.
-- **iOS** — Swift/SwiftUI, native app hitting your REST API. Optionally also offers to add the CalDAV account to the system Calendar app via a configuration profile.
-- **Android** — Kotlin/Jetpack Compose, same pattern. Can use Android's sync adapter framework so events appear in the system CalendarProvider (and therefore in Google/Samsung Calendar) without requiring DAVx⁵.
+- **iOS + Android** — one Flutter app hitting your REST API. On iOS it offers to add the CalDAV account to the system Calendar app via a configuration profile.
+- **Android sync adapter** — native Kotlin module inside the Flutter app's Android project. Uses Android's sync adapter framework so events appear in the system CalendarProvider (and therefore in Google/Samsung Calendar) without requiring DAVx⁵. It speaks CalDAV directly rather than going through the REST API, because it runs in the background without a Flutter engine.
 
 ## Data Model
 

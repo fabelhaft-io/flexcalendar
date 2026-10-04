@@ -1,0 +1,36 @@
+@startuml c4-1-context
+' C4 level 1 — System context, target system.
+' Elements with a dashed border arrive after M1; the phase is in their name (docs/04, ADR 0003).
+!include <C4/C4_Context>
+
+LAYOUT_TOP_DOWN()
+
+AddElementTag("later", $borderStyle=DashedLine(), $borderThickness="2", $legendText="arrives after M1 (phase in name)")
+AddRelTag("later", $lineStyle=DashedLine(), $legendText="arrives after M1")
+
+title System context — calendar-flex (target; M1 is the solid part)
+
+Person(member, "Family member using our app", "Android from M1; iOS and web from Phase 5. Holds the keys to their Private calendars.")
+Person(stockUser, "Family member using a stock app [Phase 4]", "Apple Calendar, Samsung Calendar or Google Calendar. Sees Shared calendars only.", $tags="later")
+Person(subscriber, "Feed subscriber [Phase 4]", "For example a grandparent who subscribes to a read-only .ics feed.", $tags="later")
+
+System(calflex, "calendar-flex", "Shared calendar service. CalDAV is the source of truth. Private calendars are end-to-end encrypted; Shared calendars work in stock apps.")
+
+System_Ext(stockApps, "Stock calendar apps [Phase 4]", "Apple Calendar (native CalDAV); Samsung and Google Calendar via DAVx⁵ or our sync adapter (Phase 6).", $tags="later")
+System_Ext(fcm, "Firebase Cloud Messaging [Phase 4]", "Delivers data-only change pings; relays to APNs on iOS.", $tags="later")
+System_Ext(smtp, "SMTP relay [Phase 4]", "SES or Postmark. Invites, iMIP, security notices.", $tags="later")
+System_Ext(kms, "Cloud KMS, HSM-backed [Phase 7]", "Holds the Tier 1 escrow key.", $tags="later")
+System_Ext(backup, "Off-site object storage", "S3-compatible. Encrypted Postgres backups; Private content is ciphertext.")
+
+Rel(member, calflex, "Creates, edits and shares calendars", "HTTPS / JSON, OIDC")
+Rel(stockUser, stockApps, "Uses", $tags="later")
+Rel(stockApps, calflex, "Syncs Shared calendars", "CalDAV over HTTPS 443, device app password", $tags="later")
+Rel(subscriber, calflex, "Subscribes to a Shared calendar", ".ics over HTTPS, capability URL", $tags="later")
+Rel(calflex, fcm, "Sends change pings, never content", "HTTPS", $tags="later")
+Rel(fcm, member, "Wakes the app to fetch a delta", $tags="later")
+Rel(calflex, smtp, "Sends invites and recovery notices", "SMTP", $tags="later")
+Rel(calflex, kms, "Unwraps an escrowed key after the 72 h delay", "HTTPS", $tags="later")
+Rel(calflex, backup, "Archives WAL and nightly base backups", "HTTPS")
+
+SHOW_LEGEND()
+@enduml

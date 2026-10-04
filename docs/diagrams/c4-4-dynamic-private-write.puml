@@ -1,0 +1,30 @@
+@startuml c4-4-dynamic-private-write
+' C4 dynamic diagram — editing a Private event and another member picking it up (M1).
+' Shows the D-06 write order: envelope row first, then the skeleton PUT with If-Match.
+!include <C4/C4_Dynamic>
+
+LAYOUT_LEFT_RIGHT()
+
+AddElementTag("plaintext", $bgColor="#2e7d32", $borderColor="#1b5e20", $legendText="holds plaintext of Private events")
+
+title Dynamic — edit a Private event (D-06 write order) and sync it to another member
+
+Container(appA, "Mobile app (member A)", "Flutter, sodium_libs", "Holds CCK[calendar, epoch].", $tags="plaintext")
+Container(api, "API", "Fastify, ical.js", "Never decrypts.")
+Container(caldav, "CalDAV service", "SabreDAV", "Mode-aware write guard.")
+ContainerDb(db, "Postgres", "PostgreSQL", "event_envelopes, calendar objects, outbox.")
+Container(appB, "Mobile app (member B)", "Flutter, sodium_libs", "Holds the same CCK.", $tags="plaintext")
+
+Rel(appA, appA, "Builds the JSCalendar payload and the skeleton (UID, DTSTART/DTEND, RRULE, SEQUENCE, generic VALARM); seals the payload with XChaCha20-Poly1305, AAD = calendar_id, uid, recurrence_id, epoch, timing (D-14)")
+Rel(appA, api, "PUT event: skeleton + envelope + its SHA-256", "HTTPS, If-Match: <etag>")
+Rel(api, db, "Inserts the new envelope row keyed (calendar_id, uid, recurrence_id, sha256)", "SQL")
+Rel(api, caldav, "PUT skeleton with X-CALFLEX-ENVELOPE-SHA256", "CalDAV, If-Match, delegated principal")
+Rel(caldav, db, "Rejects content properties (403); otherwise writes the object and an outbox row in one transaction", "PDO")
+Rel(api, db, "Garbage-collects the superseded envelope row", "SQL")
+Rel(api, appA, "200 with the new ETag", "HTTPS")
+Rel(appB, api, "GET changes since sync-token (on foreground or every 15 min; on a push ping from Phase 4)", "HTTPS")
+Rel(api, appB, "Changed skeletons + matching envelopes + new sync-token", "HTTPS")
+Rel(appB, appB, "Accepts the envelope only if its hash matches the skeleton; opens it with the CCK; updates the Drift cache and search index")
+
+SHOW_LEGEND()
+@enduml

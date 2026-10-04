@@ -1,0 +1,44 @@
+@startuml c4-2-containers-m1
+' C4 level 2 — Containers at M1, "family v1" (ADR 0003).
+' Android app + server, Private calendars only. No stock apps, push, SMTP or escrow yet.
+!include <C4/C4_Container>
+
+LAYOUT_TOP_DOWN()
+
+AddElementTag("plaintext", $bgColor="#2e7d32", $borderColor="#1b5e20", $legendText="holds plaintext of Private events")
+
+title Containers at M1 — Android app with Private calendars
+
+Person(member, "Family member", "Has our Android app on every device they use.")
+
+System_Boundary(cf, "calendar-flex") {
+  Boundary(phone, "Android phone", "the only place plaintext exists") {
+    Container(app, "Mobile app", "Flutter, Dart 3, Riverpod, dio, sodium_libs", "Calendar UI. Generates and holds keys, seals and opens envelopes, builds skeletons. Recovery code, device linking, invites by link or QR. Syncs on foreground, pull-to-refresh and every 15 min.", $tags="plaintext")
+    ContainerDb(local, "On-device store", "Drift (SQLite) + Keystore-backed secure storage", "Skeleton iCalendar + ETag, decrypted payloads, FTS search index, offline outbox. Private keys.", $tags="plaintext")
+  }
+
+  Boundary(vps, "VPS, 4 GB (Hetzner, EU); staging on demand", "server is blind to Private content") {
+    Container(caddy, "Reverse proxy", "Caddy", "TLS on 443 with Let's Encrypt. Routes the API and IdP hosts. The CalDAV service is not exposed in M1.")
+    Container(idp, "Identity provider", "Zitadel (core + login UI)", "OIDC + PKCE login, JWT access tokens. Sees the login password, so no key is ever derived from it (D-17).")
+    Container(api, "API", "Node 24, TypeScript, Fastify, ical.js, tsdav", "Calendars, event CRUD with ETags, occurrence expansion, two-step recurring-edit plans (D-07), sidecar envelopes, invites, device-link rendezvous. Never decrypts (INV-07).")
+    Container(caldav, "CalDAV service", "PHP 8.4, SabreDAV 4.7", "Source of truth. Skeleton VEVENTs, sync tokens, ACLs derived from membership, mode-aware write guard, change outbox. Internal listener only.")
+    ContainerDb(db, "Postgres", "PostgreSQL 16", "CalDAV objects (skeletons), event_envelopes (ciphertext), users, members, invitations, user_keys (recovery-code wrapped), calendar_keys (sealed), device_links, audit_log. Keycloak's own database.")
+  }
+}
+
+System_Ext(backup, "Off-site object storage", "S3-compatible. WAL archive + nightly base backups, encrypted, kept 30 days.")
+
+Rel(member, app, "Uses")
+Rel_R(app, local, "Reads and writes")
+Rel(app, caddy, "API calls; OIDC login", "HTTPS 443")
+Rel(caddy, api, "Forwards", "HTTP")
+Rel(caddy, idp, "Forwards", "HTTP")
+Rel(api, idp, "Validates access tokens", "JWKS")
+Rel(api, caldav, "Skeleton reads and writes as the user", "CalDAV, internal listener, HMAC-signed delegated principal (D-05)")
+Rel(api, db, "Envelopes, keys, membership, audit", "SQL")
+Rel(caldav, db, "Calendar objects + outbox in one transaction", "PDO")
+Rel(idp, db, "Own database", "SQL")
+Rel(db, backup, "Archives WAL; nightly base backups", "HTTPS")
+
+SHOW_LEGEND()
+@enduml
