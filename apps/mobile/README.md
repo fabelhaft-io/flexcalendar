@@ -1,0 +1,19 @@
+# `apps/mobile/` — Flutter mobile app
+
+**Owning epic:** [E10 — Flutter mobile app](../../docs/epics/E10-mobile-app.md).
+
+- **What belongs here:** one Flutter (Dart 3) codebase for Android (minSdk 26)
+  and iOS 16+, with Riverpod, `dio` plus the client generated from
+  [`spec/openapi.yaml`](../../spec/openapi.yaml), Drift (SQLite) for the offline
+  cache, `timezone` for every `TZID` calculation (never raw `DateTime` — INV-04),
+  and flavors `dev|staging|prod` (ADR 0002,
+  `docs/02-technology-choices.md` § Mobile clients). The app is a REST client:
+  it never talks to CalDAV itself, and it sends recurring-event edits as intents
+  (INV-05).
+- **`android/`** holds the project's native Kotlin `CalendarContract` sync
+  adapter, with **no Dart in its sync path** — see
+  [`android/README.md`](android/README.md) and
+  [E11](../../docs/epics/E11-android-sync-adapter.md).
+- The Flutter toolchain pin arrives with
+  [E02-R02](../../docs/epics/E02-repo-tooling-ci.md) and the scaffold with
+  E10-R01.
