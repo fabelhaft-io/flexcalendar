@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-27
+- **Amended by**: [ADR 0003](0003-android-first-private-first-delivery.md) (Android ships first; phase numbers below are from the earlier plan, mapped in `04`)
 - **Relates to**: [`02-technology-choices.md`](../02-technology-choices.md) (mobile stack), [`04-implementation-phases.md`](../04-implementation-phases.md) (Phases 3–5), [`03-native-calendar-integration.md`](../03-native-calendar-integration.md) (Android sync adapter), [`0001-calendar-privacy-modes.md`](0001-calendar-privacy-modes.md)
 
 ## Context
@@ -22,8 +23,9 @@ To reduce the risk from Dart's thinner iCalendar ecosystem, the app does not own
 - **Two iCalendar stacks remain**: `ical.js` on the server, `iCal4j` in the Kotlin sync adapter. That was already true under the native plan.
 - Dart `DateTime` has no zone support, so all `TZID` handling goes through the `timezone` package. A new source of bugs to test for.
 - Push is unified on FCM (`firebase_messaging`), which relays to APNs. Payloads must be data-only change pings — mandatory for Private calendars, which cannot carry content in a push at all.
-- **Dart owns the key hierarchy, and that is an advantage.** Argon2id derivation, the double-wrapped private key, the recovery code and the Shamir split for trusted contacts live in Dart only. Native would mean implementing all of it twice in security-critical code: two audit surfaces, every bug duplicated. The Kotlin side needs only *unwrap content key, open envelope*, and only if Phase 6 Android mirroring ships — a bounded subset that must stay wire-compatible with the Dart implementation.
-- Verify during Phase 5 that `sodium_libs` covers XChaCha20-Poly1305, `crypto_box_seal` and Argon2id rather than assuming it.
+- **Dart owns the key hierarchy, and that is an advantage.** Key generation, the wrapped private key (Argon2id is dropped by D-17), the recovery code and the Shamir split for trusted contacts live in Dart only. Native would mean implementing all of it twice in security-critical code: two audit surfaces, every bug duplicated. The Kotlin side needs only *unwrap content key, open envelope*, and only if Phase 6 Android mirroring ships — a bounded subset that must stay wire-compatible with the Dart implementation.
+- **Amended 2026-10-04 (D-16): the web client also needs crypto.** It implements the *operational subset* in TypeScript (`packages/crypto-ts`, Phase 5): receiving keys by device linking or the recovery code, opening and sealing envelopes, and sealing CCKs to members it shares with. Recovery-code generation, Shamir splitting and escrow setup stay in Dart only. Both libraries are held to the same frozen test vectors (E12).
+- Verify that `sodium_libs` covers XChaCha20-Poly1305, `crypto_box_seal`, Ed25519 and HKDF rather than assuming it. Since ADR 0003 this is the first task of Phase 2, and Argon2id is no longer needed (D-17).
 - Calendar-grid polish is limited by Flutter packages (`calendar_view`, `kalender`) or a custom grid. There is no FullCalendar equivalent.
 - **Still needs native code**: home-screen widgets (WidgetKit, Glance), and passkey-based recovery — the WebAuthn `prf` extension has no mature Flutter package and lives in AuthenticationServices on iOS and Credential Manager on Android. Support is recent on both; verify before committing to that recovery method. It is a Pigeon channel around one platform API, not a sync engine.
 

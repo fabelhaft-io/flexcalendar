@@ -2,15 +2,17 @@
 
 | | |
 |---|---|
-| Phase | 5 |
-| Status | Blocked on E13, D-10 |
+| Phase | 3 (R03, R06, R08, R09); 7 (R01, R02, R04, R05, R07), per ADR 0003 |
+| Status | Blocked on E12 (Phase 3 reqs); E13 and M2 (Phase 7 reqs) |
 | Executor | `agent+review`; `human` for the KMS setup and final drills |
-| Depends on | E12, E13, E08-R06 (mail), E07-R04 (device notifications) |
-| Spec | ADR 0001 § Recovery, `05` risk 4 |
+| Depends on | E12, E13; for Phase 7 also E08-R06 (mail) and E07-R04 (device notifications) |
+| Spec | ADR 0001 § Recovery, ADR 0003 decisions 4–5, `05` risk 4 |
 
 ## Goal
 
 Tier 1 (the default) means we can recover a user's keys, but never silently. Tier 2 (opt-in) means we can't recover them at all, and the user is shown that plainly before choosing it.
+
+Until Phase 7 there is no escrow (ADR 0003). Every account is strict by construction: the recovery code is its required recovery method, and device linking moves keys to new devices. Phase 7 adds Tier 1 and trusted contacts before open signup.
 
 ## Requirements
 
@@ -24,12 +26,26 @@ A separate, minimal service with the only IAM permission for KMS decrypt. It rel
 - Notes: at Tier 1 the release service sees the DEK, which is why the claim is "we can recover, and we always tell you".
 
 ### E14-R03 · Recovery code   `agent+review`
-Generate a 128-bit recovery code as 12 BIP39 words, shown once. The user must re-enter a random subset of the words before it counts as acknowledged. It is used to derive KEK_rc (E12-R04).
-- Accept: the code is never sent to the server; regeneration invalidates the old wrapped copy.
+Generate a 128-bit recovery code as 12 BIP39 words, shown once. It is used to derive KEK_rc (E12-R04). Before it counts as acknowledged, the user MUST save it in at least one of these ways and then re-enter a random subset of 3 words:
+- **Print**: a one-page recovery sheet sent to the Android print framework. It shows the 12 numbered words, a QR code of the words for scanning on a new device, the account handle (not the email), the creation date and short recovery instructions.
+- **Save as PDF**: the same sheet, generated on the device, saved where the user picks through the system file picker (Storage Access Framework). The app never writes it to shared storage on its own.
+- **Share**: the words as plain text through the OS share sheet, so the user can pick a text messenger. The sheet is preceded by a warning: send it only to yourself or to someone you trust completely, preferably in an end-to-end encrypted messenger, and don't send it by SMS.
+- **Copy**: the words to the clipboard, marked sensitive (`ClipDescription.EXTRA_IS_SENSITIVE`, Android 13+) so the system clipboard preview hides it, and cleared after 60 s if it still holds the code.
+
+The save screen MUST state the risk in plain words, consistent with INV-11: anyone who has the code and can sign in as you can read your Private calendars; keep it somewhere only you, or someone you trust, can reach; without it, losing all your devices means losing your calendars.
+- Accept:
+  - the code is never sent to our server, and never written to logs or crash reports;
+  - the PDF and the print job are generated on the device, and their temp files are deleted once the print or save finishes or is cancelled;
+  - key creation can't complete with no save action taken, or with a failed word check;
+  - the copied clip carries the sensitive flag, and an instrumented test sees the clipboard cleared after 60 s;
+  - regeneration invalidates the old wrapped copy and asks the user to save the new code again;
+  - a fresh device, after signing in, restores the keys with the code typed in or scanned from the sheet's QR code (M1).
+- Notes: before Phase 7 this is mandatory and is the only recovery path besides device linking (ADR 0003 decision 4). A second device is prompted for, not required (R09). Flutter: the `pdf` and `printing` packages for the sheet, the print dialog and the PDF save, `share_plus` for sharing. The sensitive clipboard flag isn't exposed by Flutter's `Clipboard` and needs a small Kotlin method behind the existing Pigeon bridge.
 
 ### E14-R04 · Tier 2 opt-in   `agent+review`
 Switching to Tier 2 requires an existing recovery method (a recovery code or trusted contacts). The switch deletes the escrow wrapped copy, writes an audit entry, and says that the change is **not retroactive**.
-- Accept: without a recovery method the switch is refused; after it, the KMS release path returns "no escrow record"; a Tier 2 account with a lost password and lost recovery methods is demonstrably unrecoverable (M5 criterion 3, `human` sign-off).
+- Notes: accounts created before Phase 7 are strict already. They are offered escrow as an explicit, logged choice and are never moved to Tier 1 silently (ADR 0003).
+- Accept: without a recovery method the switch is refused; after it, the KMS release path returns "no escrow record"; a Tier 2 account that has lost every device and every recovery method is demonstrably unrecoverable (M5 criterion 3, `human` sign-off).
 
 ### E14-R05 · Trusted contacts, 2-of-3   `agent+review`
 The user picks 3 contacts who have keys. The recovery secret is split (E12-R07), and each share is sealed to a contact's **verified** public key (D-15). Recovery requests notify the account owner's devices and each contact, and contacts approve in the app. Two approvals reconstruct the secret on the recovering device.
@@ -40,6 +56,16 @@ INV-09 is enforced in code review and by a CI grep for "security question" or "s
 
 ### E14-R07 · Tier 1 end-to-end drill   `human`
 Recover an account on staging from a new device. Every notification is received, the cancel works, and the release happens after the delay (M5 criterion 2).
+
+### E14-R08 · Device linking (Phase 3)   `agent+review`
+A signed-in user MUST be able to add a device by linking it from a device that already holds the keys (D-17). The new device generates an ephemeral X25519 keypair and shows it as a QR code together with a short verification code. The existing device scans it, the user confirms the code matches on both screens, and the existing device uploads the private keys sealed to the ephemeral key (E12-R04) through the `device_links` rendezvous. The server stores only the sealed blob, expires it after 5 min and deletes it on first read.
+- Accept: the server never holds an unsealed key; an expired, replayed or mismatched-code link fails; each link writes an audit entry and is shown on the user's other devices on their next sync; without a linked device the recovery code (R03) is the path.
+- Deps: E12-R04, E04-R02.
+
+### E14-R09 · Key-loss nudges (Phase 3)   `agent`
+After the first key creation the app MUST prompt the user to link a second device, until they do or dismiss it twice. Every 90 days it asks the user to re-enter 3 random words of the recovery code, and checks them locally by unwrapping the server copy. A failed check offers to regenerate the code (R03).
+- Accept: widget tests for the prompt schedule; a failed check never locks the user out of their data.
+- Notes: this mitigates the higher key-loss risk before escrow exists (ADR 0003, `05` risk 4).
 
 ### Deferred
 - Passkey recovery with the WebAuthn `prf` extension: needs a native module (ADR 0002); check platform support first.

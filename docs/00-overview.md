@@ -45,9 +45,12 @@ The reason: a participant who installs nothing can never hold a key, so they can
 5. [`05-risks-and-open-questions.md`](05-risks-and-open-questions.md) — Things to validate early.
 6. [`06-implementation-backlog.md`](06-implementation-backlog.md) — Epics and requirements for agentic implementation, decisions to pin first, global invariants. Epics live in [`epics/`](epics/).
 
+C4 architecture diagrams (PlantUML) live in [`diagrams/`](diagrams/).
+
 ## Decision Records
 
 Architecture decisions and their rejected alternatives live in [`adr/`](adr/), numbered separately from the docs above.
 
 - [`adr/0001-calendar-privacy-modes.md`](adr/0001-calendar-privacy-modes.md) — Private (E2EE, our apps), Shared (unencrypted, stock apps), Published (read-only feed). *Accepted.*
 - [`adr/0002-flutter-for-mobile-clients.md`](adr/0002-flutter-for-mobile-clients.md) — One Flutter codebase for iOS and Android; the Android sync adapter stays native Kotlin. *Accepted.*
+- [`adr/0003-android-first-private-first-delivery.md`](adr/0003-android-first-private-first-delivery.md) — The first release is the Android app with Private (E2EE) calendars only; Shared mode and stock apps follow in Phase 4. *Accepted.*

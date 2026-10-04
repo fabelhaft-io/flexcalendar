@@ -32,4 +32,4 @@ A corpus of hard `RRULE`s (`BYSETPOS`, ordinal `BYDAY`, `BYMONTHDAY=-1`, `UNTIL`
 
 ### E15-R05 · Device regression protocol   `human`
 `docs/verification/device-protocol.md` (drafted by an agent from E01-R03) is run on an iPhone, a Samsung phone and a Pixel, the Android phones with both DAVx⁵ and our adapter once E11 ships. It extends the Phase 0 checklist with: `.mobileconfig` install, Apple "Add Person…", a recurring edit of each scope from each stock app, alarms, attendees and iMIP.
-- Accept: run at every milestone and after every major iOS or Android release; results committed with the date, OS versions and app versions; new raw objects fed back into R01.
+- Accept: run at every milestone from M2 on (M1 has no stock-app path) and after every major iOS or Android release; results committed with the date, OS versions and app versions; new raw objects fed back into R01.

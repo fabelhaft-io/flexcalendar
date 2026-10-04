@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 (R01, R02, R04, R08, R09, R10); 4 (R03, R05, R06, R07), per ADR 0003 |
-| Status | Blocked on D-02, D-05 (Phase 1 reqs); D-04 and M0 (Phase 4 reqs) |
+| Status | Blocked on E02 (Phase 1 reqs); M0 and M1 (Phase 4 reqs) |
 | Executor | `agent+review` (auth and ACL work), `agent` otherwise |
 | Depends on | E02, D-02, D-04, D-05 |
 | Spec | `01-architecture.md` § Storage, `03`, ADR 0001 § Effect on the CalDAV rule |

@@ -1,12 +1,12 @@
-# E16 — Phase 6: polish and optional mirroring
+# E16 — Phase 8: polish and optional mirroring
 
 | | |
 |---|---|
-| Phase | 6 (ongoing) |
+| Phase | 8 (ongoing) |
 | Status | Blocked on M4 and M5 |
 | Executor | mixed |
 | Depends on | E11, E13 |
-| Spec | `04` Phase 6, ADR 0001 § Optional Phase 6, ADR 0002 § Revisit trigger |
+| Spec | `04` Phase 8, ADR 0001 § Optional Phase 6, ADR 0002 § Revisit trigger |
 
 ## Goal
 

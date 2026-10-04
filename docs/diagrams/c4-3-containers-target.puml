@@ -1,0 +1,71 @@
+@startuml c4-3-containers-target
+' C4 level 2 — Containers, target system after Phase 7.
+' Dashed borders arrive after M1; the phase is in the name (docs/04, ADR 0003).
+!include <C4/C4_Container>
+
+LAYOUT_TOP_DOWN()
+
+AddElementTag("plaintext", $bgColor="#2e7d32", $borderColor="#1b5e20", $legendText="holds plaintext of Private events")
+AddElementTag("plaintextLater", $bgColor="#2e7d32", $borderColor="#1b5e20", $borderStyle=DashedLine(), $borderThickness="2", $legendText="holds plaintext, arrives after M1")
+AddElementTag("later", $borderStyle=DashedLine(), $borderThickness="2", $legendText="arrives after M1 (phase in name)")
+AddRelTag("later", $lineStyle=DashedLine(), $legendText="arrives after M1")
+
+title Containers — target system (Private, Shared and Published calendars)
+
+Person(member, "Family member using our apps", "Android (M1), iOS and web (Phase 5).")
+Person(stockUser, "Family member using a stock app [Phase 4]", "Shared calendars only.", $tags="later")
+
+System_Ext(stockApps, "Stock calendar apps [Phase 4]", "Apple Calendar; Samsung and Google Calendar via DAVx⁵.", $tags="later")
+
+System_Boundary(cf, "calendar-flex") {
+  Boundary(clients, "User devices", "plaintext of Private events exists only here") {
+    Container(mobile, "Mobile app", "Flutter, Dart 3, sodium_libs", "Android (M1) and iOS (Phase 5). UI, keys, envelope crypto, recovery code, device linking, trusted contacts (Phase 7).", $tags="plaintext")
+    Container(web, "Web app [Phase 5]", "React, Vite, FullCalendar, libsodium-wrappers", "Same features as mobile. Keys arrive by device linking or the recovery code; operational crypto subset (D-16).", $tags="plaintextLater")
+    Container(adapter, "Android sync adapter [Phase 6]", "Kotlin, dav4jvm, iCal4j", "Writes Shared calendars into CalendarContract so Samsung and Google Calendar show them. Shared only; no keys.", $tags="later")
+  }
+
+  Boundary(vps, "VPS (Hetzner, EU)", "server is blind to Private content") {
+    Container(caddy, "Reverse proxy", "Caddy", "TLS on 443. Public hosts: API, IdP and, from Phase 4, CalDAV for stock apps.")
+    Container(idp, "Identity provider", "Keycloak", "OIDC + PKCE; TOTP and WebAuthn second factor for escrow release.")
+    Container(api, "API", "Node 24, TypeScript, Fastify, ical.js", "Event CRUD, occurrences, recurring-edit plans, envelopes, sharing, device credentials (Phase 4), .ics feeds and onboarding pages (Phase 4), SSE (Phase 5). Never decrypts.")
+    Container(worker, "Change worker [Phase 4]", "Node 24, TypeScript", "Reads the change outbox, polls sync-collection every 30 s as a fallback, sends data-only pings.", $tags="later")
+    Container(caldav, "CalDAV service", "PHP 8.4, SabreDAV 4.7", "Source of truth. Internal listener for the API; public listener for stock apps with device app passwords (Phase 4). Apple sharing, iMIP. Private collections invisible to stock-app credentials (INV-08).")
+    Container(release, "Escrow release service [Phase 7]", "minimal service", "Only holder of KMS decrypt. Releases after second factor, notifications and a cancellable 72 h delay; sealed to the recovering device.", $tags="later")
+    ContainerDb(db, "Postgres", "PostgreSQL 16", "CalDAV objects, envelopes, keys, members, invitations, device credentials, feed tokens, push devices, outbox, audit log.")
+  }
+}
+
+System_Ext(fcm, "Firebase Cloud Messaging [Phase 4]", "Data-only pings; APNs relay for iOS.", $tags="later")
+System_Ext(smtp, "SMTP relay [Phase 4]", "Invites, iMIP, security notices.", $tags="later")
+System_Ext(kms, "Cloud KMS, HSM-backed [Phase 7]", "Tier 1 escrow key.", $tags="later")
+System_Ext(backup, "Off-site object storage", "Encrypted Postgres backups.")
+
+Rel(member, mobile, "Uses")
+Rel(member, web, "Uses", $tags="later")
+Rel(stockUser, stockApps, "Uses", $tags="later")
+
+Rel(mobile, caddy, "API calls; OIDC login", "HTTPS 443")
+Rel(web, caddy, "API calls, SSE; OIDC login", "HTTPS 443", $tags="later")
+Rel(adapter, caddy, "Syncs Shared calendars", "CalDAV, HTTPS 443, device app password", $tags="later")
+Rel(stockApps, caddy, "Syncs Shared calendars", "CalDAV, HTTPS 443, device app password", $tags="later")
+Rel(mobile, adapter, "Registers the system account", "Pigeon", $tags="later")
+
+Rel(caddy, api, "Forwards", "HTTP")
+Rel(caddy, idp, "Forwards", "HTTP")
+Rel(caddy, caldav, "Forwards stock-app traffic", "public listener", $tags="later")
+
+Rel(api, caldav, "Reads and writes as the user", "CalDAV, internal listener, delegated principal (D-05)")
+Rel(api, db, "Envelopes, keys, sharing, audit", "SQL")
+Rel(caldav, db, "Objects + outbox in one transaction", "PDO")
+Rel(worker, db, "Consumes outbox", "SQL", $tags="later")
+Rel(worker, api, "CalendarChanged events for SSE", "internal", $tags="later")
+Rel(worker, fcm, "Data-only pings", "HTTPS", $tags="later")
+Rel(fcm, mobile, "Delivers pings", $tags="later")
+Rel(caldav, smtp, "iMIP for Shared calendars", "SMTP", $tags="later")
+Rel(api, smtp, "Invites, recovery notices", "SMTP", $tags="later")
+Rel(api, release, "Recovery requests", "internal", $tags="later")
+Rel(release, kms, "Decrypt escrowed DEK", "HTTPS", $tags="later")
+Rel(db, backup, "WAL archive, nightly base backups", "HTTPS")
+
+SHOW_LEGEND()
+@enduml

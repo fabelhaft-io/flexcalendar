@@ -4,7 +4,7 @@ For each layer, a recommended pick and the realistic alternatives.
 
 ## CalDAV Server
 
-**Pick: [Radicale](https://radicale.org/) for prototyping, [Baïkal](https://sabre.io/baikal/) or [SabreDAV](https://sabre.io/) for production.**
+**Pinned (D-02): [SabreDAV](https://sabre.io/) 4.7+ embedded in a small PHP 8.4 service with the Postgres PDO backend, from Phase 1 on. [Radicale](https://radicale.org/) only for the Phase 0 spike.**
 
 | Option       | Lang   | Pros                                                                 | Cons                                                       |
 |--------------|--------|----------------------------------------------------------------------|------------------------------------------------------------|
@@ -14,18 +14,18 @@ For each layer, a recommended pick and the realistic alternatives.
 | Xandikos     | Python | Git-backed storage (events versioned as files in a git repo).        | Smaller community; fewer production deployments.           |
 | Nextcloud    | PHP    | Full groupware; calendar is one app; battle-tested sharing.          | Heavyweight if calendar is all you need.                   |
 
-For a brand-new product, **start with Radicale** locally to validate the native-app integration story end-to-end in a weekend. Migrate to **SabreDAV** (as a library inside your own service) once you need custom auth, sharing, and push.
+Radicale validates the native-app integration story in the Phase 0 spike. Production uses **SabreDAV** as a library inside our own service from the start: Phase 1 already needs custom auth (D-05), the mode-aware write guard and the change outbox, and switching servers later would mean migrating stored family data.
 
 ## Backend API Layer
 
-**Pick: Node.js (TypeScript) with Fastify or NestJS, or Go with chi/echo.**
+**Pinned (D-01): Node.js 24 LTS + TypeScript with Fastify; move to Node 26 once it is promoted to LTS (late October 2026).** Go is ruled out: `ical.js`, the single recurrence authority applied by the API (ADR 0002), needs a JavaScript runtime.
 
-Either is fine; pick the language you ship faster in. The API is thin — auth, push fan-out, sharing UI, a REST/GraphQL facade over CalDAV. Notes:
+The API is thin — auth, push fan-out, sharing UI, a REST/GraphQL facade over CalDAV. Notes:
 
-- For CalDAV client work from the backend, use [`tsdav`](https://github.com/natelindev/tsdav) (TypeScript) or `go-caldav` / hand-rolled with `net/http` + an iCalendar parser like [`gocal`](https://github.com/apognu/gocal).
+- For CalDAV client work from the backend, use [`tsdav`](https://github.com/natelindev/tsdav), or raw `fetch` where it lacks a report.
 - iCalendar parsing/generation: [`ical.js`](https://github.com/kewisch/ical.js) (Mozilla; the de facto standard) on the Node side.
 - Push: Firebase Admin SDK (FCM) for both mobile platforms — FCM relays to APNs on iOS, matching the Flutter app's single `firebase_messaging` integration. Talking to APNs directly over HTTP/2 remains an option if we ever want to drop Google from the iOS push path. Web clients get updates over WebSocket/SSE.
-- Auth: Auth0, Clerk, or self-hosted Keycloak/Ory. The API translates user auth → CalDAV credentials (store CalDAV credentials encrypted, or run a CalDAV server that accepts your bearer tokens).
+- Auth (pinned, D-03): self-hosted **Keycloak** (OIDC + PKCE, TOTP and WebAuthn). The API reaches CalDAV as the user through an HMAC-signed delegated principal on an internal listener (D-05), so it stores no CalDAV passwords. Stock apps use per-device app passwords (D-04, Phase 4). The login password never feeds a key derivation (D-17).
 
 ## Web Client
 
@@ -52,8 +52,9 @@ Rationale and rejected alternatives are in [`adr/0002-flutter-for-mobile-clients
 | Timezones            | [`timezone`](https://pub.dev/packages/timezone) (IANA tz database)    | **Dart's `DateTime` only knows UTC and device-local.** All `TZID` arithmetic must go through `timezone`'s `TZDateTime`. See risk #3. |
 | Recurrence           | Expanded **server-side** by the API (`ical.js`); [`rrule`](https://pub.dev/packages/rrule) on the client only for previews and offline display | Keeps one recurrence engine as the authority (see below). |
 | iCalendar parsing    | [`enough_icalendar`](https://pub.dev/packages/enough_icalendar)       | Only needed for the offline cache and edits made offline. Treat as untrusted — round-trip tests required. |
-| Auth                 | [`flutter_appauth`](https://pub.dev/packages/flutter_appauth) (OIDC + PKCE), [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) for tokens | Works with Auth0 / Clerk / Keycloak / Ory. |
+| Auth                 | [`flutter_appauth`](https://pub.dev/packages/flutter_appauth) (OIDC + PKCE), [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) for tokens | Against our Keycloak (D-03). |
 | Push                 | [`firebase_messaging`](https://pub.dev/packages/firebase_messaging)   | One API for FCM on Android and APNs on iOS (FCM relays to APNs). Send data-only "calendar X changed" pings; the client fetches the delta. Never put event content in the payload. |
+| Recovery kit         | [`pdf`](https://pub.dev/packages/pdf) + [`printing`](https://pub.dev/packages/printing), [`share_plus`](https://pub.dev/packages/share_plus) | On-device recovery sheet (print or PDF via the system file picker) and plain-text share. A sensitive clipboard copy needs a small Kotlin method (E14-R03). |
 | Background refresh   | [`workmanager`](https://pub.dev/packages/workmanager)                 | Periodic delta sync when push is missed. |
 | Native interop       | [Pigeon](https://pub.dev/packages/pigeon)                             | Typed Dart ↔ Swift/Kotlin channels (e.g. "account signed in → register Android sync account"). |
 
@@ -80,7 +81,7 @@ The `CalendarContract` sync adapter (see [`03-native-calendar-integration.md`](0
 - The adapter talks **CalDAV directly** (it is effectively our own DAVx⁵), while the Flutter UI talks to the REST API. Both end up on the same CalDAV collections, so they cannot diverge.
 - The Flutter side only needs a Pigeon channel to register/remove the system account on sign-in/sign-out and to trigger a manual sync.
 
-The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-privacy-modes.md)), which are unencrypted, so it needs no crypto for its Phase 4 scope. If the optional Phase 6 mirroring of Private calendars ships, the adapter also has to decrypt: `lazysodium-android` alongside the Dart `sodium_libs` implementation, producing byte-identical results from shared test vectors. Only the *unwrap content key, open envelope* path is duplicated — the key hierarchy itself stays in Dart.
+The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-privacy-modes.md)), which are unencrypted, so it needs no crypto for its Phase 6 scope. If the optional Phase 8 mirroring of Private calendars ships, the adapter also has to decrypt: `lazysodium-android` alongside the Dart `sodium_libs` implementation, producing byte-identical results from shared test vectors. Only the *unwrap content key, open envelope* path is duplicated — the key hierarchy itself stays in Dart.
 
 ## Alternatives Considered
 
@@ -91,6 +92,6 @@ The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-priv
 
 ## Hosting
 
-- CalDAV server + API: a single small VPS (Hetzner, Fly.io, Railway) for the prototype. Behind a managed Postgres if you choose SabreDAV with its DB backend.
+- Pinned (D-10): a Hetzner VPS in the EU for the CalDAV service, API, Keycloak and Postgres, plus a staging twin. From Phase 7, an HSM-backed **AWS KMS** key in `eu-central-1` for Tier 1 escrow.
 - TLS: Caddy or Traefik, automatic Let's Encrypt. iOS in particular is fussy about TLS — no self-signed certs without a profile.
 - The CalDAV server **must be reachable on the public internet on port 443** for stock apps to talk to it. This is a real constraint: no internal-only deployments unless you also ship a VPN profile.

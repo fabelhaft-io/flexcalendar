@@ -78,7 +78,7 @@ Goal: one Flutter app shipped to Android. Family members share calendars that ou
 - [ ] Flutter app (Dart 3), released for Android only (minSdk 26). The iOS target stays in the project but isn't built in CI until Phase 5. Riverpod, Drift, `dio` with a client generated from the API's OpenAPI spec, `timezone`, and a calendar grid (`calendar_view` or `kalender`).
 - [ ] OIDC sign-in with `flutter_appauth`.
 - [ ] **Keys are created on the first device** and kept in Keystore-backed `flutter_secure_storage`.
-- [ ] **Recovery code**: 128 bits as BIP39 words, shown once, with re-entry of a random subset forced before the user continues. The server stores only the key wrapped under the recovery-code KEK.
+- [ ] **Recovery code**: 128 bits as BIP39 words, shown once. The user must save it before continuing, by printing a recovery sheet, saving it as a PDF, sharing it through the share sheet (for example to a messenger) or copying it. Then they re-enter a random subset of the words. This must be done before the first calendar can be created; a second device is not required. The save screen says plainly that anyone with the code and the account login can read the user's Private calendars. The server stores only the key wrapped under the recovery-code KEK.
 - [ ] **Device linking**: the new device shows a QR code, an existing device scans it and confirms the short code, and the keys travel sealed. The app prompts users to link a second device.
 - [ ] Private calendars end to end:
   - write path: a skeleton with only the allowed properties and a generic `VALARM` text (D-08), plus an envelope committed in the D-06 order;
@@ -178,7 +178,7 @@ Goal: the full recovery design from [`adr/0001`](adr/0001-calendar-privacy-modes
 Exit criteria (M5):
 - Two of our own clients read and write the same Private calendar while the server holds only ciphertext. This is verified by grepping the CalDAV store and the sidecar table for a known event title and finding nothing.
 - A Tier 1 recovery completes end to end with all notifications delivered.
-- A Tier 2 account with a lost password and a used recovery code is demonstrably unrecoverable.
+- A Tier 2 account that has lost every device and its recovery code is demonstrably unrecoverable.
 
 ## Phase 8 — Polish and scale (ongoing)
 

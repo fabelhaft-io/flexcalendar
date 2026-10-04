@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 0–1 (in parallel with E01) |
-| Status | Blocked on D-09 |
+| Status | Ready |
 | Executor | `agent` |
 | Depends on | D-09 (layout), D-01/D-02 for the service skeletons |
 | Spec | `02-technology-choices.md`, ADR 0002 |
@@ -17,8 +17,8 @@ Give agents one repo in which every component can be built, run and verified loc
 ### E02-R01 · Repository layout   `agent`
 The repo MUST follow this layout (adjust only by amending D-09):
 ```
-server/caldav/          PHP 8.3, SabreDAV, Composer
-server/api/             Node 22, TypeScript, Fastify
+server/caldav/          PHP 8.4, SabreDAV 4.7+, Composer
+server/api/             Node 24 LTS, TypeScript, Fastify
 apps/web/               React + Vite + TypeScript
 apps/mobile/            Flutter (Dart 3); android/ holds the Kotlin sync adapter module
 packages/crypto-ts/     TS crypto core (E12)

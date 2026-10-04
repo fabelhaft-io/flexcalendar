@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 (R01–R05, R08–R10); 3 (R07); 4 (R06), per ADR 0003 |
-| Status | Blocked on D-01, D-03, D-05; D-07 for R07 |
+| Status | Blocked on E03, E04; E13-R02 for R07 |
 | Executor | `agent` (`agent+review` for R01) |
 | Depends on | E03, E04 |
 | Spec | `01-architecture.md` § API layer, `02` § Backend and § Recurrence, ADR 0002 |

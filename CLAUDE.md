@@ -24,7 +24,7 @@ Consequences:
 **Scoped by privacy mode** (`docs/adr/0001-calendar-privacy-modes.md`). Calendars come in three modes, chosen explicitly at creation and switchable afterwards, and the rule's *justification* only applies to two of them:
 
 - **Shared** (unencrypted) and **Published** (read-only `.ics` feed) — stock apps read these, so CalDAV is genuinely non-negotiable and everything above applies verbatim.
-- **Private** (end-to-end encrypted, our apps only) — no third party ever reads it, so the protocol argument does not force CalDAV. We keep it anyway, for one storage engine and to make mode switching a metadata change rather than a migration. Event content is encrypted client-side (XChaCha20-Poly1305, per-calendar key sealed to each member) into a sidecar table keyed `(calendar_id, uid, recurrence_id)`; only the skeleton (`UID`, `DTSTART`/`DTEND`, `RRULE`, `SEQUENCE`, `VALARM`) stays cleartext in the `VEVENT`.
+- **Private** (end-to-end encrypted, our apps only) — no third party ever reads it, so the protocol argument does not force CalDAV. We keep it anyway, for one storage engine and to make mode switching a metadata change rather than a migration. Event content is encrypted client-side (XChaCha20-Poly1305, per-calendar key sealed to each member) into a sidecar table keyed `(calendar_id, uid, recurrence_id, envelope_sha256)`, with the hash mirrored in the skeleton as `X-CALFLEX-ENVELOPE-SHA256` (D-06); only the skeleton (`UID`, `DTSTART`/`DTEND`, `RRULE`, `SEQUENCE`, `VALARM`) stays cleartext in the `VEVENT`.
 - **Never** put a Private calendar in front of a stock app or an `.ics` feed expecting content to be readable — by construction it cannot be. That is what the Shared mode is for.
 
 ## Repo status
@@ -33,16 +33,16 @@ As of writing, this repo contains **docs only** — no code has been committed y
 
 ## Planned stack (from `docs/02-technology-choices.md`)
 
-- **CalDAV server**: Radicale for prototyping, then SabreDAV (embedded) or Baïkal for production. Nextcloud and Xandikos are also-rans.
-- **Backend API**: Node + TypeScript (Fastify or NestJS) or Go (chi/echo). Thin layer; auth, push fan-out, sharing UI, REST/GraphQL facade over CalDAV.
+- **CalDAV server**: SabreDAV 4.7+ embedded in a PHP 8.4 service, Postgres PDO backend (D-02). Radicale only for the Phase 0 spike.
+- **Backend API**: Node 24 LTS + TypeScript + Fastify, moving to Node 26 LTS when it's promoted (D-01). Thin layer; auth, push fan-out, sharing, REST facade over CalDAV. Reaches CalDAV via an HMAC-signed delegated principal on an internal listener (D-05).
 - **iCalendar parsing**: `ical.js` (Node) — the single authority for recurrence; the mobile app delegates recurrence expansion and recurring-event edits to the API. Do not roll your own — recurrence rules are the #2 risk in the project.
 - **CalDAV client lib (server-side)**: `tsdav` on Node; hand-rolled on Go.
 - **Web**: React + TypeScript + Vite, FullCalendar for the grid, TanStack Query for server state.
 - **Mobile (iOS + Android)**: one Flutter app (Dart 3), iOS 16+ / minSdk 26. Riverpod, `dio` + OpenAPI-generated client, Drift (SQLite) for offline, `timezone` for all `TZID` math (Dart `DateTime` is UTC/local only), `calendar_view` or `kalender` for the grid, `firebase_messaging` for push on both platforms. See `docs/adr/0002-flutter-for-mobile-clients.md`.
 - **Android sync adapter**: native Kotlin module in the Flutter app's `android/` project, no Dart in the sync path. `dav4jvm` + `iCal4j`, talks CalDAV directly. Pigeon for the Dart ↔ Kotlin bridge.
 - **Push**: Firebase Admin SDK (FCM, which relays to APNs on iOS); data-only change pings, no event content. CalDAV has **no native push** — the API layer polls and fans out.
-- **Auth**: Auth0 / Clerk / Keycloak / Ory. The API translates app-level auth to CalDAV credentials internally.
-- **Hosting**: small VPS (Hetzner, Fly.io, Railway) + Caddy/Traefik for TLS. Public 443 required.
+- **Auth**: self-hosted Keycloak, OIDC + PKCE (D-03). Stock apps use per-device app passwords (D-04, Phase 4). The login password never feeds a key derivation (D-17, INV-12).
+- **Hosting**: Hetzner VPS in the EU plus a staging twin, Caddy for TLS (D-10). Public 443 required. Tier 1 escrow (Phase 7) uses an HSM-backed AWS KMS key in `eu-central-1`.
 
 The web client stays React — Flutter Web was rejected (canvas rendering, accessibility, FullCalendar maturity).
 
@@ -89,17 +89,21 @@ Treat the API layer's sharing model as the source of truth and have CalDAV ACLs 
 
 Google Calendar is **not** a general-purpose CalDAV client; pointing it at our server directly will not work. Web Google Calendar can subscribe to read-only `.ics` feeds — useful as a viewing-only fallback.
 
-The Android sync adapter (writing into `CalendarContract` via `AbstractThreadedSyncAdapter`) is the **single largest piece of work in the plan**. Recommendation in the docs: tell users to install DAVx⁵ for v1; build the in-app sync adapter only when onboarding friction starts to hurt.
+The Android sync adapter (writing into `CalendarContract` via `AbstractThreadedSyncAdapter`) is the **single largest piece of work in the plan**. Recommendation in the docs: tell users to install DAVx⁵ for Shared calendars until the Phase 6 adapter ships; build it only when onboarding friction starts to hurt.
 
 ## Implementation phases (current plan)
 
-0. **Spike (1–3 days)** — Radicale on a VPS with real TLS; round-trip an event through Apple Calendar, Samsung/Google Calendar via DAVx⁵. Do not skip.
-1. **Server foundation (1–2 weeks)** — SabreDAV or stay on Radicale, Postgres, auth, sharing model, `.ics` feeds, Apple sharing extensions.
-2. **Web client (2–3 weeks)** — React/Vite/FullCalendar, REST/GraphQL over CalDAV, WebSocket/SSE updates, sharing UI, downloadable `.mobileconfig`.
-3. **Mobile app (4–5 weeks)** — Flutter for iOS + Android, REST API client, Drift cache, FCM/APNs push, guided `.mobileconfig` install on iOS.
-4. **Android sync adapter (2–3 weeks)** — native Kotlin CalendarContract sync adapter inside the Flutter app's Android project.
-5. **Encryption & recovery (3–4 weeks)** — Private mode, crypto core, Tier 1 HSM escrow, Tier 2 strict opt-in, mode selection and switching UI. **Gates open signup**: the friends-and-family test group accepts plaintext history, strangers do not.
-6. **Polish & scale (ongoing)** — recurrence-editing UX, DST regression tests, Postgres-backed CalDAV storage, conflict resolution, observability, backups, optional device-store mirroring of Private calendars.
+Ordered by `docs/adr/0003-android-first-private-first-delivery.md`: **the first release (M1) is the Flutter app on Android with Private (E2EE) calendars only**, backed by the full CalDAV + API server. Stock apps come right after. `docs/04-implementation-phases.md` has the detail and a mapping from the old phase numbers, which ADRs 0001–0002 still use.
+
+0. **Spike (1–3 days, in parallel)** — Radicale on a VPS with real TLS; round-trip an event through Apple Calendar, Samsung/Google Calendar via DAVx⁵. Do not skip. It doesn't block Phases 1–3, but M0 must be reached before Phase 4.
+1. **Server core (1.5–2 weeks)** — SabreDAV + Postgres, Keycloak, API core with `ical.js`, mode-aware write guard, change outbox, backups from day one. `mode` accepts only `private` until Phase 4. Nothing stock-app facing.
+2. **Crypto core (~2 weeks, parallel with 1)** — wire spec, Dart library, frozen test vectors. No KEK from the login password (D-17).
+3. **Android app with Private calendars (6–7 weeks) → M1 family v1** — Flutter (Android only), Drift cache, Private write/read paths, recovery code, device linking, invites by link/QR with key verification, periodic sync (no push yet), Play internal track.
+4. **Shared mode, stock apps, push (3–4 weeks) → M2** — mode choice and switching, device app passwords, Apple sharing extensions, SMTP/iMIP, `.mobileconfig`, `.ics` feeds, FCM data-only pings.
+5. **Web client and iOS app (4–5 weeks) → M3** — React/Vite/FullCalendar including Private mode (TS crypto), iOS build with `.mobileconfig` onboarding.
+6. **Android sync adapter (2–3 weeks) → M4** — native Kotlin CalendarContract adapter, Shared calendars only.
+7. **Recovery for everyone (~3 weeks) → M5** — Tier 1 HSM escrow, trusted contacts, Tier 2 opt-in, external crypto review. **Gates open signup.**
+8. **Polish & scale (ongoing)** — recurrence-editing UX, DST regression tests, conflict resolution, observability, optional device-store mirroring of Private calendars.
 
 Explicitly deferred: `VFREEBUSY`, `VTODO`, rich change notifications ("Alice moved dinner"), native macOS/Windows.
 
@@ -118,11 +122,11 @@ Explicitly deferred: `VFREEBUSY`, `VTODO`, rich change notifications ("Alice mov
 
 These affect architecture; check the docs / ask before building anything that assumes a particular answer:
 
-- Self-hosted vs. multi-tenant SaaS?
+- ~~Self-hosted vs. multi-tenant SaaS?~~ **Answered (D-13):** we host it; no self-hosting.
 - Free or paid?
 - Target user: individuals, families, small teams, or enterprises? **Partly answered** — families with mixed calendar apps (one on Apple Calendar, one on our Android app, one on Google Calendar) are a named driving use case; quotas and team features are still open.
 - Are tasks (`VTODO`) in scope, or only events?
-**Answered:** end-to-end encryption is in scope, as a per-calendar mode rather than a global property — see the architectural rule above and `docs/adr/0001`. Account recovery is answered too: escrowed by default (we can recover, with mandatory notification and a cancellable delay), strict E2EE on opt-in. Security questions are rejected as key protection.
+**Answered:** end-to-end encryption is in scope, as a per-calendar mode rather than a global property — see the architectural rule above and `docs/adr/0001`. Account recovery is answered too: escrowed by default (we can recover, with mandatory notification and a cancellable delay), strict E2EE on opt-in. Security questions are rejected as key protection. **Until Phase 7 there is no escrow** (`docs/adr/0003`): every account is strict, recovered by recovery code or device linking. Keys must never derive from the login password, because our IdP sees it (D-17, INV-12).
 
 ## Conventions for this repo
 
@@ -136,4 +140,4 @@ These affect architecture; check the docs / ask before building anything that as
 - Implementation work is driven by `docs/06-implementation-backlog.md` and `docs/epics/`. Follow its agent working agreement, and pick up only requirements whose `D-*` decisions are Pinned. Never break an `INV-*` invariant.
 - Keep the iCalendar model authoritative. Don't invent shadow fields in the API layer that diverge from `VEVENT`.
 - When in doubt about whether something belongs in the CalDAV layer or the API layer: stock-app-visible behavior goes in CalDAV; everything else (push, custom sharing UI, app auth) goes in the API layer.
-- Treat the Phase 0 spike as a real prerequisite, not a formality.
+- Treat the Phase 0 spike as a real prerequisite for Phase 4 (stock apps), not a formality.

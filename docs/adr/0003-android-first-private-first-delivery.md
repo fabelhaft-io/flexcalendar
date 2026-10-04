@@ -54,7 +54,19 @@ Private calendars are skeleton `VEVENT`s in SabreDAV plus sidecar envelopes, exa
 
 ### 4. Recovery before open signup: recovery code and device linking only
 
-v1 has no escrow. Every v1 account is therefore **strict (ADR 0001 Tier 2) by construction**, and the recovery code is its mandatory recovery method. It is shown once at key creation, and acknowledging it cannot be skipped. A second device can be linked from a device that already holds the keys.
+v1 has no escrow. Every v1 account is therefore **strict (ADR 0001 Tier 2) by construction**, and the recovery code is its mandatory recovery method. It is shown once at key creation. A second device can be linked from a device that already holds the keys.
+
+**Saving the recovery code is required before the first calendar; a second device is not** (decided 2026-10-04). Key creation, and therefore everything after it, doesn't complete until the user has done both of these:
+1. Saved the code in at least one way:
+   - **print** a recovery sheet;
+   - **save it as a PDF**;
+   - **share** it through the OS share sheet, for example to a text messenger;
+   - **copy** it.
+2. Re-entered a random subset of its words.
+
+Linking a second device stays a prompt (E14-R09).
+
+Every save option except print puts the code outside our app. A copy in a messenger, its cloud backup, a synced folder or a clipboard manager, combined with a login to the account, unlocks the keys. So does a copy combined with our server, which stores the wrapped key. The save screen says this plainly (INV-11), and the copy and PDF paths are hardened as E14-R03 describes.
 
 Tier 1 escrow and trusted-contact recovery ship in Phase 7, before open signup, so the M5 gate is unchanged. When escrow ships:
 - **New accounts** get Tier 1 by default, as ADR 0001 says.
@@ -104,4 +116,4 @@ v1 fetches deltas on app start and foreground, on pull-to-refresh, and every 15 
 
 ## Open questions
 
-1. Should v1 require a second linked device (or a printed recovery code) before a user can create their first calendar, rather than only prompting for it? This trades onboarding friction against key-loss risk.
+1. ~~Should v1 require a second linked device (or a printed recovery code) before a user can create their first calendar?~~ **Answered 2026-10-04:** saving the recovery code is required, by print, PDF, share or copy, followed by the word check. A second device is prompted for, not required. See decision 4.

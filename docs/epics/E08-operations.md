@@ -3,14 +3,14 @@
 | | |
 |---|---|
 | Phase | 1, then continuous. R06 (mail) in Phase 4; the KMS part of R01 in Phase 7 |
-| Status | Blocked on D-10, D-11 |
+| Status | Ready: R01 (`human`: VPS and DNS). R02 onwards blocked on E02 |
 | Executor | `human` (accounts, DNS, money) + `agent` (config as code) |
 | Depends on | E02 |
 | Spec | `02` § Hosting, `05` risks 7, 8 and 11, CLAUDE.md risk 8 ("events lost = product dead") |
 
 ## Goal
 
-A calendar that goes down makes people miss meetings, and one that loses data ends the product. Ops therefore starts in Phase 1, not Phase 6 (D-11).
+A calendar that goes down makes people miss meetings, and one that loses data ends the product. Ops therefore starts in Phase 1, not in the polish phase (D-11).
 
 ## Requirements
 

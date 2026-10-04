@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | Blocked on D-02, D-06, D-17 |
+| Status | Blocked on E02 |
 | Executor | `agent` |
 | Depends on | E02, D-02, D-06, D-17 |
 | Spec | `04` Phase 1, ADR 0001, ADR 0003 |

@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-27
+- **Amended by**: [ADR 0003](0003-android-first-private-first-delivery.md) (delivery order, recovery before open signup, key derivation). See § Amendments.
 - **Relates to**: [`00-overview.md`](../00-overview.md) (central constraint), [`01-architecture.md`](../01-architecture.md) (sharing model), [`03-native-calendar-integration.md`](../03-native-calendar-integration.md), [`04-implementation-phases.md`](../04-implementation-phases.md) (Phase 5), [`05-risks-and-open-questions.md`](../05-risks-and-open-questions.md) (closes the E2EE open question)
 
 ## Context
@@ -52,31 +53,37 @@ We keep CalDAV as the store for all modes anyway, for practical reasons: one sto
 
 ### Private calendars — cryptography
 
+*Amended 2026-10-04 (D-15, D-17): no key derives from the login password, and every user also has an Ed25519 identity key.*
+
 ```
-  user password                         recovery code (shown once)
-        |                                         |
-     Argon2id                                  HKDF
-   (per-user salt)                                |
-        v                                         v
-      KEK_pw                                   KEK_rc
-        |                                         |
-        +------------------+----------------------+
-                           |
-              both independently unwrap
-                           v
-             user X25519 private key            <-- wrapped copies stored
-                           |                        server-side
-                  crypto_box_seal_open
-                           v
-          CCK[calendar, epoch]  (32 bytes)       <-- one sealed copy per member
-                           |
-            XChaCha20-Poly1305 open
-                           v
-                event content plaintext
+  device linking                     recovery code              escrow key in HSM-backed KMS
+  (QR + short code, from a           (shown once)               (Tier 1, from Phase 7)
+   device that holds the keys)            |                               |
+        |                               HKDF                              |
+  crypto_box_seal to the new              |                               |
+  device's ephemeral X25519 key           v                               |
+        |                              KEK_rc                             |
+        +----------------------+----------+-------------------------------+
+                               |
+                 each independently delivers or unwraps
+                               v
+      user X25519 private key + Ed25519 identity key    <-- held on the device (Keystore / Keychain);
+                               |                            server stores only wrapped copies
+                      crypto_box_seal_open                  (kinds: recovery_code, escrow)
+                               v
+              CCK[calendar, epoch]  (32 bytes)          <-- one sealed copy per member, signed
+                               |                            with the sender's identity key
+                XChaCha20-Poly1305 open
+                               v
+                    event content plaintext
 ```
 
+The login password is absent on purpose. It is typed into our own IdP, so a key derived from it would be derivable by us, and the Tier 2 claim would be false (D-17). It authenticates and nothing else.
+
 - **AEAD**: XChaCha20-Poly1305, one envelope per event over a canonical JSON payload using **JSCalendar (RFC 8984) field names** — the same information as iCalendar, and it keeps the JMAP path open.
-- **AAD**: `"calflex-v1" || UID || epoch || canonical(DTSTART, DTEND, RRULE)`. Binding the cleartext skeleton makes server-side tampering with timing detectable, and it is safe here precisely because no stock app ever edits a Private calendar.
+- **AAD**: `"calflex-v1" || calendar_id || UID || RECURRENCE-ID || epoch || canonical(DTSTART, DTEND, RRULE)`, each field length-prefixed as `spec/crypto.md` defines. Binding the cleartext skeleton makes server-side tampering with timing detectable, and it is safe here precisely because no stock app ever edits a Private calendar. *Amended (D-14):* `calendar_id` and `RECURRENCE-ID` were added, so the server can't move an envelope onto another override of the same event or into another calendar.
+- **Skeleton contents** *(D-08)*: `UID`, `DTSTART`/`DTEND`, `RRULE`/`RDATE`/`EXDATE`, `RECURRENCE-ID`, `SEQUENCE`, `VALARM` and `X-CALFLEX-ENVELOPE-SHA256`. Everything else is in the envelope, including `ATTENDEE` and `ORGANIZER`, so Private calendars have no email invites. `VALARM` is cleartext, so our clients always write a fixed `DESCRIPTION:Reminder` and never the event title.
+- **Key authenticity** *(D-15)*: sealed boxes don't authenticate the sender, and members' public keys are handed out by our server, which could substitute its own. Every user therefore has an Ed25519 identity key. Sealed CCK records and key bundles are signed with it, and members verify each other's identity keys in the app, by scanning a QR code in person or by comparing safety numbers. Key transparency can come later.
 - **Key wrapping**: libsodium sealed boxes (`crypto_box_seal`, X25519). HPKE (RFC 9180) would be more modern but Dart has no maintained implementation.
 - **Rotation**: removing a member starts epoch N+1 for new writes. They keep whatever they already downloaded; no design prevents that.
 - **Libraries**: `sodium_libs` (Flutter), `libsodium-wrappers` WASM (web), `lazysodium-android` (Kotlin, only if Phase 6 mirroring ships). The API layer and CalDAV server link no crypto library for this purpose — a useful property to be able to state.
@@ -93,7 +100,11 @@ Envelope bytes, stored as one `bytea`:
    29+n    16  Poly1305 tag
 ```
 
-Sidecar table keyed `(calendar_id, uid, recurrence_id)`, written and read only by clients. `recurrence_id` is `NULL` for the master and set per override, because overrides are separate `VEVENT`s sharing a `UID` — get this wrong and an edited instance of a recurring event shows the master's title.
+Sidecar table keyed `(calendar_id, uid, recurrence_id, envelope_sha256)`, written and read only by clients. `recurrence_id` is `NULL` for the master and set per override, because overrides are separate `VEVENT`s sharing a `UID` — get this wrong and an edited instance of a recurring event shows the master's title.
+
+**Change detection** *(amended, D-06)*: an edit that only touches content would otherwise leave the `VEVENT`, its ETag and the sync-token unchanged, and no other client would see it. Every envelope write therefore also rewrites the skeleton with `X-CALFLEX-ENVELOPE-SHA256:<hash>`. The order is: insert the envelope row, then `PUT` the skeleton with `If-Match`, then garbage-collect the superseded row. Readers accept only an envelope whose hash matches the skeleton, so a crash between the steps leaves the previous version readable.
+
+**Recurring edits** *(amended, D-07)*: "this and following" and similar edits rewrite skeleton fields that are bound into the AAD (for example `UNTIL` on the master), which would silently invalidate existing envelopes. On Private calendars these edits are therefore two-step. The API computes the resulting skeletons with `ical.js` and returns a plan. The client re-seals an envelope for every skeleton the plan changes, then commits the plan and the envelopes together with `If-Match`. Shared calendars keep the one-step intent.
 
 ### Recovery — escrowed by default, strict E2EE opt-in
 
@@ -176,7 +187,25 @@ New disclosure if it ships: plaintext then sits in the OS calendar store and the
 
 ## Open questions
 
-1. **Does a Private calendar keep a cleartext skeleton?** Recommended **yes** — `DTSTART`/`DTEND`/`RRULE` in the clear keeps one storage and sync engine across modes, makes switching a metadata change, enables CalDAV date-window queries, and makes the busy-only feed possible. Encrypting the timing too yields a stronger claim ("we know how many events you have, not when") at the cost of client-side-only windowing and a second sync path.
-2. **Is `ATTENDEE`/`ORGANIZER` encrypted on Private calendars?** Encrypting hides the social graph but kills invites. Recommendation: encrypt, and accept no email invites there.
+1. ~~**Does a Private calendar keep a cleartext skeleton?**~~ **Answered (D-08): yes.** Recommended **yes** — `DTSTART`/`DTEND`/`RRULE` in the clear keeps one storage and sync engine across modes, makes switching a metadata change, enables CalDAV date-window queries, and makes the busy-only feed possible. Encrypting the timing too yields a stronger claim ("we know how many events you have, not when") at the cost of client-side-only windowing and a second sync path.
+2. ~~**Is `ATTENDEE`/`ORGANIZER` encrypted on Private calendars?**~~ **Answered (D-08): encrypted, with no email invites on Private calendars.** Encrypting hides the social graph but kills invites.
 3. **Which Tier 2 recovery methods ship first** beyond the recovery code. Trusted-contact threshold recovery is recommended as the second.
 4. **Is the busy-only published feed in v1?** Neither Published variant is on the critical path.
+
+## Amendments
+
+### ADR 0003 — Android-first, Private-first delivery (2026-10-04)
+
+- **Phase numbers in this ADR refer to the plan before ADR 0003.** The mapping is at the end of `04`.
+- **Private mode ships first**, in the Android app at M1 (new Phase 3), instead of in old Phase 5. This supersedes the consequences "Encryption is Phase 5, not Phase 1" and "Phase 1 reserves structure". The `mode` check constraint allows only `private` until Phase 4 adds `shared` and `published`, and the envelope and key tables are in use from v1.
+- **Recovery before open signup**: until Phase 7 every account is strict (Tier 2), with the recovery code as its mandatory recovery method plus device linking. When Tier 1 ships it becomes the default for new accounts. Existing accounts get it only as an explicit, logged choice.
+### Pinned decisions from `06` (2026-10-04)
+
+Applied in place above, each marked where it changes the text:
+
+- **D-06**: the envelope hash in the skeleton, the sidecar key and the write order (§ Private calendars — cryptography).
+- **D-07**: two-step recurring edits on Private calendars.
+- **D-08**: open questions 1 and 2 are answered, and the skeleton contents are listed, including the fixed `VALARM` description.
+- **D-14**: `calendar_id` and `RECURRENCE-ID` are in the AAD.
+- **D-15**: Ed25519 identity keys, signed CCK records and in-app key verification.
+- **D-17**: no KEK from the login password. `KEK_pw` and Argon2id are gone from the key diagram, and keys reach new devices by device linking, the recovery code or (Tier 1) escrow.
