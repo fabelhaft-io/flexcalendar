@@ -133,6 +133,7 @@ These affect architecture; check the docs / ask before building anything that as
 ## What Claude should usually do
 
 - Before changing architecture or tech choices, re-read the relevant numbered doc — it almost certainly already addresses the question.
+- Implementation work is driven by `docs/06-implementation-backlog.md` and `docs/epics/`. Follow its agent working agreement, and pick up only requirements whose `D-*` decisions are Pinned. Never break an `INV-*` invariant.
 - Keep the iCalendar model authoritative. Don't invent shadow fields in the API layer that diverge from `VEVENT`.
 - When in doubt about whether something belongs in the CalDAV layer or the API layer: stock-app-visible behavior goes in CalDAV; everything else (push, custom sharing UI, app auth) goes in the API layer.
 - Treat the Phase 0 spike as a real prerequisite, not a formality.

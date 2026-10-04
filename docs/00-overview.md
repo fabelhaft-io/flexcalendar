@@ -43,6 +43,7 @@ The reason: a participant who installs nothing can never hold a key, so they can
 3. [`03-native-calendar-integration.md`](03-native-calendar-integration.md) — How each stock calendar app connects (the trickiest part).
 4. [`04-implementation-phases.md`](04-implementation-phases.md) — Build order, milestones, and what to defer.
 5. [`05-risks-and-open-questions.md`](05-risks-and-open-questions.md) — Things to validate early.
+6. [`06-implementation-backlog.md`](06-implementation-backlog.md) — Epics and requirements for agentic implementation, decisions to pin first, global invariants. Epics live in [`epics/`](epics/).
 
 ## Decision Records
 
