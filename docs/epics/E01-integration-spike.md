@@ -20,7 +20,7 @@ Our own apps, auth beyond Radicale's htpasswd, Private mode.
 
 ### E01-R01 · Spike infrastructure as code   `agent`
 The repo MUST have `infra/spike/`, which deploys Radicale behind Caddy with automatic Let's Encrypt on a public hostname with one command.
-- Accept: `docker compose -f infra/spike/compose.yaml up` on a fresh VPS serves `https://<host>/.well-known/caldav` → 301/308 to the principal, with a valid public certificate. README lists the DNS and firewall steps (443 open).
+- Accept: `podman compose -f infra/spike/compose.yaml up` on a fresh VPS serves `https://<host>/.well-known/caldav` → 301/308 to the principal, with a valid public certificate. README lists the DNS and firewall steps (443 open).
 - Notes: Radicale's `rights` set to `owner_only`, plus one extra `shared` collection readable and writable by two users, to try out sharing.
 
 ### E01-R02 · Seed script   `agent`
