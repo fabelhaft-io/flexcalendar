@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phase | 0 |
+| Phase | 0, in parallel with Phases 1–3. Must reach M0 before Phase 4 starts (ADR 0003) |
 | Status | Ready |
 | Executor | `human` (agents prepare scripts and checklists) |
 | Depends on | — |

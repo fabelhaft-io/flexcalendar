@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Phase | 1–2 |
-| Status | Blocked on D-01, D-03, D-05 |
+| Phase | 1 (R01–R05, R08–R10); 3 (R07); 4 (R06), per ADR 0003 |
+| Status | Blocked on D-01, D-03, D-05; D-07 for R07 |
 | Executor | `agent` (`agent+review` for R01) |
 | Depends on | E03, E04 |
 | Spec | `01-architecture.md` § API layer, `02` § Backend and § Recurrence, ADR 0002 |
@@ -23,19 +23,19 @@ All CalDAV access MUST go through one module built on `tsdav` (or raw `fetch` wh
 - Accept: a lint rule forbids importing `tsdav` outside the adapter; integration tests run against the local stack.
 
 ### E05-R03 · Calendars API   `agent`
-The API MUST list, create, rename, recolor and delete calendars. Create requires an explicit `mode`, with no default (ADR 0001 § Decision); until Phase 5 only `shared` is accepted, and `published` is created through E06-R06.
+The API MUST list, create, rename, recolor and delete calendars. Create requires an explicit `mode`, with no default (ADR 0001 § Decision); until Phase 4 only `private` is accepted (ADR 0003), and `published` is created through E06-R06.
 - Accept: POST without `mode` → 422; the CalDAV collection and `calendars` row are created together, with compensation on failure.
 
 ### E05-R04 · Event CRUD with ETag preconditions   `agent`
 The API MUST create, read, update and delete events. Writes carry `If-Match` (update/delete) or `If-None-Match: *` (create) through to CalDAV. Responses include `uid`, `etag`, the raw iCalendar text `ical`, and a parsed convenience view.
 - Accept: a concurrent update → 412 with the current representation; round-trip preserves unknown properties (INV-02); created `UID`s are UUIDv4 (INV-03).
-- Notes: returning raw `ical` + `etag` is what lets the Drift cache store the canonical record (`02` § Offline cache).
+- Notes: returning raw `ical` + `etag` is what lets the Drift cache store the canonical record (`02` § Offline cache). For Private calendars the `ical` is the skeleton; content comes from the sidecar (E13-R02).
 
 ### E05-R05 · Windowed occurrence expansion   `agent`
 `GET /calendars/{id}/occurrences?from&to&tz` MUST return the expanded instances in the window, computed with `ical.js` from the masters and overrides, each tagged with master `uid`, `recurrenceId`, and whether it is an override.
 - Accept: passes the E15-R02 DST matrix and the RRULE corpus (E15-R03); window boundaries are inclusive-exclusive and correct for all-day events.
 
-### E05-R06 · Recurring-edit intents (Shared calendars)   `agent`
+### E05-R06 · Recurring-edit intents (Shared calendars, Phase 4)   `agent`
 `POST /events/{uid}/intents` MUST accept `{scope: this|thisAndFollowing|all, recurrenceId, patch}` and apply it with `ical.js`:
 - `this` → an override `VEVENT` with `RECURRENCE-ID`, or an `EXDATE` for delete.
 - `thisAndFollowing` → `UNTIL` on the old master plus a new master with a new UUIDv4 `UID` and `RELATED-TO` to the original.
@@ -45,6 +45,7 @@ The API MUST create, read, update and delete events. Writes carry `If-Match` (up
 ### E05-R07 · Recurring-edit intents (Private calendars, two-step)   `agent`
 Per D-07, for Private calendars the intent endpoint MUST return a **plan** (the new skeletons, with the `uid`/`recurrenceId` whose envelope must be re-sealed) without committing it. `POST /events/{uid}/intents/{planId}/commit` then takes the plan ID plus one envelope per affected skeleton and commits them atomically with `If-Match`.
 - Accept: commit with a missing or stale envelope → 409; the plan expires after 5 min; the server never sees plaintext.
+- Notes: this is the **first** recurring-edit path built (Phase 3). Build the `ical.js` plan engine so R06 in Phase 4 reuses it and only skips the re-seal step.
 - Deps: E13-R02
 
 ### E05-R08 · Delta endpoint   `agent`

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Phase | 1 |
-| Status | Blocked on D-02, D-04, D-05 |
+| Phase | 1 (R01, R02, R04, R08, R09, R10); 4 (R03, R05, R06, R07), per ADR 0003 |
+| Status | Blocked on D-02, D-05 (Phase 1 reqs); D-04 and M0 (Phase 4 reqs) |
 | Executor | `agent+review` (auth and ACL work), `agent` otherwise |
 | Depends on | E02, D-02, D-04, D-05 |
 | Spec | `01-architecture.md` § Storage, `03`, ADR 0001 § Effect on the CalDAV rule |
@@ -25,7 +25,7 @@ Push (E07), the REST facade (E05), `VTODO` and `VFREEBUSY` (deferred in `04`).
 ### E03-R02 · Discovery   `agent`
 `/.well-known/caldav` MUST redirect to the context path, and `current-user-principal`, `calendar-home-set` and `principal-URL` MUST resolve for an authenticated user.
 - Accept: an integration test runs the iOS discovery sequence (PROPFIND on `/`, then principal, then home set) and gets the expected hrefs.
-- Notes: fold in E01-R06 quirks.
+- Notes: fold in E01-R06 quirks once M0 is reached. Discovery for our own app doesn't wait for it.
 
 ### E03-R03 · Device app-password auth backend   `agent+review`
 Per D-04, a SabreDAV auth backend MUST check HTTP Basic credentials `(account_handle, app_password)` against Argon2id hashes in the `device_credentials` table (E04). It MUST reject revoked credentials and record `last_used_at`.
@@ -55,7 +55,7 @@ Collection ACLs MUST be derived from the `calendar_members` table (E04). They ar
 ### E03-R09 · Mode-aware write guard   `agent`
 The server MUST reject writes to a Private calendar that carry content properties (`SUMMARY`, `DESCRIPTION`, `LOCATION`, `ATTENDEE`, `ORGANIZER`, `ATTACH`, `COMMENT`, a non-generic `VALARM` `DESCRIPTION`) in the skeleton.
 - Accept: a PUT with `SUMMARY` to a Private collection → 403 with a precondition element; the allowed skeleton list matches ADR 0001 plus the D-06 `X-CALFLEX-ENVELOPE-SHA256`.
-- Notes: this is the server-side backstop that keeps a buggy client from leaking plaintext.
+- Notes: this is the server-side backstop that keeps a buggy client from leaking plaintext. It is on the critical path to M1, because every v1 calendar is Private.
 
 ### E03-R10 · Change hook   `agent`
 Every successful write MUST append `(calendar_id, sync_token, uid, change_type)` to a `caldav_changes` outbox read by E07.

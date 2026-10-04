@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phase | 1–2 |
+| Phase | 3 (R02, R09); 4 (R01, R03–R06, R08); R07 deferred, per ADR 0003 |
 | Status | Blocked on E05 |
 | Executor | `agent+review` (credentials, ACLs, feed tokens), `human` for signing |
 | Depends on | E03, E04, E05 |
@@ -21,7 +21,7 @@ An owner MUST be able to invite by email with role `viewer|editor`. The invite i
 ### E06-R02 · Role management and removal   `agent`
 Owners MUST be able to change roles and remove members. Removal revokes CalDAV access immediately.
 - Accept: a removed member's device credential gets 404 on the collection on its next request.
-- Notes: for Private calendars, removal also starts a new key epoch (E13-R05).
+- Notes: for Private calendars, removal also starts a new key epoch (E13-R05). Device credentials exist from Phase 4; in Phase 3 the check is that the removed member's API calls get 404.
 
 ### E06-R03 · Apple sharing reconciliation   `agent+review`
 Shares created through Apple Calendar's "Add Person…" (E03-R05) MUST be mapped into `invitations`/`calendar_members`. If they can't be mapped (for example, the invitee has no account), they're converted into an email invite. Because the API model is the source of truth, a share that exists only in CalDAV is never left in place.
@@ -48,3 +48,9 @@ Owners of a Shared calendar MUST be able to publish a read-only `.ics` feed at a
 The web app MUST serve an "Add to Android" page with DAVx⁵ steps, a deep link into DAVx⁵ with the server URL pre-filled, and a fresh device credential.
 - Notes: check which login URI schemes the current DAVx⁵ release supports before implementing. Don't assume a scheme.
 - Accept: the deep link opens DAVx⁵ with the server pre-filled (verified by `human` in E15-R05).
+- Notes: until the web app exists (Phase 5) this page is served by the API, as is the `.mobileconfig` download.
+
+### E06-R09 · Invite by link or QR, no email   `agent+review`
+Before SMTP exists (Phase 4), an owner MUST be able to invite through a link or QR code that the app shares through the OS share sheet or shows on screen (ADR 0003). The link carries a single-use, expiring token (≥ 128 bits, stored hashed) and the owner's identity-key fingerprint. Accepting it creates a pending `calendar_members` row. The owner's client seals the CCK once the invitee's keys exist and are verified (E13-R05, E13-R07).
+- Accept: expired, reused and revoked tokens are rejected. Scanning the QR code in person marks both sides' keys as verified (D-15). A link invite leaves the member marked unverified until the two compare safety numbers, and the UI says so. The owner can revoke pending invites.
+- Notes: both paths stay after R01 ships. The in-person QR flow is the strongest key verification we have.

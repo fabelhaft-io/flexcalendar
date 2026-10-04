@@ -2,15 +2,15 @@
 
 | | |
 |---|---|
-| Phase | 2 |
+| Phase | 5 (ADR 0003) |
 | Status | Blocked on E05 |
 | Executor | `agent` |
-| Depends on | E05, E06, E07, E02-R07 (generated TS client) |
-| Spec | `02` § Web client, `04` Phase 2 |
+| Depends on | E05, E06, E07, E12 (TS library), E13, E02-R07 (generated TS client) |
+| Spec | `02` § Web client, `04` Phase 5 |
 
 ## Goal
 
-The web app where most users start. After M2, someone can run their whole calendar from it.
+The web app where most new users will start. After M3, someone can run their whole calendar from it. It includes Private mode through E13's web parts and the TS crypto library (E12). Keys arrive by device linking from a phone or by the recovery code (D-17).
 
 ## Requirements
 
@@ -42,7 +42,7 @@ A device credentials page (E06-R04), a `.mobileconfig` download (E06-R05) and th
 - Accept: the credential is shown once with a copy button and never shown again.
 
 ### E09-R08 · Mode badge everywhere   `agent`
-Every calendar shows its mode (Shared, and later Private or Published) wherever it's listed or selected (ADR 0001: "the app always tells you which is which").
+Every calendar shows its mode (Private, Shared or Published) wherever it's listed or selected (ADR 0001: "the app always tells you which is which").
 
 ### E09-R09 · Accessibility   `agent`
 WCAG 2.2 AA: keyboard operation of the grid and editor, and screen-reader labels.

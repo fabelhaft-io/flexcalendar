@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phase | 2 (web), 3 (mobile push) |
+| Phase | 4 (R01, R03–R05); 5 (R02, web realtime), per ADR 0003 |
 | Status | Blocked on E05 |
 | Executor | `agent` |
 | Depends on | E03-R10, E05-R08 |
@@ -20,7 +20,7 @@ A worker MUST consume the `caldav_changes` outbox (E03-R10). A 30 s `sync-collec
 
 ### E07-R02 · Realtime channel for web   `agent`
 The API MUST expose an authenticated SSE (or WebSocket) stream that delivers `CalendarChanged` for calendars the user is a member of.
-- Accept: membership is checked when the stream opens and on every membership change; the p95 from write to event on a connected web client is ≤ 5 s in the local stack (M2); reconnect sends `Last-Event-ID`.
+- Accept: membership is checked when the stream opens and on every membership change; the p95 from write to event on a connected web client is ≤ 5 s in the local stack (M3); reconnect sends `Last-Event-ID`.
 
 ### E07-R03 · Push device registry   `agent`
 Clients MUST be able to register and unregister FCM tokens. Tokens that FCM reports as unregistered are pruned.

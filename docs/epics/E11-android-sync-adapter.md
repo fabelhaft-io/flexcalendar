@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Phase | 4 |
-| Status | Blocked on E10 |
+| Phase | 6 (ADR 0003) |
+| Status | Blocked on M2 (E03-R03, E06-R04) and E10 |
 | Executor | `agent` for code; `human` for device verification |
 | Depends on | E03, E06-R04, E10-R01 |
 | Spec | `03` § Samsung / Pixel, `02` § Android specifics, ADR 0002, ADR 0001 (Shared only) |

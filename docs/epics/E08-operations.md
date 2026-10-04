@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phase | 1, then continuous |
+| Phase | 1, then continuous. R06 (mail) in Phase 4; the KMS part of R01 in Phase 7 |
 | Status | Blocked on D-10, D-11 |
 | Executor | `human` (accounts, DNS, money) + `agent` (config as code) |
 | Depends on | E02 |
@@ -15,7 +15,7 @@ A calendar that goes down makes people miss meetings, and one that loses data en
 ## Requirements
 
 ### E08-R01 · Accounts and DNS   `human`
-Create the VPS, DNS zone, Apple Developer account, Firebase project, SMTP provider and (Phase 5) KMS accounts. Put credentials in the secret store.
+Create the VPS and DNS zone (Phase 1); the Firebase project, SMTP provider and Apple Developer account (Phase 4, the last for `.mobileconfig` signing); and the KMS account (Phase 7). Put credentials in the secret store.
 
 ### E08-R02 · Production deploy as code   `agent`
 `infra/prod/` MUST deploy Caddy (automatic ACME TLS on 443), the CalDAV service, the API, workers, the IdP and Postgres from one command, with secrets from the environment.
@@ -27,7 +27,7 @@ A staging environment MUST mirror production on its own hostname, so device test
 ### E08-R04 · Backups from day one   `agent` + `human`
 Postgres (CalDAV objects, sidecar, metadata) MUST be backed up with continuous WAL archiving plus nightly base backups to off-site object storage, encrypted and kept for 30 days.
 - Accept: `human` signs off a **restore drill** into a fresh instance, with a documented RPO ≤ 5 min and RTO ≤ 1 h, before M1 and quarterly after that.
-- Notes: Private calendar backups are ciphertext. They protect against our failures, not against user key loss (`04` Phase 6).
+- Notes: Private calendar backups are ciphertext. They protect against our failures, not against user key loss (`04` Phase 1). Before Phase 7 there is no escrow, so this matters from M1.
 
 ### E08-R05 · Observability   `agent`
 Structured JSON logs, Prometheus metrics (request rate/latency/errors per service, poller lag, push failures, backup age), error reporting (Sentry or self-hosted GlitchTip) and uptime probes on `/.well-known/caldav` and the API health endpoint.

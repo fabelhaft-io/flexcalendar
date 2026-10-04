@@ -31,6 +31,7 @@ infra/                  compose files, Caddyfile, deploy scripts
 docs/                   unchanged
 ```
 - Accept: the tree exists with a README per top-level directory that says what belongs there and names its owning epic.
+- Notes: `apps/web/` and `packages/crypto-ts/` stay README-only until Phase 5 (ADR 0003).
 
 ### E02-R02 · Toolchain pinning   `agent`
 Toolchain versions MUST be pinned: `.nvmrc`/`package.json#engines`, `pnpm` via corepack, `.fvmrc` or `pubspec` SDK constraints, `composer.json` platform, and a Gradle wrapper with a JDK version.
@@ -58,6 +59,7 @@ GitHub Actions MUST run `make verify` on every PR, with path filters per compone
 ### E02-R07 · OpenAPI-first contract   `agent`
 `spec/openapi.yaml` MUST be the API contract. The TS client, the Dart `dio` client and the Fastify route schemas are generated from it or validated against it.
 - Accept: CI fails when the generated clients are stale (`make gen && git diff --exit-code`).
+- Notes: the Dart client is needed from Phase 3; the TS client can wait until Phase 5.
 
 ### E02-R08 · Conventions doc   `agent`
 `CONTRIBUTING.md` MUST record branch naming, commit style, the `06` agent working agreement, and how to add an ADR.
