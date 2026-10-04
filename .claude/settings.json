@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**/.env.example)",
+      "Edit(**/.env.example)"
+    ],
+    "deny": [
+      "Read(**/secrets/**)",
+      "Read(**/credentials/**)",
+      "Read(**/.ssh/**)",
+      "Edit(**/secrets/**)",
+      "Edit(**/credentials/**)",
+      "Edit(**/.ssh/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; if [ -z \"$f\" ]; then exit 0; fi; base=$(basename \"$f\"); if [[ \"$base\" == .env* && \"$base\" != \".env.example\" ]]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: only .env.example may be read or edited; other .env* files can contain secrets.\"}}'; fi; }"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // empty' | { read -r cmd; if [ -z \"$cmd\" ]; then exit 0; fi; matches=$(printf '%s' \"$cmd\" | grep -oE '\\.env[A-Za-z0-9_.-]*'); bad=0; for m in $matches; do if [ \"$m\" != \".env.example\" ]; then bad=1; fi; done; if [ \"$bad\" = \"1\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: Bash commands may not reference .env* files (secrets) other than .env.example.\"}}'; fi; }"
+          }
+        ]
+      }
+    ]
+  }
+}
