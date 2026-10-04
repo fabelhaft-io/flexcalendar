@@ -19,8 +19,8 @@ win — fix this file.
 
 ## Branch naming
 
-Work is sliced into requirements, one per epic, named `E<nn>-R<nn>` (for
-example `E02-R08`).
+Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
+`E<nn>-R<nn>` (for example `E02-R08`); an epic holds several of them.
 
 - **One requirement per branch.** Cut it from `main`:
 
@@ -40,6 +40,12 @@ example `E02-R08`).
   from `main`, for every later run of that requirement — review findings are
   not moved to a `fix/...` branch. The harness never pushes, opens a PR or
   merges; see [`agent-team/README.md`](agent-team/README.md).
+- **Who opens and merges a PR.** The reviewer records the findings in
+  [`docs/reviews/<ID>.md`](docs/reviews/) on the branch. A `BLOCKED` verdict
+  goes back to the implementer on that same branch, for at most two fix
+  cycles; after a `PASS` the reviewer pushes the branch and opens the PR.
+  **Only a human merges**, and an `agent+review` PR additionally needs human
+  approval (rule 7).
 
 ## Commit style
 
@@ -53,8 +59,6 @@ D-07 for Private calendars.
 
 Verified: corepack pnpm -C server/api test and lint both exit 0;
 12 tests pass.
-
-Refs: E05-R03
 
 Agent-Run: implementer
 Agent-Run-Number: 1
@@ -75,18 +79,21 @@ Agent-Status: DONE
   (with the commands and their results). Keep it honest: a check you did not
   run is not claimed. A one-line commit is fine for an obvious change; the
   body is required when the reason is not self-evident.
-- **Footers**: after a blank line, `Key: value` — `Refs: <ID>`,
-  `Closes: #<pr-or-issue>`, `Co-Authored-By: Name <email>` when someone else
-  co-authored. Signed-off-by is not required. Never write event content
-  (`SUMMARY`, `DESCRIPTION`, `LOCATION`, attendees, envelope bytes) into a
-  commit message: commit messages end up in logs and in review tooling
-  (INV-01, INV-07).
+- **Footers**: after a blank line, `Key: value` — `Closes: #<pr-or-issue>`,
+  `Co-Authored-By: Name <email>` when someone else co-authored. Signed-off-by
+  is not required. Never write event content (`SUMMARY`, `DESCRIPTION`,
+  `LOCATION`, attendees, envelope bytes) into a commit message: commit
+  messages end up in logs and in review tooling. This is the "no event content
+  in logs" rule in
+  [`agent-team/src/prompts/guardrails.md`](agent-team/src/prompts/guardrails.md),
+  made checkable for the API by [E05-R10](docs/epics/E05-api-core.md).
 - **Agent turns** are committed by the harness, never by the agent: an agent's
   shell cannot `git commit`. The harness takes the implementer's summary
   verbatim as the body and appends `Agent-Run`, `Agent-Run-Number`,
   `Agent-Model` and `Agent-Status` trailers, with a subject of
   `E<nn>-R<nn>: implementer run <n> (<STATUS>)`. A commit made after a review
-  reads like `E02-R01: review 1 findings (BLOCKED)`.
+  reads like `E<nn>-R<nn>: review <n> (<VERDICT>)`, for example
+  `E02-R02: review 1 (BLOCKED)`.
 - **Never bypass the checks**: no `--no-verify` (or `-n`), no skipped or
   amended-out hooks, no `git push --force` to a shared branch. If a hook
   fails, fix the cause.
@@ -147,9 +154,9 @@ changes the system, both change in the same PR (rule 6).
    that ADR or a new ADR that supersedes it.
 2. **Copy the template**
    [`docs/adr/0000-template.md`](docs/adr/0000-template.md) to
-   `docs/adr/NNNN-kebab-title.md`, with the next free number and a short
-   kebab-case title. ADR numbers are separate from the `docs/NN-topic.md`
-   sequence; with 0001–0004 taken, the next one is `0005`.
+   `docs/adr/NNNN-kebab-title.md`, with the next free number in `docs/adr/`
+   and a short kebab-case title. ADR numbers are separate from the
+   `docs/NN-topic.md` sequence.
 3. **Fill it in** — `Status` (`Proposed`; a human sets `Accepted`, or a later
    ADR supersedes it), `Date`, `Relates to`, then `Context` (the requirement,
    the constraints, what is hard and what is negotiable, and how it touches
