@@ -1,8 +1,8 @@
 {
-  "name": "bread-sheet-agent-team",
+  "name": "calendar-flex-agent-team",
   "version": "0.1.0",
   "private": true,
-  "description": "Standalone Mastra orchestrator for BreadSheet's agentic dev team (Harness B) — see docs/architecture/agent-dev-team.md.",
+  "description": "Mastra orchestrator that runs one implementer agent per calendar-flex requirement (docs/epics/) in a sandboxed worktree; a human-side reviewer reviews.",
   "type": "module",
   "scripts": {
     "dev-team": "tsx src/cli.ts",

@@ -1,105 +1,67 @@
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-// Computed once per coordinator run (plain filesystem/PATH checks, no LLM call) and handed to
-// every agent as a fact block in its system prompt — this is what stops "is there an Android
-// SDK, is Maestro installed, is there network to Google's repo" from being rediscovered via a
-// dozen tool calls on every single run. See docs/architecture/agent-dev-team.md's "Known
-// environment" section for the rationale and the staleness tradeoff.
+// Computed once per coordinator run (PATH checks and `--version` calls on the host, no LLM call)
+// and handed to every agent as a fact block in its system prompt, so "is there PHP, can I run
+// podman" isn't rediscovered with a dozen tool calls on every run.
 
-function commandExists(bin: string): boolean {
-  try {
-    execFileSync('which', [bin], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function exists(p: string): boolean {
-  try {
-    return fs.existsSync(p);
-  } catch {
-    return false;
-  }
-}
-
-function safeReaddir(dir: string): string[] {
-  try {
-    return fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-}
-
-function findAndroidSdkRoot(): string | null {
-  const candidates = [
-    process.env.ANDROID_HOME,
-    process.env.ANDROID_SDK_ROOT,
-    path.join(os.homedir(), 'Android', 'Sdk'),
-  ].filter((p): p is string => !!p);
-  return candidates.find(exists) ?? null;
-}
-
-function findAvds(): string[] {
-  const avdDir = path.join(os.homedir(), '.android', 'avd');
-  return safeReaddir(avdDir).filter((name) => name.endsWith('.avd'));
-}
-
-function hasSdkManager(androidSdkRoot: string | null): boolean {
-  if (!androidSdkRoot) return false;
-  const cmdlineToolsDir = path.join(androidSdkRoot, 'cmdline-tools');
-  return safeReaddir(cmdlineToolsDir).some((dir) =>
-    exists(path.join(cmdlineToolsDir, dir, 'bin', 'sdkmanager')),
-  );
+function version(bin: string, args: string[] = ['--version']): string | null {
+  // spawnSync rather than execFileSync: `java -version` prints to stderr and exits 0.
+  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 15000 });
+  if (r.error || r.status !== 0) return null;
+  return `${r.stdout}\n${r.stderr}`.split('\n').find((l) => l.trim())?.trim() ?? '';
 }
 
 export interface EnvironmentFacts {
-  androidSdkRoot: string | null;
-  hasAdb: boolean;
-  hasEmulatorBinary: boolean;
-  avds: string[];
-  hasSdkManager: boolean;
-  hasMaestro: boolean;
-  hasJava: boolean;
-  hasDocker: boolean;
+  node: string;
+  corepack: string | null;
+  java: string | null;
+  plantuml: string | null;
+  podman: string | null;
+  php: string | null;
+  composer: string | null;
+  flutter: string | null;
+  make: string | null;
 }
 
 export function probeEnvironment(): EnvironmentFacts {
-  const androidSdkRoot = findAndroidSdkRoot();
   return {
-    androidSdkRoot,
-    hasAdb: !!androidSdkRoot && exists(path.join(androidSdkRoot, 'platform-tools', 'adb')),
-    hasEmulatorBinary: !!androidSdkRoot && exists(path.join(androidSdkRoot, 'emulator', 'emulator')),
-    avds: findAvds(),
-    hasSdkManager: hasSdkManager(androidSdkRoot),
-    hasMaestro: commandExists('maestro') || exists(path.join(os.homedir(), '.maestro', 'bin', 'maestro')),
-    hasJava: commandExists('java'),
-    hasDocker: commandExists('docker'),
+    node: process.version,
+    corepack: version('corepack'),
+    java: version('java', ['-version']),
+    plantuml: version('plantuml', ['-version']),
+    podman: version('podman'),
+    php: version('php'),
+    composer: version('composer'),
+    flutter: version('flutter'),
+    make: version('make'),
   };
 }
 
 export function formatEnvironmentFacts(facts: EnvironmentFacts): string {
+  const or = (v: string | null, missing: string) => v ?? missing;
   const lines = [
-    `Android SDK root: ${facts.androidSdkRoot ?? 'not found'}`,
-    `adb binary: ${facts.hasAdb ? 'present' : 'not found'}`,
-    `emulator binary: ${facts.hasEmulatorBinary ? 'present' : 'not found'}`,
-    `Configured AVDs: ${facts.avds.length ? facts.avds.join(', ') : 'none'}`,
-    `sdkmanager (only needed to install a *new* platform/system image): ${facts.hasSdkManager ? 'present' : 'not found'}`,
-    `Maestro CLI: ${facts.hasMaestro ? 'present' : 'not found'}`,
-    `Java: ${facts.hasJava ? 'present' : 'not found — required to run the Android emulator/tooling'}`,
-    `Docker: ${facts.hasDocker ? 'present' : 'not found'}`,
-    // ANDROID_HOME/ANDROID_SDK_ROOT are frequently unset even when the SDK is installed at the
-    // default location (~/Android/Sdk) — androidSdkRoot above already accounts for that, but a
-    // script invoked without the env var set still needs to export it or pass an explicit path.
+    `Node: ${facts.node} (nvm install, mounted read-only). npm is available.`,
+    `corepack: ${or(facts.corepack, 'not found')}. pnpm is NOT on PATH: run it as \`corepack pnpm <args>\` ` +
+      '(`corepack enable` would need to write into the read-only Node install). Its download is cached ' +
+      'across runs in the sandbox cache, so the first call may take a few seconds and later ones are fast.',
+    `Java: ${or(facts.java, 'not found')}. Gradle wrappers download into a cached GRADLE_USER_HOME.`,
+    `plantuml: ${or(facts.plantuml, 'not found')}.`,
+    `make: ${or(facts.make, 'not found')}.`,
+    `PHP: ${or(facts.php, 'not installed on this machine')}. Composer: ${or(facts.composer, 'not installed on this machine')}. ` +
+      'On the host, PHP and Composer only run in containers, and containers are not available to you (next line). ' +
+      'Write PHP carefully, and list every PHP check you could not run under openQuestions.',
+    `Podman: ${or(facts.podman, 'not found')} on the host, but NOT usable from your sandbox: rootless podman ` +
+      'cannot start under bwrap, and the Podman socket is deliberately not mounted. Do not try `podman`, ' +
+      '`podman compose`, `docker` or `make dev`. Anything that needs the local stack (integration tests, ' +
+      '`make dev`, `make verify`) is run by the human-side reviewer outside the sandbox; say which commands ' +
+      'they should run in openQuestions.',
+    `Flutter/Dart: ${or(facts.flutter, 'not installed on this machine')}.`,
+    'Network: available (package registries work). SSH, the production server and DNS are off-limits.',
   ];
   return [
-    'Known environment (computed once by the coordinator via direct filesystem/PATH checks ' +
-      'before you started — not a guess, but a point-in-time snapshot taken moments ago. Trust ' +
-      'it; only re-verify with one targeted check if a decision critically depends on something ' +
-      "here, since it can go stale between runs. Don't re-derive this with a broad sweep.):",
+    'Known environment (computed by the coordinator moments before you started — trust it; only ' +
+      're-verify with one targeted check if a decision critically depends on it. Do not re-derive it ' +
+      'with a broad sweep.):',
     ...lines.map((l) => `- ${l}`),
   ].join('\n');
 }

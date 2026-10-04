@@ -1,27 +1,44 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
-import { findTicket, type Ticket } from './lib/tickets.js';
-import { ensureWorktree, getChangedFiles, commitFiles, pushBranch, createPullRequest } from './lib/worktree.js';
+import { findRequirement, branchSlug, resolveSpecDocs, extractH2Section, type Requirement } from './lib/requirements.js';
+import {
+  ensureWorktree,
+  getChangedFiles,
+  getUncommittedFiles,
+  quarantineFiles,
+  commitFiles,
+  readImplementerRuns,
+  recordImplementerRun,
+} from './lib/worktree.js';
 import { logAgentProgress } from './lib/progress.js';
 import { probeEnvironment, formatEnvironmentFacts } from './lib/environment.js';
-import { createFrontendAgent } from './agents/frontend-agent.js';
-import { createBackendAgent } from './agents/backend-agent.js';
+import { createImplementerAgent } from './agents/implementer-agent.js';
 import { createReviewerAgent } from './agents/reviewer-agent.js';
 import {
   implementerHandoffSchema,
   reviewerHandoffSchema,
-  findOutOfPillarFiles,
-  filterCommittableImplementerFiles,
-  filterCommittableReviewerFiles,
+  partitionByScope,
   type ImplementerHandoff,
   type ReviewerHandoff,
-  type InvokedPillars,
 } from './lib/handoff.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** The first attempt plus two fix cycles (`06` working agreement, guardrails "Stopping conditions"). */
 const MAX_FIX_CYCLES = 2;
-const MAX_STEPS = 100;
-const MAX_PRIOR_FINDINGS_CHARS = 6000;
+const MAX_IMPLEMENTER_RUNS = 1 + MAX_FIX_CYCLES;
+const MAX_STEPS = 150;
+const MAX_FINDINGS_CHARS = 12000;
+const MAX_SPEC_DOC_CHARS = 90000;
+
+export interface CoordinatorOptions {
+  requirementId: string;
+  writablePaths: string[];
+  withReviewer: boolean;
+  force: boolean;
+}
 
 export interface CoordinatorResult {
   ok: boolean;
@@ -32,307 +49,266 @@ function log(message: string): void {
   console.log(`[coordinator] ${message}`);
 }
 
-/**
- * Best-effort heuristic, same as the Claude Code coordinator skill: when genuinely
- * unsure, run both implementers rather than guess wrong and silently skip a pillar.
- */
-function detectPillars(ticket: Ticket): InvokedPillars {
-  const text = `${ticket.heading}\n${ticket.body}`.toLowerCase();
-  const mentionsFrontend = /bread-sheet-app|frontend|screen|ui\b|expo/.test(text);
-  const mentionsBackend = /server\/|backend|endpoint|api\b|prisma|controller|service/.test(text);
-  if (!mentionsFrontend && !mentionsBackend) return { frontend: true, backend: true };
-  return { frontend: mentionsFrontend, backend: mentionsBackend };
-}
-
-function formatOpenQuestions(questions: string[]): string {
-  return questions.length
-    ? questions.map((q, i) => `${i + 1}. ${q}`).join('\n')
-    : '(reviewer marked BLOCKED without listing specific open questions)';
-}
-
-/**
- * A prior top-level `npm run dev-team` invocation may have already left a findings doc on
- * this ticket's branch (this is exactly what happened running P9-003 across several separate
- * process runs) — read it once so the first prompt of *this* run can hand it straight to the
- * implementer instead of leaving it to rediscover "what's blocking this" via a broad sweep.
- */
-function readPriorFindings(worktreePath: string, ticketId: string): string | null {
-  const findingsPath = path.join(worktreePath, 'docs', `${ticketId}-findings.md`);
+function readIfExists(file: string, maxChars: number): string | null {
   try {
-    const content = fs.readFileSync(findingsPath, 'utf8');
-    return content.length > MAX_PRIOR_FINDINGS_CHARS
-      ? `${content.slice(0, MAX_PRIOR_FINDINGS_CHARS)}\n…(truncated)`
-      : content;
+    const content = fs.readFileSync(file, 'utf8');
+    return content.length > maxChars ? `${content.slice(0, maxChars)}\n…(truncated)` : content;
   } catch {
     return null;
   }
 }
 
-function commitMessageFromHandoffs(ticketId: string, handoffs: ImplementerHandoff[]): string {
-  const summaries = handoffs.map((h) => h.summary.trim()).filter(Boolean);
-  return `${ticketId}: ${summaries.join(' ')}`.slice(0, 2000);
+/** The `| D-xx | …` rows of `06` for every decision the requirement or its epic cites. */
+function citedDecisions(backlog: string, requirement: Requirement): string {
+  const ids = new Set(`${requirement.body}\n${requirement.epicContext}`.match(/D-\d{2}/g) ?? []);
+  if (ids.size === 0) return '';
+  const header = /^\| ID \| Decision .*\n\|[-| ]+\|$/m.exec(backlog)?.[0] ?? '';
+  const rows = backlog.split('\n').filter((l) => [...ids].some((id) => l.startsWith(`| ${id} |`)));
+  return rows.length ? `${header}\n${rows.join('\n')}` : '';
 }
 
-/**
- * Mastra's default `errorStrategy` for `structuredOutput` is `'strict'`: if the model's final
- * turn fails schema validation (seen live against `deepseek-v4-flash` — an empty/malformed
- * final message, not a budget issue), it calls `abort()` and `out.object` **rejects**, which
- * used to propagate uncaught past `runCoordinator` to the CLI's top-level `.catch` and kill the
- * whole run — including the reviewer's already-written findings doc/PR fields, discarded with
- * no commit. `errorStrategy: 'fallback'` + a schema-shaped `fallbackValue` makes Mastra emit
- * this handoff instead of aborting, so `out.object` resolves like any other cycle. These are
- * passed to every `structuredOutput` option below; see `resolveImplementerHandoff`/
- * `resolveReviewerHandoff` for the other (non-overlapping) failure mode this doesn't cover.
- */
-function implementerSchemaFailureFallback(role: string): ImplementerHandoff {
+export function buildRequirementPrompt(worktreePath: string, requirement: Requirement, writablePaths: string[]): string {
+  const backlog = fs.readFileSync(path.join(worktreePath, 'docs', '06-implementation-backlog.md'), 'utf8');
+  const sections: string[] = [
+    `# Requirement ${requirement.id}\n\n### ${requirement.heading}\n${requirement.body}`,
+    `## Writable paths for this run\n\n${writablePaths.map((p) => `- \`${p}\``).join('\n')}`,
+    `## Epic context (${requirement.epicPath})\n\n${requirement.epicContext}`,
+    extractH2Section(backlog, 'Agent working agreement') ?? '',
+    extractH2Section(backlog, 'Global invariants') ?? '',
+  ];
+  const decisions = citedDecisions(backlog, requirement);
+  if (decisions) sections.push(`## Decisions cited (all Pinned; from docs/06-implementation-backlog.md)\n\n${decisions}`);
+
+  const specDocs = resolveSpecDocs(worktreePath, requirement.specRow);
+  let budget = MAX_SPEC_DOC_CHARS;
+  const inlined: string[] = [];
+  const listedOnly: string[] = [];
+  for (const doc of specDocs) {
+    const text = fs.readFileSync(path.join(worktreePath, doc), 'utf8');
+    if (text.length <= budget) {
+      inlined.push(`### ${doc}\n\n${text}`);
+      budget -= text.length;
+    } else {
+      listedOnly.push(doc);
+    }
+  }
+  sections.push(
+    `## Spec docs named by the epic (Spec row: ${requirement.specRow})\n\n` +
+      (inlined.length ? `${inlined.join('\n\n---\n\n')}\n\n` : '') +
+      (listedOnly.length ? `Not inlined (size budget); read them yourself: ${listedOnly.join(', ')}\n` : '') +
+      'CLAUDE.md and the rest of docs/ are in the worktree if you need more.',
+  );
+  return sections.filter(Boolean).join('\n\n---\n\n');
+}
+
+function implementerFallback(reason: string, question: string): ImplementerHandoff {
   return {
     status: 'BLOCKED',
     filesChanged: [],
-    testResults: { typecheck: 'not_run', lint: 'not_run', unitTests: 'not_run' },
-    summary: `${role} implementer's final turn failed structured-output schema validation.`,
-    openQuestions: [
-      `The ${role} implementer's model (see AGENT_MODEL_${role.toUpperCase()}) returned a final ` +
-        'turn Mastra could not validate against the handoff schema — a model/provider quirk, not ' +
-        'a budget issue. Check the log\'s "Error in agent stream" line for the raw error. Whatever ' +
-        'the implementer wrote to disk this cycle is still there uncommitted; re-run the cycle, or ' +
-        'switch models if it recurs.',
-    ],
+    testResults: { format: 'not_run', lint: 'not_run', typecheck: 'not_run', unitTests: 'not_run' },
+    commandsRun: [],
+    summary: reason,
+    openQuestions: [question],
   };
 }
 
-function reviewerSchemaFailureFallback(): ReviewerHandoff {
-  return {
-    status: 'BLOCKED',
-    findingsDocPath: "(none — reviewer's structured handoff failed schema validation)",
-    prTitle: '',
-    prBody: '',
-    testMatrix: {
-      serverTypecheck: 'not_run',
-      serverTests: 'not_run',
-      appTypecheck: 'not_run',
-      appLint: 'not_run',
-      appTests: 'not_run',
-      e2eTests: 'not_run',
-    },
-    openQuestions: [
-      'The reviewer\'s model (see AGENT_MODEL_REVIEWER) returned a final turn Mastra could not ' +
-        'validate against the handoff schema — a model/provider quirk, not a budget issue. Check ' +
-        'the log\'s "Error in agent stream" line for the raw error. Whatever findings doc it wrote ' +
-        'this cycle is still there uncommitted; re-run the cycle, or switch models if it recurs.',
-    ],
-  };
+const SCHEMA_FAILURE = implementerFallback(
+  "Implementer's final turn failed structured-output schema validation.",
+  'The implementer model returned a final turn Mastra could not validate against the handoff schema — ' +
+    'a model/provider quirk, not a budget issue. Check the log\'s "Error in agent stream" line. Whatever ' +
+    'it wrote to disk was still scope-filtered and committed; re-run, or switch models if it recurs.',
+);
+
+function reviewerFallback(findingsDocPath: string, question: string): ReviewerHandoff {
+  return { status: 'BLOCKED', findingsDocPath, checks: [], openQuestions: [question] };
 }
 
-/**
- * Mastra resolves `out.object` to `undefined` — not a rejection — when the agent's turn ends
- * (e.g. `maxSteps` exhausted) without ever emitting the structured handoff. That used to reach
- * `commitMessageFromHandoffs` as a bare `undefined` array entry and crash the whole coordinator
- * process on `h.summary` with no indication of which role or why. Whatever the agent wrote to
- * disk this cycle is still there uncommitted regardless — this synthesizes a BLOCKED handoff so
- * the normal review → fix-cycle path (or a human reading the log) sees an honest, specific
- * reason instead of a bare TypeError.
- */
-async function resolveImplementerHandoff(
-  role: string,
-  out: { object: Promise<ImplementerHandoff | undefined> },
-): Promise<ImplementerHandoff> {
+async function runImplementer(opts: {
+  model: string;
+  worktreePath: string;
+  repoRoot: string;
+  writablePaths: string[];
+  environmentFacts: string;
+  prompt: string;
+}): Promise<ImplementerHandoff> {
+  const agent = createImplementerAgent(opts);
+  const out = await agent.stream(opts.prompt, {
+    maxSteps: MAX_STEPS,
+    structuredOutput: { schema: implementerHandoffSchema, errorStrategy: 'fallback', fallbackValue: SCHEMA_FAILURE },
+  });
+  await logAgentProgress('implementer', out);
   const handoff = await out.object;
   if (handoff) return handoff;
-  log(`${role} implementer finished without a structured handoff — likely exhausted the ${MAX_STEPS}-step budget before its final turn`);
-  return {
-    status: 'BLOCKED',
-    filesChanged: [],
-    testResults: { typecheck: 'not_run', lint: 'not_run', unitTests: 'not_run' },
-    summary: `${role} implementer exhausted its ${MAX_STEPS}-step budget before producing a handoff.`,
-    openQuestions: [
-      `The ${role} implementer ran out of its ${MAX_STEPS}-step tool-call budget before finishing ` +
-        'and reporting a structured handoff. Check the log for redundant tool calls (e.g. ' +
-        're-probing environment facts already given in the prompt, or repeated retries of the ' +
-        'same verification) that ate the budget, then either trim those or raise MAX_STEPS.',
-    ],
-  };
+  log(`implementer finished without a structured handoff — likely exhausted its ${MAX_STEPS}-step budget`);
+  return implementerFallback(
+    `Implementer exhausted its ${MAX_STEPS}-step budget before producing a handoff.`,
+    `The implementer ran out of its ${MAX_STEPS}-step budget before reporting. Check the log for redundant ` +
+      'tool calls, then trim those or raise MAX_STEPS.',
+  );
 }
 
-/** Same undefined-object failure mode as resolveImplementerHandoff, for the reviewer's turn. */
-async function resolveReviewerHandoff(out: { object: Promise<ReviewerHandoff | undefined> }): Promise<ReviewerHandoff> {
-  const review = await out.object;
-  if (review) return review;
-  log(`reviewer finished without a structured handoff — likely exhausted the ${MAX_STEPS}-step budget before its final turn`);
-  return {
-    status: 'BLOCKED',
-    findingsDocPath: '(none — reviewer ran out of budget before writing one)',
-    prTitle: '',
-    prBody: '',
-    testMatrix: {
-      serverTypecheck: 'not_run',
-      serverTests: 'not_run',
-      appTypecheck: 'not_run',
-      appLint: 'not_run',
-      appTests: 'not_run',
-      e2eTests: 'not_run',
-    },
-    openQuestions: [
-      `The reviewer ran out of its ${MAX_STEPS}-step tool-call budget before finishing and ` +
-        'reporting a structured handoff. Check the log for what test matrix it had gotten ' +
-        'through, then either trim redundant steps or raise MAX_STEPS before retrying.',
-    ],
-  };
+/**
+ * After an implementer turn: commit in-scope changes, move out-of-scope ones out of the worktree.
+ * Returns what happened, for the run summary and the reviewer.
+ */
+function settleImplementerOutput(opts: {
+  worktreePath: string;
+  baseBranch: string;
+  requirement: Requirement;
+  writablePaths: string[];
+  handoff: ImplementerHandoff;
+  model: string;
+  run: number;
+}) {
+  const { worktreePath, requirement, writablePaths, handoff, run } = opts;
+  const { tracked, untracked } = getUncommittedFiles(worktreePath);
+  const { inScope, outOfScope } = partitionByScope([...tracked, ...untracked], writablePaths);
+
+  let quarantined: string[] = [];
+  let quarantineDir = '';
+  if (outOfScope.length) {
+    quarantineDir = path.join(__dirname, '..', 'runs', requirement.id, `run-${run}`, 'out-of-scope');
+    quarantined = quarantineFiles(worktreePath, outOfScope, quarantineDir);
+    log(`moved ${quarantined.length} out-of-scope file(s) to ${quarantineDir}: ${quarantined.join(', ')}`);
+  }
+
+  const message =
+    `${requirement.id}: implementer run ${run} (${handoff.status})\n\n` +
+    `${handoff.summary.trim() || '(no summary)'}`.slice(0, 4000) +
+    `\n\nAgent-Run: implementer\nAgent-Run-Number: ${run}\nAgent-Model: ${opts.model}\nAgent-Status: ${handoff.status}`;
+  const committed = commitFiles(worktreePath, inScope, message);
+  log(committed ? `committed ${inScope.length} in-scope file(s)` : 'no in-scope changes to commit this run');
+  return { committed, inScope, quarantined, quarantineDir };
 }
 
-export async function runCoordinator(ticketId: string): Promise<CoordinatorResult> {
+export async function runCoordinator(options: CoordinatorOptions): Promise<CoordinatorResult> {
   const config = loadConfig();
-  const ticket = findTicket(config.repoRoot, ticketId);
-  const worktree = ensureWorktree(config.repoRoot, ticketId, config.baseBranch);
+  const { writablePaths } = options;
+  const requirement = findRequirement(config.repoRoot, options.requirementId);
+  log(`requirement ${requirement.id} · ${requirement.title} [${requirement.executor}]`);
+  log(`epic ${requirement.epicId} status: ${requirement.epicStatus}`);
+
+  const worktree = ensureWorktree(config.repoRoot, requirement.id, branchSlug(requirement), config.baseBranch);
+  const dirty = getUncommittedFiles(worktree.path);
+  if (dirty.tracked.length || dirty.untracked.length) {
+    throw new Error(
+      `Worktree ${worktree.path} has uncommitted changes (${[...dirty.tracked, ...dirty.untracked].join(', ')}). ` +
+        'Commit or remove them first, so this run starts from a known state.',
+    );
+  }
+  log(`worktree ${worktree.path} on ${worktree.branch}; writable: ${writablePaths.join(', ')}`);
+
   const environmentFacts = formatEnvironmentFacts(probeEnvironment());
+  const findingsDocPath = `docs/reviews/${requirement.id}.md`;
+  const basePrompt = buildRequirementPrompt(worktree.path, requirement, writablePaths);
 
-  const pillars = detectPillars(ticket);
-  log(`ticket ${ticket.id}, pillars=${JSON.stringify(pillars)}, worktree=${worktree.path}`);
-
-  const ticketPrompt = `Ticket: ${ticket.heading}\n\n${ticket.body}`;
-  const priorFindings = readPriorFindings(worktree.path, ticketId);
-  if (priorFindings) log('found a findings doc from a prior run — seeding it into the first prompt');
-
-  let fixCycles = 0;
-  let lastOpenQuestions = '';
+  let feedback: string | null = null;
+  const priorFindings = readIfExists(path.join(worktree.path, findingsDocPath), MAX_FINDINGS_CHARS);
+  if (priorFindings) {
+    log(`found ${findingsDocPath} — seeding it into the prompt`);
+    feedback =
+      `## Review findings from the previous attempt (${findingsDocPath})\n\n` +
+      'Fix everything this review asks for, and only that. It is the reviewer\'s verdict on the code ' +
+      `already on this branch.\n\n${priorFindings}`;
+  }
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const implementerHandoffs: ImplementerHandoff[] = [];
-    const implementerRuns: Promise<void>[] = [];
-    const prompt =
-      fixCycles === 0
-        ? priorFindings
-          ? `${ticketPrompt}\n\nThis worktree already has a findings doc from an earlier run — ` +
-            `read it before doing any broad exploration, it likely already answers "what's ` +
-            `blocking this":\n\n${priorFindings}`
-          : ticketPrompt
-        : `${ticketPrompt}\n\nReviewer found this BLOCKED last pass — address these open questions:\n${lastOpenQuestions}`;
-
-    if (pillars.frontend) {
-      const frontend = createFrontendAgent({
-        model: config.frontendModel,
-        worktreePath: worktree.path,
-        repoRoot: config.repoRoot,
-        environmentFacts,
-      });
-      implementerRuns.push(
-        frontend
-          .stream(prompt, {
-            maxSteps: MAX_STEPS,
-            structuredOutput: {
-              schema: implementerHandoffSchema,
-              errorStrategy: 'fallback',
-              fallbackValue: implementerSchemaFailureFallback('frontend'),
-            },
-          })
-          .then(async (out) => {
-            await logAgentProgress('frontend', out);
-            implementerHandoffs.push(await resolveImplementerHandoff('frontend', out));
-          }),
-      );
+    const priorRuns = readImplementerRuns(worktree.path);
+    if (priorRuns >= MAX_IMPLEMENTER_RUNS && !options.force) {
+      return {
+        ok: false,
+        summary:
+          `${requirement.id}: ${priorRuns} implementer runs already (first attempt + ${MAX_FIX_CYCLES} fix cycles). ` +
+          `Stopping: hand ${worktree.branch} and ${findingsDocPath} back to the human.`,
+      };
     }
-    if (pillars.backend) {
-      const backend = createBackendAgent({
-        model: config.backendModel,
-        worktreePath: worktree.path,
-        repoRoot: config.repoRoot,
-        environmentFacts,
-      });
-      implementerRuns.push(
-        backend
-          .stream(prompt, {
-            maxSteps: MAX_STEPS,
-            structuredOutput: {
-              schema: implementerHandoffSchema,
-              errorStrategy: 'fallback',
-              fallbackValue: implementerSchemaFailureFallback('backend'),
-            },
-          })
-          .then(async (out) => {
-            await logAgentProgress('backend', out);
-            implementerHandoffs.push(await resolveImplementerHandoff('backend', out));
-          }),
-      );
+    const run = priorRuns + 1;
+    recordImplementerRun(worktree.path, run);
+    log(`implementer run ${run}/${MAX_IMPLEMENTER_RUNS}`);
+
+    const prompt = feedback ? `${basePrompt}\n\n---\n\n${feedback}` : basePrompt;
+    const handoff = await runImplementer({
+      model: config.implementerModel,
+      worktreePath: worktree.path,
+      repoRoot: config.repoRoot,
+      writablePaths,
+      environmentFacts,
+      prompt,
+    });
+    const settled = settleImplementerOutput({
+      worktreePath: worktree.path,
+      baseBranch: config.baseBranch,
+      requirement,
+      writablePaths,
+      handoff,
+      model: config.implementerModel,
+      run,
+    });
+
+    const report = [
+      `${requirement.id}: implementer run ${run} reported ${handoff.status}.`,
+      `Branch: ${worktree.branch}`,
+      `Worktree: ${worktree.path}`,
+      `Committed: ${settled.committed ? settled.inScope.join(', ') : '(nothing)'}`,
+      settled.quarantined.length
+        ? `Out of scope, moved to ${settled.quarantineDir}: ${settled.quarantined.join(', ')}`
+        : 'Out of scope: none',
+      `Changed vs ${config.baseBranch}: ${getChangedFiles(worktree.path, config.baseBranch).length} file(s)`,
+      `Handoff:\n${JSON.stringify(handoff, null, 2)}`,
+    ].join('\n');
+
+    if (!options.withReviewer) {
+      return { ok: handoff.status === 'DONE', summary: `${report}\n\nNext: review it and write ${findingsDocPath}.` };
     }
-
-    await Promise.all(implementerRuns);
-
-    // Objective cross-check against the model's own self-reported filesChanged — see
-    // findOutOfPillarFiles's doc comment for why this doesn't just trust the handoff.
-    const changedAfterImplementers = getChangedFiles(worktree.path, config.baseBranch);
-    const outOfPillar = findOutOfPillarFiles(changedAfterImplementers, pillars);
-    if (outOfPillar.length) log(`scope check flagged out-of-pillar files (will not be committed): ${outOfPillar.join(', ')}`);
-    const scopeWarning = outOfPillar.length
-      ? `\n\nCOORDINATOR SCOPE CHECK: these changed files fall outside every pillar invoked for ` +
-        `this ticket (${JSON.stringify(pillars)}) — confirm they're actually in scope before ` +
-        `passing this review: ${outOfPillar.join(', ')}`
-      : '';
-
-    // The coordinator, not the agent, owns every commit — see filterCommittableImplementerFiles's
-    // doc comment for why this (not just OS sandboxing) is what actually closes the
-    // out-of-scope-write gap. Agents have no git write access at all now (see sandbox.ts).
-    const committable = filterCommittableImplementerFiles(changedAfterImplementers, pillars);
-    const committed = commitFiles(worktree.path, committable, commitMessageFromHandoffs(ticket.id, implementerHandoffs));
-    log(committed ? `committed implementer changes: ${committable.join(', ')}` : 'no committable implementer changes this cycle');
 
     const reviewer = createReviewerAgent({
-      model: config.reviewerModel,
+      model: config.reviewerModel(),
       worktreePath: worktree.path,
       repoRoot: config.repoRoot,
       baseBranch: config.baseBranch,
+      findingsDocPath,
       environmentFacts,
     });
-    const reviewOutput = await reviewer.stream(
-      `Review ticket ${ticket.id} in worktree ${worktree.path} on branch ${worktree.branch} ` +
-        `(base branch: ${config.baseBranch}).\n\n${ticketPrompt}${scopeWarning}`,
+    const scopeNote = settled.quarantined.length
+      ? `\n\nCOORDINATOR SCOPE CHECK: the implementer also changed these out-of-scope files; they were moved out ` +
+        `of the worktree and are not on the branch: ${settled.quarantined.join(', ')}`
+      : '';
+    const reviewOut = await reviewer.stream(
+      `Review requirement ${requirement.id} in ${worktree.path} on ${worktree.branch} (base ${config.baseBranch}). ` +
+        `Write your findings to ${findingsDocPath}.\n\n${basePrompt}${scopeNote}`,
       {
         maxSteps: MAX_STEPS,
         structuredOutput: {
           schema: reviewerHandoffSchema,
           errorStrategy: 'fallback',
-          fallbackValue: reviewerSchemaFailureFallback(),
+          fallbackValue: reviewerFallback(findingsDocPath, "The reviewer's final turn failed schema validation."),
         },
       },
     );
-    await logAgentProgress('reviewer', reviewOutput);
-    const review: ReviewerHandoff = await resolveReviewerHandoff(reviewOutput);
+    await logAgentProgress('reviewer', reviewOut);
+    const review =
+      (await reviewOut.object) ?? reviewerFallback(findingsDocPath, `The reviewer exhausted its ${MAX_STEPS}-step budget.`);
 
-    // Same principle for the reviewer's own writes (findings doc, FEATURES.md checkboxes) —
-    // it can produce them via its file tools (still hook-restricted to docs/+FEATURES.md), but
-    // the coordinator is what turns them into a real commit.
-    const changedAfterReview = getChangedFiles(worktree.path, config.baseBranch);
-    const reviewCommittable = filterCommittableReviewerFiles(changedAfterReview);
-    const reviewMessage = `${ticket.id}: record review findings (${review.status})`;
-    const reviewCommitted = commitFiles(worktree.path, reviewCommittable, reviewMessage);
-    log(reviewCommitted ? `committed reviewer changes: ${reviewCommittable.join(', ')}` : 'no committable reviewer changes this cycle');
+    const reviewChanges = getUncommittedFiles(worktree.path);
+    const reviewFiles = [...reviewChanges.tracked, ...reviewChanges.untracked];
+    const strays = reviewFiles.filter((f) => f !== findingsDocPath);
+    if (strays.length) quarantineFiles(worktree.path, strays, path.join(__dirname, '..', 'runs', requirement.id, `review-${run}`));
+    commitFiles(
+      worktree.path,
+      reviewFiles.filter((f) => f === findingsDocPath),
+      `${requirement.id}: record review findings (${review.status})\n\nAgent-Run: reviewer`,
+    );
 
     if (review.status === 'PASS') {
-      log(`review passed — pushing ${worktree.branch} and opening a PR against ${config.baseBranch}`);
-      pushBranch(worktree.path, worktree.branch);
-      const prUrl = createPullRequest(worktree.path, {
-        base: config.baseBranch,
-        head: worktree.branch,
-        title: review.prTitle,
-        body: review.prBody,
-      });
-      log(`PR opened: ${prUrl}`);
       return {
         ok: true,
-        summary: `Ticket ${ticket.id}: reviewer passed.\nFindings: ${review.findingsDocPath}\nPR: ${prUrl}`,
+        summary: `${report}\n\nMastra reviewer: PASS (${findingsDocPath}). Not pushed: the human-side review still applies.`,
       };
     }
-
-    lastOpenQuestions = formatOpenQuestions(review.openQuestions);
-    fixCycles += 1;
-    if (fixCycles > MAX_FIX_CYCLES) {
-      return {
-        ok: false,
-        summary:
-          `Ticket ${ticket.id}: still BLOCKED after ${MAX_FIX_CYCLES} fix cycles. Branch ` +
-          `${worktree.branch} and its findings doc (${review.findingsDocPath}) are left in ` +
-          `place for manual pickup.\n\nOpen questions:\n${lastOpenQuestions}`,
-      };
-    }
-    log(`BLOCKED — starting fix cycle ${fixCycles}/${MAX_FIX_CYCLES}`);
+    feedback =
+      `## Reviewer found this BLOCKED last pass — address these:\n` +
+      review.openQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n');
+    log(`reviewer: BLOCKED`);
   }
 }

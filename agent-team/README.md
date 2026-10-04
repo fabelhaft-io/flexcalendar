@@ -1,75 +1,92 @@
 # agent-team
 
-Standalone Mastra-based orchestrator for BreadSheet's agentic dev team (Harness B). It runs
-outside any Claude Code session and implements the same frontend/backend/reviewer contract as
-the Claude Code harness (`/dev-team <TICKET-ID>`).
+A Mastra-based orchestrator that hands one calendar-flex requirement (`E<nn>-R<nn>` in
+`docs/epics/`) to an implementer agent inside a sandboxed git worktree. By default it stops after
+the implementer: a human-side reviewer runs the stack-dependent checks, writes
+`docs/reviews/<ID>.md`, and decides whether the branch goes back for a fix or becomes a PR. It
+never pushes, never opens PRs and never merges.
 
-This README covers setup and day-to-day running. For the shared contract, the architecture
-(sandboxing, coordinator-owned git, typed handoff), and how this harness compares to Harness A,
-see [`docs/architecture/agent-dev-team.md`](../docs/architecture/agent-dev-team.md).
+The rules the agents follow are in [`src/prompts/guardrails.md`](src/prompts/guardrails.md). The
+spec is `docs/06-implementation-backlog.md` (working agreement, `D-*`, `INV-*`) and `docs/epics/`.
 
 ## Setup
 
 ```sh
 cd agent-team
 npm install
-cp .env.example .env   # fill in AGENT_MODEL + the matching provider API key
+cp .env.example .env   # set AGENT_MODEL and the matching provider API key
 ```
 
-`.env.example` documents each variable, but at minimum you need:
+- `AGENT_MODEL` (or `AGENT_MODEL_IMPLEMENTER` / `AGENT_MODEL_REVIEWER`): a Mastra model-router id,
+  `<provider>/<model-id>`, e.g. `deepseek/deepseek-flash`. Use the id the provider lists today; a
+  wrong model name within a valid provider only shows up as a live API error.
+- The API key for that provider: `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+  Only the coordinator process reads it; agent shell commands run with a minimal environment.
+- `REPO_ROOT` (default: `agent-team/..`) and `BASE_BRANCH` (default: `main`).
 
-- `AGENT_MODEL` (or the per-role `AGENT_MODEL_FRONTEND`/`_BACKEND`/`_REVIEWER` overrides) — a
-  Mastra model-router id, `<provider>/<model-id>` (e.g. `anthropic/claude-sonnet-5`).
-- The API key matching that provider prefix — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
-  `DEEPSEEK_API_KEY`.
+Requires Linux with `bwrap` for the sandbox. Elsewhere the harness warns and runs shell commands
+unsandboxed.
 
-There are no defaults for any of these — `src/config.ts` fails fast at startup if a role's
-model or the matching provider key isn't set (same "fail fast, no inline env defaults"
-convention as `server/.env`).
-
-Two more variables you generally won't need to touch:
-
-- `REPO_ROOT` — path to the bread-sheet checkout this orchestrator operates on. Defaults to the
-  parent of this directory (`agent-team/..`).
-- `BASE_BRANCH` — defaults to `main`. Override for a dry run against a branch that hasn't
-  merged to `main` yet (the worktree needs `agent-team/` and the target ticket to actually
-  exist on whatever it's branched from).
-
-## Run a ticket
+## Run a requirement
 
 ```sh
-npm run dev-team -- <TICKET-ID>
+npm run dev-team -- <REQUIREMENT-ID> --paths <prefix>[,<prefix>...] [--with-reviewer] [--force]
 ```
 
-`<TICKET-ID>` must exist as a `### [TICKET-...]` heading in `FEATURES.md`. This creates an
-isolated git worktree, runs the relevant implementer(s), then the reviewer, and on a `PASS`
-pushes the branch and opens a PR against `main`.
+- `--paths` lists what the implementer may write, repo-relative. A trailing `/` grants a
+  directory tree (`server/caldav/`), anything else exactly one file (`Makefile`). `.git`,
+  `agent-team/`, `.claude/` and secrets files (`.env*` except `.env.example`, keys, certs) are
+  refused whatever you pass.
+- `--with-reviewer` additionally runs the Mastra reviewer agent, which may only write
+  `docs/reviews/<ID>.md`, with up to two in-process fix cycles. Off by default.
+- `--force` runs past the limit of the first attempt plus two fix cycles. Only a human decides
+  to use it.
 
-## Running in the background + tailing the log
+What a run does:
 
-A run typically takes several minutes (multiple agent turns across implementer(s) and
-reviewer), so it's usually more convenient to launch it in the background and tail the log
-rather than keep the shell attached:
+1. Finds `### <ID> · …` in `docs/epics/` and builds the prompt: the requirement, the writable
+   paths, the epic's header table and Goal, the `06` working agreement and `INV-*` table, the
+   rows of every `D-*` it cites, and the docs the epic's Spec row names.
+2. Creates or reuses the worktree `../calendar-flex-agent-<ID>` on `feat/<ID>-<slug>`, cut from
+   `BASE_BRANCH` and merged forward on reuse. It refuses a dirty worktree.
+3. If `docs/reviews/<ID>.md` exists in the worktree, adds it to the prompt as the list of
+   fixes to make.
+4. Runs the implementer, then commits the changes inside `--paths` itself, with the agent's
+   summary and `Agent-Run`/`Agent-Model` trailers. Changes outside `--paths` are moved to
+   `agent-team/runs/<ID>/run-<n>/out-of-scope/` (gitignored), so nothing is lost if `--paths` was
+   too narrow, and the worktree is restored.
+5. Prints the typed handoff: status, the commands the agent ran with exit codes, and the open
+   questions, including the stack-dependent checks the reviewer still has to run.
+
+Run it in the background and follow the log:
 
 ```sh
-cd agent-team
-npm run dev-team -- <TICKET-ID> > /tmp/<TICKET-ID>.log 2>&1 &
-tail -f /tmp/<TICKET-ID>.log
+npm run dev-team -- E02-R01 --paths server/,apps/,packages/,spec/,infra/ > /tmp/E02-R01.log 2>&1 &
+tail -f /tmp/E02-R01.log
 ```
 
-Every line is prefixed by which part of the system wrote it — `[coordinator]` for
-coordinator-side actions (worktree creation, commits, PR creation), `[frontend]`/`[backend]`/
-`[reviewer]` for each agent's own tool calls — so `tail -f` is enough to watch progress.
-`Ctrl+C` only stops the `tail`, not the background run. Check on or stop the run itself with
-the usual job-control tools (`jobs`, `wait %1`, `kill %1`) or `pgrep -f dev-team`.
+Lines are prefixed `[coordinator]`, `[implementer]` or `[reviewer]`.
 
-## Switching model / provider
+## The sandbox
 
-Moving the whole team to a different provider is changing `AGENT_MODEL` (or the three per-role
-variables) and adding the matching API key — no code change. `P9-003` has reached a genuine
-`PASS` on DeepSeek, and separately confirmed working end-to-end on Anthropic.
+Agent shell commands run under bubblewrap (`src/lib/sandbox.ts`):
 
-Mind the exact model-ID string each provider expects — e.g. DeepSeek wants lowercase
-hyphenated names like `deepseek-v4-flash`, not `DeepSeek-V4-Flash`. `config.ts`'s fail-fast
-only catches a bad provider *prefix*; a bad model name within a valid provider surfaces as a
-live API error instead.
+- The worktree is writable; the worktree's `.git` pointer and the main checkout's `.git` are
+  read-only, so `git status`/`diff`/`log` work and `add`/`commit` fail. Writes anywhere else
+  never reach the host disk.
+- The environment holds only `PATH`, a private `HOME` and cache variables. No API keys.
+- `~/.cache/calendar-flex-agent-team/` is the one host path bound read-write: the corepack, pnpm
+  store, npm and Gradle caches, so pnpm (`corepack pnpm …`) isn't downloaded on every run.
+- **No Podman.** Rootless `podman` cannot start under bwrap ("Error determining cgroups mode"),
+  and the user's Podman socket is deliberately not mounted, because socket access is a sandbox
+  escape. `/run/user/<uid>` must never be bound read-write: a failed rootless attempt deleted the
+  host's `pause.pid` through such a bind. Everything that needs the local stack (`make dev`,
+  integration tests, `make verify`) is run by the reviewer outside the sandbox.
+- The file tools are confined to the worktree, and their writes are checked against `--paths`.
+- Each shell command may run for up to 10 minutes.
+
+## Fix cycles
+
+Each requirement gets the first attempt plus two fix cycles. The coordinator counts implementer
+runs in the worktree's git dir (which agents cannot write) and refuses a fourth run unless
+`--force` is given. After that the branch and findings doc go back to the human.

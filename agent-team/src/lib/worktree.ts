@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 
 export interface Worktree {
@@ -12,7 +13,7 @@ function git(args: string[], cwd: string): string {
 
 function branchExists(repoRoot: string, branch: string): boolean {
   try {
-    git(['rev-parse', '--verify', '--quiet', branch], repoRoot);
+    git(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], repoRoot);
     return true;
   } catch {
     return false;
@@ -20,23 +21,20 @@ function branchExists(repoRoot: string, branch: string): boolean {
 }
 
 /**
- * Creates (or reuses, for a resumed BLOCKED run) the ticket's dedicated worktree on
- * branch `agent/<ticketId>` off `baseBranch` — the isolation boundary from the shared
- * contract in agent-team/src/prompts/guardrails.md.
- *
- * `baseBranch` defaults to `main` (see config.ts's BASE_BRANCH), which is correct once
- * this orchestrator itself has landed on `main`. Until then, point it at whichever
- * branch actually has agent-team/ + the ticket, or every spawned agent starts in a
- * worktree missing its own instructions.
+ * Creates (or reuses, for a resumed run) the requirement's worktree at
+ * `../calendar-flex-agent-<ID>` on branch `feat/<ID>-<slug>` off `baseBranch`.
  */
-export function ensureWorktree(repoRoot: string, ticketId: string, baseBranch: string): Worktree {
-  const branch = `agent/${ticketId}`;
-  const worktreePath = path.resolve(repoRoot, '..', `bread-sheet-agent-${ticketId}`);
+export function ensureWorktree(repoRoot: string, requirementId: string, branchName: string, baseBranch: string): Worktree {
+  const branch = `feat/${branchName}`;
+  const worktreePath = path.resolve(repoRoot, '..', `calendar-flex-agent-${requirementId}`);
 
   const existingWorktrees = git(['worktree', 'list', '--porcelain'], repoRoot);
-  if (existingWorktrees.includes(`worktree ${worktreePath}`)) {
+  if (existingWorktrees.includes(`worktree ${worktreePath}\n`)) {
     refreshFromBase(worktreePath, branch, baseBranch);
     return { path: worktreePath, branch };
+  }
+  if (fs.existsSync(worktreePath)) {
+    throw new Error(`${worktreePath} exists but is not a git worktree of ${repoRoot}; move it away first.`);
   }
 
   if (branchExists(repoRoot, branch)) {
@@ -45,31 +43,16 @@ export function ensureWorktree(repoRoot: string, ticketId: string, baseBranch: s
   } else {
     git(['worktree', 'add', worktreePath, '-b', branch, baseBranch], repoRoot);
   }
-
   return { path: worktreePath, branch };
 }
 
 /**
- * Brings a *reused* ticket branch — a resumed `BLOCKED` run — up to date with its base.
- *
- * Without this, a resumed run works against the repo as it stood when the branch was first
- * cut. That includes `agent-team/src/prompts/guardrails.md`, which Harness A's agents read
- * from the worktree by relative path, so a stale branch means agents following a superseded
- * contract. The timing makes it the likely case rather than an edge case: guardrail changes
- * tend to land right after a bad run, which is exactly when a `BLOCKED` branch is sitting
- * there waiting to be re-run. (Harness B reads guardrails from the launching checkout via
- * `__dirname`, so it isn't affected by that specific staleness — but a reused branch is
- * equally missing every other `main`-side fix since it was cut, which is the general case
- * this covers.)
- *
- * A conflict stops the run instead of handing an agent a conflicted tree to "resolve":
- * that's a human's call, and coordinator-owned git (see docs/architecture/agent-dev-team.md)
- * exists precisely so an agent never gets the opportunity.
+ * Brings a reused branch up to date with its base. A conflict stops the run instead of handing
+ * an agent a conflicted tree to "resolve": that's a human's call.
  */
 function refreshFromBase(worktreePath: string, branch: string, baseBranch: string): void {
   const behind = git(['rev-list', '--count', `${branch}..${baseBranch}`], worktreePath).trim();
   if (behind === '0') return;
-
   try {
     git(['merge', '--no-edit', baseBranch], worktreePath);
   } catch (err) {
@@ -79,63 +62,116 @@ function refreshFromBase(worktreePath: string, branch: string, baseBranch: strin
       // Nothing to abort — the merge refused to start (most often an unclean worktree).
     }
     throw new Error(
-      `Ticket branch ${branch} is ${behind} commit(s) behind ${baseBranch} and could not be ` +
-        `updated automatically:\n${(err as Error).message}\n` +
-        `Resolve it by hand in ${worktreePath} (merge or rebase ${baseBranch}, or delete the ` +
-        `worktree to start the ticket fresh), then re-run. Stopping rather than letting agents ` +
-        `work against a stale or conflicted tree.`
+      `Branch ${branch} is ${behind} commit(s) behind ${baseBranch} and could not be updated ` +
+        `automatically:\n${(err as Error).message}\nResolve it by hand in ${worktreePath}, then re-run.`,
     );
   }
 }
 
 /**
- * The objective (not model-reported) list of files changed on the ticket branch so far,
- * relative to the worktree root — used by handoff.ts's findOutOfPillarFiles to cross-check
- * an implementer's self-reported filesChanged against what actually happened on disk.
- * Includes uncommitted changes (git diff has no commit yet to compare when an agent hasn't
- * committed), so this is `diff <base>...HEAD` plus working-tree status, deduped.
+ * The objective (not model-reported) list of files changed on the branch so far, relative to
+ * the worktree root: `diff <base>...HEAD` plus working-tree status. `--untracked-files=all`
+ * matters: plain porcelain collapses a new directory to `server/`, which no file-level scope
+ * filter would ever match, so a whole new tree would silently go uncommitted.
  */
 export function getChangedFiles(worktreePath: string, baseBranch: string): string[] {
   const committed = git(['diff', '--name-only', `${baseBranch}...HEAD`], worktreePath)
     .split('\n')
     .filter(Boolean);
-  const uncommitted = git(['status', '--porcelain'], worktreePath)
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => line.slice(3).trim());
+  const uncommitted: string[] = [];
+  const entries = git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], worktreePath).split('\0');
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    const xy = entry.slice(0, 2);
+    uncommitted.push(entry.slice(3));
+    // Renames/copies carry the source path as the next NUL-separated field.
+    if (xy.includes('R') || xy.includes('C')) uncommitted.push(entries[++i]);
+  }
   return [...new Set([...committed, ...uncommitted])];
 }
 
+/** Files with uncommitted changes only (what a cleanup can still revert). */
+export function getUncommittedFiles(worktreePath: string): { tracked: string[]; untracked: string[] } {
+  const tracked: string[] = [];
+  const untracked: string[] = [];
+  const entries = git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], worktreePath).split('\0');
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    const xy = entry.slice(0, 2);
+    (xy === '??' ? untracked : tracked).push(entry.slice(3));
+    if (xy.includes('R') || xy.includes('C')) tracked.push(entries[++i]);
+  }
+  return { tracked, untracked };
+}
+
+function existsInHead(worktreePath: string, file: string): boolean {
+  try {
+    execFileSync('git', ['cat-file', '-e', `HEAD:${file}`], { cwd: worktreePath, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Stages and commits exactly `files` — nothing else, regardless of what else is sitting
- * uncommitted in the worktree. This is the enforcement point: agents no longer have git write
- * access at all (see sandbox.ts), so the coordinator is the only thing that can ever turn a
- * real, on-disk change into a real commit, and it only does so for files a caller has already
- * filtered through handoff.ts's filterCommittableImplementerFiles/filterCommittableReviewerFiles.
- * No-ops (returns false) if `files` is empty or nothing in it actually has a diff to stage.
+ * Moves out-of-scope, uncommitted agent output out of the worktree into `quarantineDir` (so
+ * nothing is lost if `--paths` was simply too narrow) and restores tracked files to HEAD.
+ * Only ever called with paths the scope filter rejected.
+ */
+export function quarantineFiles(worktreePath: string, files: string[], quarantineDir: string): string[] {
+  const { tracked, untracked } = getUncommittedFiles(worktreePath);
+  const moved: string[] = [];
+  for (const f of files) {
+    if (!tracked.includes(f) && !untracked.includes(f)) continue;
+    const src = path.join(worktreePath, f);
+    if (fs.existsSync(src)) {
+      const dest = path.join(quarantineDir, f);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+    // Drop any index entry and the file, then restore HEAD's version if HEAD has one. This also
+    // covers the new side of a staged rename, which is "tracked" but absent from HEAD.
+    git(['rm', '-q', '--cached', '--ignore-unmatch', '--', f], worktreePath);
+    fs.rmSync(src, { force: true });
+    if (existsInHead(worktreePath, f)) git(['checkout', 'HEAD', '--', f], worktreePath);
+    moved.push(f);
+  }
+  return moved;
+}
+
+/**
+ * Stages and commits exactly `files` — nothing else. Agents have no git write access (see
+ * sandbox.ts), so this is the only path from on-disk change to commit.
  */
 export function commitFiles(worktreePath: string, files: string[], message: string): boolean {
   if (files.length === 0) return false;
-  git(['add', '--', ...files], worktreePath);
+  git(['add', '-A', '--', ...files], worktreePath);
   const staged = git(['diff', '--cached', '--name-only'], worktreePath).trim();
   if (!staged) return false;
   git(['commit', '-m', message], worktreePath);
   return true;
 }
 
-export function pushBranch(worktreePath: string, branch: string): void {
-  git(['push', '-u', 'origin', branch], worktreePath);
+/**
+ * Run bookkeeping lives in the worktree's own git dir, which the sandbox mounts read-only, so
+ * only the coordinator can change it. Counting commits instead would miss runs that produced
+ * nothing committable.
+ */
+function runCounterPath(worktreePath: string): string {
+  const gitDir = git(['rev-parse', '--absolute-git-dir'], worktreePath).trim();
+  return path.join(gitDir, 'calendar-flex-agent-runs');
 }
 
-/** Runs `gh pr create` and returns the PR URL gh prints to stdout on success. */
-export function createPullRequest(
-  worktreePath: string,
-  opts: { base: string; head: string; title: string; body: string },
-): string {
-  const output = execFileSync(
-    'gh',
-    ['pr', 'create', '--base', opts.base, '--head', opts.head, '--title', opts.title, '--body', opts.body],
-    { cwd: worktreePath, encoding: 'utf8' },
-  );
-  return output.trim().split('\n').pop() ?? '';
+export function readImplementerRuns(worktreePath: string): number {
+  try {
+    return Number.parseInt(fs.readFileSync(runCounterPath(worktreePath), 'utf8'), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function recordImplementerRun(worktreePath: string, runs: number): void {
+  fs.writeFileSync(runCounterPath(worktreePath), `${runs}\n`);
 }

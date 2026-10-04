@@ -17,7 +17,7 @@ function resolveModel(roleEnvVar: string): string {
   if (!value) {
     throw new Error(
       `${roleEnvVar} (or the AGENT_MODEL fallback) is not set. Set it to a Mastra model-router ` +
-        `id such as "anthropic/claude-sonnet-5" — see agent-team/.env.example. This orchestrator ` +
+        `id such as "deepseek/deepseek-flash" — see agent-team/.env.example. This orchestrator ` +
         `does not default to a model silently.`,
     );
   }
@@ -39,19 +39,16 @@ function resolveModel(roleEnvVar: string): string {
 export interface AgentTeamConfig {
   repoRoot: string;
   baseBranch: string;
-  frontendModel: string;
-  backendModel: string;
-  reviewerModel: string;
+  implementerModel: string;
+  /** Only resolved (and only required) when the opt-in Mastra reviewer runs. */
+  reviewerModel: () => string;
 }
 
 export function loadConfig(): AgentTeamConfig {
   return {
     repoRoot: process.env.REPO_ROOT ?? path.resolve(__dirname, '..', '..'),
-    // Defaults to `main`, which is correct once this orchestrator has landed there.
-    // Override for a dry run against a branch that hasn't merged yet.
     baseBranch: process.env.BASE_BRANCH ?? 'main',
-    frontendModel: resolveModel('AGENT_MODEL_FRONTEND'),
-    backendModel: resolveModel('AGENT_MODEL_BACKEND'),
-    reviewerModel: resolveModel('AGENT_MODEL_REVIEWER'),
+    implementerModel: resolveModel('AGENT_MODEL_IMPLEMENTER'),
+    reviewerModel: () => resolveModel('AGENT_MODEL_REVIEWER'),
   };
 }
