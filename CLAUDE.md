@@ -133,7 +133,7 @@ These affect architecture; check the docs / ask before building anything that as
 
 - Documentation in `docs/` is numbered (`NN-topic.md`) and the numbering is the intended reading order. When adding a new top-level design doc, continue the sequence.
 - The README is intentionally minimal right now; the docs are the spec until code lands.
-- License: MIT (see `LICENSE`).
+- License: Apache-2.0 (see `LICENSE`).
 
 ## What Claude should usually do
 

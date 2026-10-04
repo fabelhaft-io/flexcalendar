@@ -81,7 +81,7 @@ The Dart iCalendar ecosystem is much thinner than `ical.js` / `iCal4j`, and recu
 The `CalendarContract` sync adapter (see [`03-native-calendar-integration.md`](03-native-calendar-integration.md)) lives in the Flutter project's `android/` module and is written in **plain Kotlin, with no Dart in its sync path**:
 
 - The system runs sync adapters in the background, often with no Flutter engine alive. Spinning up a headless engine inside `onPerformSync` is fragile and slow; don't.
-- Consequence: the adapter has its own CalDAV + iCalendar stack. Use [`iCal4j`](https://github.com/ical4j/ical4j) for parsing and recurrence, and [`dav4jvm`](https://github.com/bitfireAT/dav4jvm) (MPL-2.0, from the DAVx⁵ authors) for WebDAV/CalDAV. DAVx⁵'s own sync code is GPLv3 — read it for reference, but check licence compatibility before copying anything into this MIT project.
+- Consequence: the adapter has its own CalDAV + iCalendar stack. Use [`iCal4j`](https://github.com/ical4j/ical4j) for parsing and recurrence, and [`dav4jvm`](https://github.com/bitfireAT/dav4jvm) (MPL-2.0, from the DAVx⁵ authors) for WebDAV/CalDAV. DAVx⁵'s own sync code is GPLv3 — read it for reference, but check licence compatibility before copying anything into this Apache-2.0 project.
 - The adapter talks **CalDAV directly** (it is effectively our own DAVx⁵), while the Flutter UI talks to the REST API. Both end up on the same CalDAV collections, so they cannot diverge.
 - The Flutter side only needs a Pigeon channel to register/remove the system account on sign-in/sign-out and to trigger a manual sync.
 

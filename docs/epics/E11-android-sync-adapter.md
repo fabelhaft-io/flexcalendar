@@ -15,7 +15,7 @@ Shared calendars show up in Samsung and Google Calendar without DAVx⁵. This is
 ## Constraints
 
 - Plain Kotlin in the Flutter project's `android/`, with **no Dart in the sync path**, and no headless Flutter engine in `onPerformSync`.
-- `dav4jvm` (MPL-2.0) for WebDAV/CalDAV and `iCal4j` for parsing and recurrence. DAVx⁵ code is GPLv3: read it, but **don't copy it** into this MIT project.
+- `dav4jvm` (MPL-2.0) for WebDAV/CalDAV and `iCal4j` for parsing and recurrence. DAVx⁵ code is GPLv3: read it, but **don't copy it** into this Apache-2.0 project.
 - **Shared calendars only.** The adapter uses a device app password (D-04), so INV-08 already hides Private calendars from it.
 
 ## Requirements
