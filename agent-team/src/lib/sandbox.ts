@@ -105,8 +105,31 @@ function sandboxEnv(cacheDir: string): NodeJS.ProcessEnv {
   };
 }
 
-/** Per-command default. Mastra's own default (30 s) kills a cold `pnpm install`. */
+/**
+ * Hard per-command limit, enforced by `enforceCommandTimeout`. `LocalSandbox` declares a
+ * `timeout` option documented as "default: 30000", but @mastra/core 1.64 never reads it: the only
+ * timeout is the optional `timeout` the model passes to `execute_command`, so without this a
+ * command the model starts without one (a hung server, a prompt waiting on stdin) never ends.
+ */
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Applies `limitMs` to every command the sandbox runs: as the default when the model passes no
+ * timeout, and as a cap when it passes a longer one (or 0, which Mastra treats as "none").
+ * Wraps the process manager's `spawn`, which both paths go through: the foreground
+ * `executeCommand` Mastra installs on the sandbox, and background `processes.spawn`.
+ */
+export function enforceCommandTimeout(sandbox: LocalSandbox, limitMs = COMMAND_TIMEOUT_MS): LocalSandbox {
+  const pm = sandbox.processes;
+  if (!pm) throw new Error('LocalSandbox has no process manager; cannot enforce the command timeout.');
+  const spawn = pm.spawn.bind(pm);
+  pm.spawn = (command, options = {}) => {
+    const requested = options.timeout;
+    const timeout = requested && requested > 0 ? Math.min(requested, limitMs) : limitMs;
+    return spawn(command, { ...options, timeout });
+  };
+  return sandbox;
+}
 
 let loggedFallback = false;
 
@@ -138,12 +161,11 @@ export function hardenedSandbox(opts: {
           `agent-team/src/lib/sandbox.ts.`,
       );
     }
-    return new LocalSandbox({ workingDirectory: opts.workspacePath, env, timeout: COMMAND_TIMEOUT_MS });
+    return enforceCommandTimeout(new LocalSandbox({ workingDirectory: opts.workspacePath, env }));
   }
-  return new LocalSandbox({
+  return enforceCommandTimeout(new LocalSandbox({
     workingDirectory: opts.workspacePath,
     env,
-    timeout: COMMAND_TIMEOUT_MS,
     isolation: 'bwrap',
     nativeSandbox: {
       bwrapArgs: buildBwrapArgsWithDev({
@@ -153,5 +175,5 @@ export function hardenedSandbox(opts: {
         readWritePaths: [cacheDir],
       }),
     },
-  });
+  }));
 }
