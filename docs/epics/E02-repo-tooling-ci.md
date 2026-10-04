@@ -38,7 +38,7 @@ Toolchain versions MUST be pinned: `.nvmrc`/`package.json#engines`, `pnpm` via c
 - Accept: a clean checkout builds with the pinned tools only; CI uses the same pins.
 
 ### E02-R03 · Local stack   `agent`
-`infra/dev/compose.yaml` MUST start Postgres, the CalDAV service, the API, Keycloak (per D-03), Mailpit for SMTP, and Caddy with a local CA, with seed data from E01-R02.
+`infra/dev/compose.yaml` MUST start Postgres, the CalDAV service, the API, Zitadel with its login UI container (per D-03, ADR 0004), Mailpit for SMTP, and Caddy with a local CA, with seed data from E01-R02.
 - Accept: `make dev` brings the stack up; `make seed` loads fixtures; CalDAV answers at `https://caldav.localhost`, the API at `https://api.localhost`.
 
 ### E02-R04 · Single verification entry point   `agent`

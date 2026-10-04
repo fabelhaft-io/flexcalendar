@@ -26,9 +26,9 @@ Goal: the production server our own app needs: CalDAV store, API, auth and backu
 - [ ] Postgres schema: users, calendars (with `mode`), members, invitations, user keys, calendar keys, the sidecar envelope table keyed `(calendar_id, uid, recurrence_id)`, device-link rendezvous and an append-only audit log.
 - [ ] **`mode` accepts only `private` until Phase 4.** The API still requires `mode` explicitly on create; there is no default.
 - [ ] **`UID`s and every other generated ID are random UUIDv4.** Content-derived IDs leak titles and can never be changed without breaking every client's sync state.
-- [ ] Keycloak (OIDC + PKCE). Accounts are created by invitation or by an admin, and self-registration is off. Password reset is admin-assisted until SMTP lands in Phase 4. It restores sign-in, never keys (D-17).
+- [ ] Zitadel (OIDC + PKCE, JWT access tokens; ADR 0004). Accounts are created by invitation or by an admin, and self-registration is off. Password reset is admin-assisted until SMTP lands in Phase 4. It restores sign-in, never keys (D-17).
 - [ ] Node + TypeScript + Fastify API: calendars, event CRUD with ETag preconditions, windowed occurrence expansion with `ical.js`, delta endpoint over `sync-collection`, IANA timezone handling, problem+json errors, and no event content in logs.
-- [ ] Ops: one VPS plus a staging twin, Caddy with automatic TLS, Postgres WAL archiving plus nightly base backups off-site, uptime and backup-age alerts, and a runbook. **Backups start here** (D-11). Backups of Private calendars are ciphertext: they protect against our failures, not against a user losing their keys.
+- [ ] Ops: one 4 GB VPS plus a staging environment created on demand (ADR 0004), Caddy with automatic TLS, Postgres WAL archiving plus nightly base backups to two off-site object stores at two providers, uptime and backup-age alerts, and a runbook. **Backups start here** (D-11). Backups of Private calendars are ciphertext: they protect against our failures, not against a user losing their keys.
 
 **Not in this phase:** device app passwords, Apple calendar-sharing extensions, iMIP/SMTP, `.ics` feeds, `.mobileconfig`, push. All of them are Phase 4.
 

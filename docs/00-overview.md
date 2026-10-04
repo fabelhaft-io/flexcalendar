@@ -54,3 +54,4 @@ Architecture decisions and their rejected alternatives live in [`adr/`](adr/), n
 - [`adr/0001-calendar-privacy-modes.md`](adr/0001-calendar-privacy-modes.md) — Private (E2EE, our apps), Shared (unencrypted, stock apps), Published (read-only feed). *Accepted.*
 - [`adr/0002-flutter-for-mobile-clients.md`](adr/0002-flutter-for-mobile-clients.md) — One Flutter codebase for iOS and Android; the Android sync adapter stays native Kotlin. *Accepted.*
 - [`adr/0003-android-first-private-first-delivery.md`](adr/0003-android-first-private-first-delivery.md) — The first release is the Android app with Private (E2EE) calendars only; Shared mode and stock apps follow in Phase 4. *Accepted.*
+- [`adr/0004-single-4gb-host.md`](adr/0004-single-4gb-host.md) — Zitadel replaces Keycloak so the stack runs on one 4 GB host; staging on demand, no Hetzner server backups, pay-per-GB backup stores. About €22–25/month until M1. *Accepted.*

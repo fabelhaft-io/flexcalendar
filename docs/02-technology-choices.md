@@ -29,7 +29,7 @@ The API is thin — auth, push fan-out, sharing UI, a REST/GraphQL facade over C
 - For CalDAV client work from the backend, use [`tsdav`](https://github.com/natelindev/tsdav), or raw `fetch` where it lacks a report.
 - iCalendar parsing/generation: [`ical.js`](https://github.com/kewisch/ical.js) (Mozilla; the de facto standard) on the Node side.
 - Push: Firebase Admin SDK (FCM) for both mobile platforms — FCM relays to APNs on iOS, matching the Flutter app's single `firebase_messaging` integration. Talking to APNs directly over HTTP/2 remains an option if we ever want to drop Google from the iOS push path. Web clients get updates over WebSocket/SSE.
-- Auth (pinned, D-03): self-hosted **Keycloak** (OIDC + PKCE, TOTP and WebAuthn). The API reaches CalDAV as the user through an HMAC-signed delegated principal on an internal listener (D-05), so it stores no CalDAV passwords. Stock apps use per-device app passwords (D-04, Phase 4). The login password never feeds a key derivation (D-17).
+- Auth (pinned, D-03, amended by [ADR 0004](adr/0004-single-4gb-host.md)): self-hosted **Zitadel** (OIDC + PKCE, TOTP and WebAuthn), with JWT access tokens the API validates against JWKS. The API reaches CalDAV as the user through an HMAC-signed delegated principal on an internal listener (D-05), so it stores no CalDAV passwords. Stock apps use per-device app passwords (D-04, Phase 4). The login password never feeds a key derivation (D-17).
 
 ## Web Client
 
@@ -56,7 +56,7 @@ Rationale and rejected alternatives are in [`adr/0002-flutter-for-mobile-clients
 | Timezones            | [`timezone`](https://pub.dev/packages/timezone) (IANA tz database)    | **Dart's `DateTime` only knows UTC and device-local.** All `TZID` arithmetic must go through `timezone`'s `TZDateTime`. See risk #3. |
 | Recurrence           | Expanded **server-side** by the API (`ical.js`); [`rrule`](https://pub.dev/packages/rrule) on the client only for previews and offline display | Keeps one recurrence engine as the authority (see below). |
 | iCalendar parsing    | [`enough_icalendar`](https://pub.dev/packages/enough_icalendar)       | Only needed for the offline cache and edits made offline. Treat as untrusted — round-trip tests required. |
-| Auth                 | [`flutter_appauth`](https://pub.dev/packages/flutter_appauth) (OIDC + PKCE), [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) for tokens | Against our Keycloak (D-03). |
+| Auth                 | [`flutter_appauth`](https://pub.dev/packages/flutter_appauth) (OIDC + PKCE), [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) for tokens | Against our Zitadel (D-03). |
 | Push                 | [`firebase_messaging`](https://pub.dev/packages/firebase_messaging)   | One API for FCM on Android and APNs on iOS (FCM relays to APNs). Send data-only "calendar X changed" pings; the client fetches the delta. Never put event content in the payload. |
 | Recovery kit         | [`pdf`](https://pub.dev/packages/pdf) + [`printing`](https://pub.dev/packages/printing), [`share_plus`](https://pub.dev/packages/share_plus) | On-device recovery sheet (print or PDF via the system file picker) and plain-text share. A sensitive clipboard copy needs a small Kotlin method (E14-R03). |
 | Background refresh   | [`workmanager`](https://pub.dev/packages/workmanager)                 | Periodic delta sync when push is missed. |
@@ -96,55 +96,58 @@ The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-priv
 
 ## Hosting
 
-- Pinned (D-10): a Hetzner VPS in the EU for the CalDAV service, API, Keycloak and Postgres, plus a staging twin. From Phase 7, an HSM-backed **AWS KMS** key in `eu-central-1` for Tier 1 escrow.
+- Pinned (D-10, amended by [ADR 0004](adr/0004-single-4gb-host.md)): one 4 GB Hetzner VPS in the EU for the CalDAV service, API, Zitadel and Postgres, plus a staging environment created on demand. From Phase 7, an HSM-backed **AWS KMS** key in `eu-central-1` for Tier 1 escrow.
 - TLS: Caddy or Traefik, automatic Let's Encrypt. iOS in particular is fussy about TLS — no self-signed certs without a profile.
 - The CalDAV server **must be reachable on the public internet on port 443** for stock apps to talk to it. This is a real constraint: no internal-only deployments unless you also ship a VPN profile.
 
 ### Sizing and cost
 
-Re-checked on 2026-10-04. On 15 June 2026 Hetzner repriced its cloud for new orders. The shared-vCPU CPX line rose about 2.4–2.75× (CPX22 from €7.99 to €19.49, CPX32 from €13.99 to €35.49). The cost-optimised CX and CAX lines are listed as "currently not available". OVH and Netcup raised VPS prices in 2026 as well, so this is a market-wide move driven by memory prices, not a reason to change provider. **D-10 stands; what changed is the budget.**
+Re-checked on 2026-10-04. On 15 June 2026 Hetzner repriced its cloud for new orders. The shared-vCPU CPX line rose about 2.4–2.75× (CPX22 from €7.99 to €19.49, CPX32 from €13.99 to €35.49). The cost-optimised CX and CAX lines are listed as "currently not available". OVH and Netcup raised VPS prices in 2026 as well, so this is a market-wide move driven by memory prices, not a reason to change provider.
 
-The whole stack fits on one 8 GB host: Keycloak needs about 1–1.5 GB, Postgres 1–2 GB, and the API and CalDAV service a few hundred MB each, plus Caddy and the monitoring agents. 4 GB is too tight with Keycloak, so use it for staging only. Every component has arm64 and amd64 images, so order whichever 8 GB line is available when E08-R01 is done.
+The whole stack fits on one 4 GB host (ADR 0004): Postgres about 1 GB, Zitadel's core and login UI together under 1 GB, and the API and CalDAV service a few hundred MB each, plus Caddy and the monitoring agents. That headroom is real but not large, so tune Postgres for the box (for example `shared_buffers` around 512 MB) and give every container a memory limit. Keycloak alone needed 1–1.5 GB and forced an 8 GB host; that is why ADR 0004 replaced it. Every component has arm64 and amd64 images, so order whichever 4 GB line is cheapest and available when E08-R01 is done. If the host runs short, resize it to 8 GB; that takes minutes.
 
 | Item | €/month (list price, excl. VAT, 2026-10-04) |
 |---|---|
-| Production, 8 GB (CPX32) | ~35.50 |
-| Hetzner server backups (+20 % of the server price) | ~7 |
-| Staging, 4 GB (CPX22) | ~19.50 |
-| 2 × primary IPv4 | 1 |
-| Hetzner Object Storage, backup repository 1 (1 TB included) | 6.49 |
-| Second EU object store, backup repository 2 (a few GB) | ~1–2 |
-| **Total until M1** | **~70** |
+| Production, 4 GB (CPX22) | ~19.50 |
+| Primary IPv4 | ~0.50 |
+| Backup repositories, two pay-per-GB providers, a few GB each | ~0.50–1 |
+| Staging, on demand (a few days of use a month) | ~1–3 |
+| Weekly throwaway restore-check instance, about an hour each | < 0.50 |
+| **Total until M1** | **~22–25** |
 
-- If CAX21 (€7.99) becomes orderable again, the total drops to about €25.
-- Hetzner bills a powered-off server, so staging is cheaper deleted than stopped. Because deploys are code (E08-R02), it can be deleted between test runs and recreated in minutes.
+- If a cheaper 4 GB line (for example CAX11) becomes orderable again, the total drops further.
+- **No Hetzner server backups.** They are disk images, never the data backup; recovery is a fresh VPS, a deploy and a pgBackRest restore, which is what the restore drill tests.
+- **Staging exists only while it's used.** Hetzner bills a powered-off server, so staging is created from code (`make staging-up`) for device tests, upgrade rehearsals and pre-deploy checks, and deleted afterwards (`make staging-down`). It never holds production data, so deleting it loses nothing.
 - Later additions are small. Phase 4 adds SES mail at cents per thousand messages. Use SES in `eu-central-1` rather than Postmark, since the AWS account exists for KMS anyway. Phase 7 adds the KMS key at about $1/month plus requests. FCM is free.
-- **People's time is the larger cost.** Budget 4–8 hours a month of routine operations: the quarterly Keycloak upgrade, Renovate PRs, OS patches, and reviewing restore checks. This does not include incidents.
+- **People's time is the larger cost.** Budget 4–8 hours a month of routine operations: the quarterly Zitadel upgrade, Renovate PRs, OS patches, and reviewing restore checks. This does not include incidents.
 
 Not chosen for now:
 - **Dedicated servers** (Hetzner auction, about €40–55 for 64 GB). They have no snapshots, a hardware fault means a manual rebuild, and the capacity is far beyond what we need.
 - **Managed Postgres.** It costs more, and it adds another vendor that holds plaintext Shared calendars from Phase 4 on.
 - **Kubernetes.**
 - **A standby replica before M5.** The 1-hour RTO is reachable from backups plus deploy-as-code. Revisit when open signup opens.
+- **Free tiers or a home server.** See ADR 0004 § Alternatives.
 
 ### Runtime layout
 
 - Docker Compose on the host, the same shape as the local stack (E02-R03). Images are built in CI and pinned by digest, and systemd keeps the stack running.
 - For the CalDAV service, consider [FrankenPHP](https://frankenphp.dev/) instead of nginx + php-fpm. It is a PHP app server built on Caddy, which we already run, and it now sits under the PHP Foundation. Use classic mode, not worker mode: SabreDAV was written for one request per process lifetime, and worker mode would first need an audit for state that leaks between requests.
-- **Keycloak is the component with the most upkeep.** Since 26.0 it ships four minor releases a year and has no LTS, so only the newest release gets security fixes. That means an upgrade every quarter, without exception. Keep upgrades routine: no custom SPIs, themes by CSS only, realm configuration as code, and staging before production (E08-R08).
+- **Zitadel is the component with the most upkeep.** It ships a major version about every quarter, each supported for roughly six months, and majors have broken things before: v4 split the login UI into its own container, and deploying only the core leaves login silently broken. Keep upgrades routine: no custom actions holding logic, branding by settings only, configuration as code (Terraform provider), and staging before production (E08-R08).
+- **Zitadel issues JWT access tokens** only if each app registration says so; some app types default to opaque tokens. Set the JWT type and request the project audience scope, so the API validates tokens locally against JWKS (E05-R01).
 
 ### Backups and recovery (D-11)
 
-All durable state is in **one Postgres cluster**: CalDAV objects, sidecar envelopes, metadata, the audit log and Keycloak's database. One consistent backup therefore captures everything. Keep it that way, with no durable state on local disk outside Postgres.
+All durable state is in **one Postgres cluster**: CalDAV objects, sidecar envelopes, metadata, the audit log and Zitadel's database. One consistent backup therefore captures everything. Keep it that way, with no durable state on local disk outside Postgres.
 
 - **Tool**: [pgBackRest](https://pgbackrest.org/), with WAL-G as an acceptable alternative.
   - Continuous WAL archiving with `archive_timeout = 60s` gives an RPO of about 1 minute against the 5-minute target.
   - Nightly backups, kept for 30 days.
   - Client-side encryption (repository cipher). The cipher key lives in the secret store, with an offline copy.
 - **Two repositories, at two providers:**
-  1. Hetzner Object Storage, in a different location from the server (for example, server in Falkenstein, bucket in Helsinki). Turn on Object Lock, with a lock period shorter than pgBackRest's retention so expiry still works.
-  2. A second EU object store (for example Backblaze B2 EU or Scaleway), with credentials that can write but not delete. This protects against a Hetzner account suspension, and against an attacker on the host deleting backups.
-- **Hetzner server backups** are crash-consistent disk images. They speed up a rebuild and are never the data backup.
+  1. A pay-per-GB EU object store, for example Scaleway Object Storage in Paris.
+  2. A second pay-per-GB EU object store at another provider, for example Backblaze B2 in Amsterdam.
+  - Both: Object Lock on, with a lock period shorter than pgBackRest's retention so expiry still works, and credentials on the host that can write but not delete. Neither is at Hetzner, so a Hetzner account suspension can't take the backups with the server, and an attacker on the host can't delete them. At our size (a few GB) both cost cents a month; Hetzner Object Storage's €6.49 minimum buys 1 TB we don't need (ADR 0004).
+- **No Hetzner server backups** (ADR 0004). They are crash-consistent disk images, never the data backup.
 - **State outside Postgres**: the secrets need their own backup in the secret store. These are the D-05 HMAC key, the Firebase service account, the APNs key, the DKIM key, the `.mobileconfig` signing certificate and the backup cipher key. Caddy's certificates can be regenerated.
 - **Restore verification**:
   - Weekly, automated: restore the latest backup into a throwaway instance, check it (`pg_amcheck`, row counts, a sample CalDAV `GET`) and destroy it.

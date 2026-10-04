@@ -26,7 +26,7 @@ System_Boundary(cf, "calendar-flex") {
 
   Boundary(vps, "VPS (Hetzner, EU)", "server is blind to Private content") {
     Container(caddy, "Reverse proxy", "Caddy", "TLS on 443. Public hosts: API, IdP and, from Phase 4, CalDAV for stock apps.")
-    Container(idp, "Identity provider", "Keycloak", "OIDC + PKCE; TOTP and WebAuthn second factor for escrow release.")
+    Container(idp, "Identity provider", "Zitadel (core + login UI)", "OIDC + PKCE; TOTP and WebAuthn second factor for escrow release.")
     Container(api, "API", "Node 24, TypeScript, Fastify, ical.js", "Event CRUD, occurrences, recurring-edit plans, envelopes, sharing, device credentials (Phase 4), .ics feeds and onboarding pages (Phase 4), SSE (Phase 5). Never decrypts.")
     Container(worker, "Change worker [Phase 4]", "Node 24, TypeScript", "Reads the change outbox, polls sync-collection every 30 s as a fallback, sends data-only pings.", $tags="later")
     Container(caldav, "CalDAV service", "PHP 8.4, SabreDAV 4.7", "Source of truth. Internal listener for the API; public listener for stock apps with device app passwords (Phase 4). Apple sharing, iMIP. Private collections invisible to stock-app credentials (INV-08).")

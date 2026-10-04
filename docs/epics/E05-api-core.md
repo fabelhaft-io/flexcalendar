@@ -17,6 +17,7 @@ A thin Fastify service that fronts CalDAV for our own clients. It owns auth, it 
 ### E05-R01 · OIDC bearer auth   `agent+review`
 Every endpoint except health MUST require an access token from the D-03 IdP, validated against its JWKS (issuer, audience, expiry, algorithm allow-list). The token's `sub` maps to a `users` row, created on first sight.
 - Accept: expired, wrong-audience and `alg:none` tokens → 401; JWKS rotation handled without restart.
+- Notes: Zitadel (ADR 0004) issues JWT access tokens only when the app registration sets the JWT token type, and puts the project ID in `aud` only when the client requests the project audience scope. Both are part of the Zitadel config as code (E08-R08); an opaque token reaching the API is a 401, never an introspection call.
 
 ### E05-R02 · CalDAV client adapter   `agent`
 All CalDAV access MUST go through one module built on `tsdav` (or raw `fetch` where `tsdav` lacks a report), authenticating with D-05 delegated identity. No other module talks to CalDAV.
