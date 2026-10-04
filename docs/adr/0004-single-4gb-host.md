@@ -41,7 +41,7 @@ Run production on **one 4 GB host** and replace Keycloak with **Zitadel**. Drop 
 - Native-app OIDC with PKCE for Flutter (`flutter_appauth`) and later the web app. Self-registration off. Accounts are created by an admin or by invitation, as in `04` Phase 1.
 - **Access tokens are JWTs.** Zitadel defaults some app types to opaque bearer tokens. The app registrations MUST set the JWT access-token type, so the API keeps validating locally against JWKS (E05-R01), and clients request the project audience scope so `aud` names the API.
 - Configuration as code with Zitadel's Terraform provider, applied on deploy (E08-R08). No custom actions that hold logic we'd have to migrate; branding by settings only.
-- License: AGPL-3.0 since v3. We run it unmodified as a separate service, so it places no obligation on our MIT code. If we ever patch it, the patch must be published.
+- License: AGPL-3.0 since v3. We run it unmodified as a separate service, so it places no obligation on our Apache-2.0 code. If we ever patch it, the patch must be published.
 
 Memory: the core service needs about 512 MB (vendor figure), and the login UI a few hundred MB more. That's roughly half of Keycloak's footprint, which is the headroom a 4 GB host needs.
 
