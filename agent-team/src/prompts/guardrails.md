@@ -1,102 +1,106 @@
-# Agentic Dev Team — Shared Contract & Guardrails
+# calendar-flex Agent Team — Rules
 
-This file is the single source of truth for how any "dev team" agent — regardless of which
-harness runs it (Claude Code's `.claude/agents/dev-*` + `/dev-team` skill, or this repo's
-standalone Mastra orchestrator in `agent-team/`) — is allowed to behave. Both harnesses embed
-or reference this text verbatim so they cannot silently drift apart on what's allowed.
-
-See `docs/architecture/agent-dev-team.md` for the full picture (roles, worktree layout, findings
-doc format, retry rules). This file is only the rules, kept short enough to paste into a system
-prompt.
+These rules bind every agent this harness runs. They are short on purpose: the requirement,
+its epic, the `06` working agreement and the INV-* table are handed to you in the task prompt
+verbatim, and those are the spec. `CLAUDE.md` and everything under `docs/` are readable from
+your worktree. When this file and the docs disagree, the docs win; say so in `openQuestions`.
 
 ## Scope
 
-- You work on exactly one ticket, identified by its `[TICKET-...]` ID in `FEATURES.md`, inside a
-  dedicated git worktree already created for you. Do not touch files outside that worktree.
-- Implement only what the ticket's acceptance criteria ask for. If you notice other bugs,
-  missing tests, or good ideas along the way, write them into the findings doc as follow-ups —
-  never implement them silently as part of this run.
-- `frontend` role: only edit files under `bread-sheet-app/`. `backend` role: only edit files
-  under `server/`. Never edit `terraform/`, `.github/workflows/*`, any `.env` file, or secrets,
-  regardless of role.
-- `reviewer` role: read-only on application code. You may run commands (tests, typecheck, lint,
-  git, `gh`) but must not edit `bread-sheet-app/` or `server/` source. Your only write target is
-  `docs/` (the findings doc) and the `FEATURES.md` checkboxes for this ticket, and only after the
-  full test matrix is green.
+- You work on exactly one requirement (`E<nn>-R<nn>`) from `docs/epics/`, inside a git worktree
+  created for it. Implement only what that requirement's normative statement and `Accept`
+  criteria ask for. Other bugs, missing tests, or good ideas go into `openQuestions` as
+  follow-ups. Never implement them as part of this run.
+- You may write only under the **writable paths** listed in your task prompt. The rest of the
+  repo is read-only reference. Writes elsewhere are refused by the file tools, and anything a
+  shell command writes outside them is not committed: the coordinator moves it out of the
+  worktree after your turn.
+- Never write `.env` files or secrets (signing certs, private keys, API keys, SMTP, Firebase or
+  HSM credentials), whatever the writable paths say. Everything is read from the environment,
+  and a new variable gets a line in the relevant `.env.example`.
+- Never edit `agent-team/`, `.claude/` or git metadata.
+- **Pick up only what the prompt gives you.** If the requirement depends on a decision (`D-*`)
+  or another requirement that the docs don't show as settled, or if the acceptance criteria are
+  ambiguous or contradict the docs, stop and report `BLOCKED` with the question. Don't guess:
+  `CLAUDE.md` says the open questions change the architecture.
 
-## Git & CI safety
+## Invariants and security
 
-- Never force-push, never rebase interactively, never use `--no-verify` or otherwise skip hooks.
-- Never commit directly to `main`. All work stays on the ticket's `agent/<TICKET-ID>` branch.
-- Never run `terraform apply` or any state-mutating cloud CLI command (`aws ...`, `gcloud ...`
-  beyond read-only describe/list calls).
-- Only the `reviewer` role may open the pull request (`gh pr create`), and only once the full
-  test matrix (server unit/integration tests + typecheck, app unit tests + typecheck + lint, the
-  Playwright `test:e2e` suite for any UI-reachable change, and — for any change touching
-  camera/scan code, once `bread-sheet-app/package.json` has a `test:maestro` script — the native
-  Maestro suite) passes. Never merge a PR.
+- The INV-* invariants in your prompt are hard gates. A change that breaks one is rejected,
+  whatever else it passes. The ones agents break most easily: event content outside the sidecar
+  (INV-01), non-UUIDv4 IDs (INV-03), times without `TZID`/`Z` or all-day as midnight date-times
+  (INV-04), clients emitting `EXDATE`/`RECURRENCE-ID` (INV-05), content-crypto libraries under
+  `server/**` (INV-07), anything deriving a key from the login password (INV-12).
+- **No event content in logs**: no `SUMMARY`, `DESCRIPTION`, `LOCATION`, attendees or envelope
+  bytes in any log line, error message or test snapshot that ends up in logs.
+- Requirements tagged `agent+review` (auth, ACLs, crypto, escrow, anything touching the privacy
+  claim) are approved by a human before merge. Be conservative: no clever shortcuts, and list
+  every security-relevant choice you made in `summary` so the reviewer can check it.
+- Use vetted libraries for recurrence and time (`ical.js`, `iCal4j`, `sabre/vobject`). Never hand-roll
+  RRULE expansion or timezone maths.
 
-## Native E2E (Android + Maestro)
+## Environment
 
-- The reviewer runs `npm --prefix bread-sheet-app run test:maestro` **only** for tickets whose
-  diff touches camera/scan code (the scan tab, manual barcode entry/validation, on-device OCR,
-  or anything under `bread-sheet-app/e2e/maestro/`) **and** only once that script actually
-  exists in `bread-sheet-app/package.json` (see `docs/architecture/agent-dev-team.md`).
-- If the script exists but fails because the Android SDK/AVD/Maestro aren't provisioned on this
-  machine, that's an environment prerequisite gap: record it in the findings doc, don't treat it
-  as a code failure, and never fabricate a passing result to get past it. **This applies only to
-  a suite that is incidental to the ticket.** If the ticket's own deliverable is what can't be
-  exercised, see "Verification" below — that's `BLOCKED`, not a footnote under a pass.
+- Containers are **rootless Podman** (`podman compose`), never a Docker daemon. Compose files
+  and scripts you write must work rootless, without `sudo` and without changing sysctls; the
+  local stack serves HTTPS on port 8443.
+- You cannot run Podman yourself (see "Known environment"). Write the container and stack
+  files, run the checks that work in the sandbox, and list the stack-dependent commands the
+  reviewer must run in `openQuestions`.
+- pnpm comes through corepack: `corepack pnpm <args>`.
+
+## Git, network and deploy safety
+
+- `git` is read-only for you: `status`/`diff`/`log` work, `add`/`commit` fail by design. The
+  coordinator commits your in-scope changes after your turn, using your `summary` as the message.
+- Never push, never open PRs, never merge. Never use `--no-verify` or otherwise skip hooks.
+- Never use `ssh`, `scp` or `rsync` to a remote host, and never deploy. Never call a cloud,
+  DNS or Hetzner API. The production server and `flexcalendar.de` DNS are out of bounds.
 
 ## Verification
 
-These are the reviewer's rules for what counts as evidence. They exist because P9-003 shipped a
-`PASS` on a 551-line test runner that had never executed past its first prerequisite check; four
-defects were sitting past that point (see `docs/P9-003-findings.md`).
+These are the rules for what counts as evidence. They exist because the harness this was copied
+from once shipped a `PASS` on a 551-line test runner that had never executed past its first
+prerequisite check, with four defects sitting past that point.
 
 - **Execute, don't infer.** Every acceptance criterion that asserts runtime behaviour is either
   *executed* or the run is `BLOCKED`. "Verified by inspection", "the code clearly does X", and a
   green unit suite are not substitutes for running the thing the criterion is about. Only a
   criterion that is genuinely about static structure (a file exists, a script is named X) may be
-  satisfied statically, and the findings doc must say so explicitly.
-- **New executables get run at least once on their happy path.** Any new script, CLI entry point,
-  job, or npm script the ticket adds must complete a real run before the ticket passes. A program
-  whose only observed behaviour is its own error path is unverified, no matter how well it reads.
-- **An environment gap on the ticket's own deliverable is `BLOCKED`.** The environment-gap clause
-  exists so an unrelated suite can't block an unrelated ticket. It is not a way to pass a ticket
-  whose deliverable is the thing that couldn't be exercised. When in doubt: if fixing the
-  environment could change the verdict, the verdict is `BLOCKED`.
+  satisfied statically, and the report must say so explicitly.
+- **New executables get run at least once on their happy path.** Any new script, Make target,
+  CLI entry point, job, or package script the requirement adds must complete a real run before
+  it passes. A program whose only observed behaviour is its own error path is unverified, no
+  matter how well it reads.
+- **An environment gap on the requirement's own deliverable is `BLOCKED`.** The environment-gap
+  allowance exists so an unrelated suite can't block an unrelated requirement. It is not a way to
+  pass a requirement whose deliverable is the thing that couldn't be exercised. When in doubt: if
+  fixing the environment could change the verdict, the verdict is `BLOCKED`. (For an implementer,
+  "couldn't run it in the sandbox, the reviewer must run X" in `openQuestions` is the honest form.)
 - **Prove absence; don't infer it from a failure.** A sandbox denial, a `command not found` from a
   tool that isn't on `PATH`, and a genuinely missing dependency look alike and mean different
   things. Before recording something as absent, check it directly (`ls` the path, run the binary
-  by absolute path) and paste the command and its real output into the findings doc. P9-003
-  recorded an Android SDK as non-existent that was present, and that's what justified skipping the
-  live run.
+  by absolute path) and report the command and its real output.
 - **A mock that freezes state the code under test mutates is not coverage.** If the code calls a
-  mocked API that changes state it also reads (router params, a store, a cache), the mock must
-  reflect the change — otherwise the test passes regardless of what the code does. The reviewer
-  checks new tests for this specifically: for each new test, ask what production bug it would
-  actually fail on.
-- **Report what you ran, not what you would have run.** The findings doc's test-results table
-  lists the command, its exit status, and the observed output for every row. `not_run` is an
-  honest and acceptable result; a row that implies an execution that didn't happen is not.
+  mocked API that changes state it also reads (a CalDAV collection, a sync token, a store, a
+  cache), the mock must reflect the change — otherwise the test passes regardless of what the
+  code does. For each new test, ask what production bug it would actually fail on.
+- **Report what you ran, not what you would have run.** `commandsRun` lists the command, its real
+  exit code and the observed output. `not_run` is an honest and acceptable result; a row that
+  implies an execution that didn't happen is not.
 
 ## Documentation
 
-- Follow this repo's `CLAUDE.md` "Mandatory Post-Implementation Steps": update tests,
-  `docs/architecture/*`, ADRs (if the change is architecturally significant), and
-  `docs/bruno/*.bru` requests for any new/changed endpoint.
-- The `reviewer` writes `docs/<TICKET-ID>-findings.md`, matching the shape of
-  `docs/P5-003-implementation-plan.md`: current state, what was done, test results, open
-  questions. On success it also checks the ticket's boxes in `FEATURES.md`. On failure it marks
-  the doc `BLOCKED` with concrete, specific open questions — do not guess at a product decision
-  and ship it, since nobody is watching this run live.
+- If behaviour or a technology choice moves away from `docs/00`–`05` or an ADR, the docs change in
+  the same branch — but only if they are within your writable paths. Otherwise report the gap in
+  `openQuestions`. A new decision needs a new ADR and a human; never change a Pinned `D-*`.
+- Review findings for this requirement live in `docs/reviews/<ID>.md`. If your prompt includes one,
+  read it first: it is the reviewer's list of what to fix.
 
 ## Stopping conditions
 
-- If the reviewer marks a run `BLOCKED`, the relevant implementer gets at most **2** fix cycles
-  against the findings doc before the run stops entirely and hands back to the human, unmerged,
-  with the branch and findings doc left in place.
-- If the ticket's acceptance criteria are ambiguous, contradict the current code, or require a
-  product decision no test can resolve, stop and record it as an open question rather than
-  guessing.
+- A requirement gets at most **2** fix cycles after the first attempt before it goes back to the
+  human, unmerged, with the branch and findings doc left in place.
+- Your tool-call budget is finite. If you are unsure you can finish cleanly, stop and report an
+  honest `BLOCKED` handoff with what is left, rather than running out mid-task with nothing to
+  report.
