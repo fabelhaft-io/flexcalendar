@@ -97,7 +97,11 @@ The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-priv
 ## Hosting
 
 - Pinned (D-10, amended by [ADR 0004](adr/0004-single-4gb-host.md)): one 4 GB Hetzner VPS in the EU for the CalDAV service, API, Zitadel and Postgres, plus a staging environment created on demand. From Phase 7, an HSM-backed **AWS KMS** key in `eu-central-1` for Tier 1 escrow.
-- TLS: Caddy or Traefik, automatic Let's Encrypt. iOS in particular is fussy about TLS — no self-signed certs without a profile.
+- TLS: Caddy, automatic certificates from **Let's Encrypt only**. iOS in particular is fussy about TLS — no self-signed certs without a profile.
+  - Domain `flexcalendar.de`, DNS at IONOS. Its CAA records allow only Let's Encrypt (`issue "letsencrypt.org"`) and forbid wildcard certificates (`issuewild ";"`).
+  - Caddy's default issuers are Let's Encrypt *and* ZeroSSL, and it falls back to ZeroSSL when Let's Encrypt fails. CAA would reject that fallback, so every non-local Caddyfile pins the global option `acme_ca https://acme-v02.api.letsencrypt.org/directory`. The local stack (E02-R03) uses Caddy's local CA instead.
+  - Certificates are per hostname (HTTP-01 or TLS-ALPN-01), never wildcards, so ports 80 and 443 must be reachable from the internet.
+  - Hostnames: `api.flexcalendar.de` (API), `auth.flexcalendar.de` (Zitadel), `caldav.flexcalendar.de` (CalDAV; routed by Caddy only from Phase 4, since M1 doesn't expose CalDAV). Staging uses the same names under `staging.flexcalendar.de`, for example `api.staging.flexcalendar.de`.
 - The CalDAV server **must be reachable on the public internet on port 443** for stock apps to talk to it. This is a real constraint: no internal-only deployments unless you also ship a VPN profile.
 
 ### Sizing and cost
@@ -130,7 +134,11 @@ Not chosen for now:
 
 ### Runtime layout
 
-- Docker Compose on the host, the same shape as the local stack (E02-R03). Images are built in CI and pinned by digest, and systemd keeps the stack running.
+- **Podman, rootless**, on the server and on development machines; there is no Docker daemon anywhere. The stack is described in Compose files, the same shape as the local stack (E02-R03), and run with `podman compose`, which hands the file to the `docker-compose` binary through the user's Podman socket. Images are OCI images built in CI and pinned by digest.
+  - The server runs the stack as the unprivileged `deploy` user. A systemd **user** unit runs `podman compose up -d` and `down`, and `loginctl enable-linger deploy` keeps it running without a login session and starts it at boot. Don't rely on Compose `restart:` policies alone: Podman has no daemon to restart containers after a reboot.
+  - Rootless containers can't bind ports below 1024 by default, so host setup sets `net.ipv4.ip_unprivileged_port_start=80` in `/etc/sysctl.d/` for Caddy. The local stack doesn't change sysctls and serves HTTPS on 8443 instead.
+  - Per-container memory limits (ADR 0004) need the cgroup v2 memory controller delegated to the `deploy` user, which current systemd does by default. Host setup verifies it, since a limit Podman can't apply is silently ignored.
+  - Rootless networking is `pasta`, which keeps the client's source IP on published ports. Caddy's access log and the per-IP rate limit (E03-R03) depend on that, so host setup verifies it too.
 - For the CalDAV service, consider [FrankenPHP](https://frankenphp.dev/) instead of nginx + php-fpm. It is a PHP app server built on Caddy, which we already run, and it now sits under the PHP Foundation. Use classic mode, not worker mode: SabreDAV was written for one request per process lifetime, and worker mode would first need an audit for state that leaks between requests.
 - **Zitadel is the component with the most upkeep.** It ships a major version about every quarter, each supported for roughly six months, and majors have broken things before: v4 split the login UI into its own container, and deploying only the core leaves login silently broken. Keep upgrades routine: no custom actions holding logic, branding by settings only, configuration as code (Terraform provider), and staging before production (E08-R08).
 - **Zitadel issues JWT access tokens** only if each app registration says so; some app types default to opaque tokens. Set the JWT type and request the project audience scope, so the API validates tokens locally against JWKS (E05-R01).
