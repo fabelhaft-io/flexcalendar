@@ -1,0 +1,13 @@
+# Flutter toolchain + SDK pin (E02-R02). The app itself arrives with E10-R01 and
+# grows its dependency list there; this file exists so a clean checkout refuses
+# to build with anything but the pinned Flutter/Dart.
+#
+# Flutter 3.47.6 (stable, 2026-10-01) ships Dart 3.13.5. FVM reads `.fvmrc`
+# next to this file; CI reads the same version from it (see `apps/mobile/README.md`).
+name: flexcalendar
+description: FlexCalendar mobile app — Android first (minSdk 26), iOS from Phase 5 (ADR 0003).
+publish_to: "none"
+
+environment:
+  sdk: ^3.13.5
+  flutter: ">=3.47.6 <4.0.0"

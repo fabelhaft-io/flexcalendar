@@ -15,4 +15,11 @@ and hit CalDAV directly (CLAUDE.md).
   and onboarding; [E13](../../docs/epics/E13-private-mode.md) adds the Private
   write path. It stores raw iCalendar objects and envelope ciphertext only, and
   never decrypts (INV-01, INV-07).
+- **Toolchain pins**
+  ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)): this package's
+  [`package.json`](package.json) pins Node 24 through `engines`, and the
+  workspace root pins the exact Node patch (`.nvmrc`, `devEngines`) and pnpm
+  (`packageManager`, via corepack). Add dependencies with
+  `corepack pnpm add --filter @flexcalendar/api …` so `pnpm-lock.yaml` stays the
+  single source of resolved versions.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.

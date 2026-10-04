@@ -14,6 +14,12 @@ event (CLAUDE.md). Stock calendar apps talk to this service directly.
 - **Related epics:** [E04](../../docs/epics/E04-data-model.md) owns the Postgres
   schema; [E06](../../docs/epics/E06-sharing-feeds-onboarding.md) adds sharing,
   feeds and onboarding on top of this service.
+- **Toolchain pin**
+  ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)):
+  [`composer.json`](composer.json) requires PHP 8.4 and pins
+  `config.platform.php` to 8.4.0, so Composer resolves for the pinned platform
+  whatever PHP is on `PATH`. `sabre/dav:^4.7` and the committed
+  `composer.lock` arrive with E03-R01.
 - **Not here:** client code, and any content-crypto dependency — the service
   never decrypts (INV-07).
 - The Phase 0 Radicale spike lives in

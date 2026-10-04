@@ -11,6 +11,11 @@
 - Consumed by [`apps/mobile`](../../apps/mobile/README.md) as a local Dart
   package. The Android Kotlin adapter repeats only *unwrap content key, open
   envelope*, and only if the optional Phase 8 mirroring (E16) ships.
+- **Toolchain pin**
+  ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)):
+  [`pubspec.yaml`](pubspec.yaml) fixes the Dart SDK to `^3.13.5`, the version
+  Flutter 3.47.6 ships (`apps/mobile/.fvmrc`). The library and its dependencies
+  (`sodium_libs`, …) arrive with E12.
 - Held to the frozen vectors in
   [`spec/crypto-vectors/`](../../spec/crypto-vectors/README.md), byte-identical
   with [`packages/crypto-ts`](../crypto-ts/README.md).
