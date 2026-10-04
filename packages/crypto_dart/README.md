@@ -10,7 +10,7 @@
   [`docs/04-implementation-phases.md`](../../docs/04-implementation-phases.md)).
 - Consumed by [`apps/mobile`](../../apps/mobile/README.md) as a local Dart
   package. The Android Kotlin adapter repeats only *unwrap content key, open
-  envelope*, and only if Phase 6 mirroring ships.
+  envelope*, and only if the optional Phase 8 mirroring (E16) ships.
 - Held to the frozen vectors in
   [`spec/crypto-vectors/`](../../spec/crypto-vectors/README.md), byte-identical
   with [`packages/crypto-ts`](../crypto-ts/README.md).

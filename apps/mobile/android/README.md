@@ -13,7 +13,8 @@ ours by design is the **`CalendarContract` sync adapter**.
   recurrence — the adapter's own recurrence authority (INV-05).
 - Shared calendars only; it authenticates with a device app password (D-04), so
   INV-08 already hides Private collections from it.
-- DAVx⁵ source is GPLv3: read it for reference, never copy from it into this
-  MIT project.
+- DAVx⁵'s own source is GPLv3: read it for reference only, and check licence
+  compatibility before copying anything from it (`docs/02-technology-choices.md`
+  § Android specifics).
 - The Dart side reaches it through a Pigeon channel (register/remove the system
   account, trigger a manual sync) — never by putting Dart in the sync engine.

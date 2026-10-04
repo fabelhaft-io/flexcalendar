@@ -18,9 +18,6 @@ info:
     Placeholder API contract. Paths and schemas are added by E05 (API core) and
     the client epics; this document exists so that spec/openapi.yaml is present
     in the E02-R01 repository layout.
-  license:
-    name: Apache-2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0
 servers:
   # Hostnames and the local stack port are from docs/02-technology-choices.md.
   - url: https://api.flexcalendar.de
