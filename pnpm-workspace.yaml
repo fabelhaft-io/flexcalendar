@@ -4,10 +4,10 @@
 # only consulted for registry and auth settings (https://pnpm.io/settings), so
 # the pnpm settings live here next to the workspace globs.
 #
-# Only directories that exist as a package today are listed by path; the globs
-# pick up packages that are still README-only (`packages/crypto-ts`,
-# `packages/api-client-ts`, `apps/web`), which pnpm skips until they get a
-# package.json.
+# Members are given by path (`server/api`) or by glob (`packages/*`). A listed
+# directory with no `package.json` yet is skipped by pnpm until one lands; that
+# covers the README-only ones today (`apps/web`, `packages/crypto-ts`,
+# `packages/api-client-ts`, `packages/crypto_dart`).
 packages:
   - "server/api"
   - "apps/web"

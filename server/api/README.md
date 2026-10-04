@@ -20,6 +20,6 @@ and hit CalDAV directly (CLAUDE.md).
   [`package.json`](package.json) pins Node 24 through `engines`, and the
   workspace root pins the exact Node patch (`.nvmrc`, `devEngines`) and pnpm
   (`packageManager`, via corepack). Add dependencies with
-  `corepack pnpm add --filter @flexcalendar/api …` so `pnpm-lock.yaml` stays the
+  `corepack pnpm add --filter @calendar-flex/api …` so `pnpm-lock.yaml` stays the
   single source of resolved versions.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.

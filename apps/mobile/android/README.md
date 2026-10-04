@@ -7,14 +7,17 @@ ours by design is the **`CalendarContract` sync adapter**.
 **Owning epic:** [E11 — Android sync adapter (native Kotlin)](../../../docs/epics/E11-android-sync-adapter.md).
 
 - **Toolchain pins**
-  ([E02-R02](../../../docs/epics/E02-repo-tooling-ci.md)): **Gradle 9.8.0** by
-  version and SHA-256 (`gradle/wrapper/gradle-wrapper.properties`), **JDK 21**
-  as a Java toolchain (`build.gradle.kts`, fetched by the foojay resolver when
-  the machine lacks it), **AGP 9.4.1** and **Kotlin 2.4.20**
-  (`settings.gradle.kts`). The Flutter scaffold (E10-R01) adds the `:app` module
-  and the sync-adapter module; keep the pins when it does. Nothing a build
-  generates belongs here: `build/`, `.gradle/` and `local.properties` stay
-  untracked.
+  ([E02-R02](../../../docs/epics/E02-repo-tooling-ci.md)):
+  [`gradle/wrapper/gradle-wrapper.properties`](gradle/wrapper/gradle-wrapper.properties)
+  pins **Gradle 9.3.1** by version and SHA-256, and
+  [`gradle/gradle-daemon-jvm.properties`](gradle/gradle-daemon-jvm.properties)
+  pins **JDK 21** through Gradle's daemon JVM criteria, so every build of this
+  project runs on Java 21 whatever JDK happens to be on `PATH`. The **Android
+  Gradle Plugin and Kotlin Gradle Plugin are not pinned here**: the Flutter
+  scaffold (E10-R01) sets them from the Flutter release that
+  [`../.fvmrc`](../.fvmrc) pins. Keep the Gradle wrapper and the JDK criteria
+  when that scaffold lands. Nothing a build generates belongs here: `build/`,
+  `.gradle/` and `local.properties` stay untracked.
 - Plain **Kotlin**, no Dart in the sync path, and no headless Flutter engine in
   `onPerformSync` (ADR 0002,
   `docs/02-technology-choices.md` § Android specifics).
