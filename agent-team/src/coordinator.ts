@@ -173,7 +173,8 @@ function settleImplementerOutput(opts: {
   }
 
   const message =
-    `${requirement.id}: ${handoff.summary.trim() || '(no summary)'}`.slice(0, 2000) +
+    `${requirement.id}: implementer run ${run} (${handoff.status})\n\n` +
+    `${handoff.summary.trim() || '(no summary)'}`.slice(0, 4000) +
     `\n\nAgent-Run: implementer\nAgent-Run-Number: ${run}\nAgent-Model: ${opts.model}\nAgent-Status: ${handoff.status}`;
   const committed = commitFiles(worktreePath, inScope, message);
   log(committed ? `committed ${inScope.length} in-scope file(s)` : 'no in-scope changes to commit this run');
