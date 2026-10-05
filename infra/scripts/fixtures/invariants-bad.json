@@ -1,0 +1,255 @@
+[
+  {
+    "label": "web EXDATE emission",
+    "invariant": "INV-05",
+    "reason": "forbidden client recurrence property reference",
+    "files": {
+      "apps/web/src/write.ts": "export const write = () => \"EXDATE:\";"
+    }
+  },
+  {
+    "label": "mobile override emission",
+    "invariant": "INV-05",
+    "reason": "forbidden client recurrence property reference",
+    "files": {
+      "apps/mobile/lib/edit.dart": "String write() => 'RECURRENCE-ID:';"
+    }
+  },
+  {
+    "label": "crypto underscore emission",
+    "invariant": "INV-05",
+    "reason": "forbidden client recurrence property reference",
+    "files": {
+      "packages/crypto_dart/lib/edit.dart": "String write() => 'exdate:';"
+    }
+  },
+  {
+    "label": "crypto hyphen property API",
+    "invariant": "INV-05",
+    "reason": "forbidden client recurrence property reference",
+    "files": {
+      "packages/crypto-ts/src/edit.ts": "export const edit = (event: any) => event.addProperty(\"recurrence-id\", \"\");"
+    }
+  },
+  {
+    "label": "native property API",
+    "invariant": "INV-05",
+    "reason": "forbidden client recurrence property reference",
+    "files": {
+      "apps/mobile/android/src/Edit.kt": "fun edit(event: Event) { event.recurrenceId = value }"
+    }
+  },
+  {
+    "label": "direct sodium",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "libsodium-wrappers": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"libsodium-wrappers\":{\"specifier\":\"1.0.0\",\"version\":\"1.0.0\"}}}},\"snapshots\":{\"libsodium-wrappers@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "transitive nacl",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "fastify": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"dependencies\":{\"tweetnacl\":\"1.0.0\"}},\"tweetnacl@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "optional noble",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "fastify": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"optionalDependencies\":{\"@noble/ciphers\":\"1.0.0\"}},\"@noble/ciphers@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "aliased content crypto",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "fastify": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"dependencies\":{\"innocent-alias\":\"crypto-js@1.0.0\"}},\"crypto-js@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "unknown similar crypto",
+    "invariant": "INV-07",
+    "reason": "unreviewed server dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "fastify": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"dependencies\":{\"new-content-cipher\":\"1.0.0\"}},\"new-content-cipher@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "linked workspace crypto",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "@local/shared": "workspace:*"
+        }
+      },
+      "packages/shared/package.json": {
+        "dependencies": {
+          "tweetnacl": "1.0.0"
+        },
+        "name": "fastify"
+      },
+      "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"dependencies\":{\"@local/shared\":{\"version\":\"link:../../packages/shared\"}}},\"packages/shared\":{\"dependencies\":{\"tweetnacl\":{\"version\":\"1.0.0\"}}}},\"snapshots\":{\"tweetnacl@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "Composer direct crypto",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/caldav/composer.json": {
+        "require": {
+          "defuse/php-encryption": "*"
+        }
+      },
+      "server/caldav/composer.lock": {
+        "packages": [
+          {
+            "name": "defuse/php-encryption",
+            "version": "1.0.0"
+          }
+        ],
+        "packages-dev": []
+      }
+    }
+  },
+  {
+    "label": "Composer dev crypto",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/caldav/composer.json": {
+        "require-dev": {
+          "phpseclib/phpseclib": "*"
+        }
+      },
+      "server/caldav/composer.lock": {
+        "packages": [
+          {
+            "name": "phpseclib/phpseclib",
+            "version": "1.0.0"
+          }
+        ],
+        "packages-dev": []
+      }
+    }
+  },
+  {
+    "label": "Composer sodium extension",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/caldav/composer.json": {
+        "require": {
+          "ext-sodium": "*"
+        }
+      },
+      "server/caldav/composer.lock": {
+        "packages": [],
+        "packages-dev": []
+      }
+    }
+  },
+  {
+    "label": "Composer transitive crypto",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/caldav/composer.json": {
+        "require": {
+          "react/socket": "*"
+        }
+      },
+      "server/caldav/composer.lock": {
+        "packages": [
+          {
+            "name": "react/socket",
+            "require": {
+              "paragonie/halite": "*"
+            }
+          },
+          {
+            "name": "paragonie/halite"
+          }
+        ],
+        "packages-dev": []
+      }
+    }
+  },
+  {
+    "label": "Composer locked dev dependency",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/caldav/composer.json": {},
+      "server/caldav/composer.lock": {
+        "packages": [],
+        "packages-dev": [
+          {
+            "name": "paragonie/halite"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "label": "npm dev dependency",
+    "invariant": "INV-07",
+    "reason": "content-crypto dependency",
+    "files": {
+      "server/api/package.json": {
+        "devDependencies": {
+          "tweetnacl": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"devDependencies\":{\"tweetnacl\":{\"version\":\"1.0.0\"}}}},\"snapshots\":{\"tweetnacl@1.0.0\":{}}}"
+    }
+  },
+  {
+    "label": "unreviewed workspace content package",
+    "invariant": "INV-07",
+    "reason": "unreviewed server dependency",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "@local/crypto": "workspace:*"
+        }
+      },
+      "packages/crypto/package.json": {
+        "name": "@local/crypto"
+      },
+      "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"dependencies\":{\"@local/crypto\":{\"version\":\"link:../../packages/crypto\"}}},\"packages/crypto\":{}},\"snapshots\":{}}"
+    }
+  }
+]
