@@ -190,7 +190,7 @@ services:
         - php
         - -r
         # Quoted: YAML would read the `? :` of the ternary as a mapping otherwise.
-        - "exit(@file_get_contents('http://127.0.0.1:8080/healthz') === false ? 1 : 0);"
+        - "exit(@file_get_contents('http://127.0.0.1:8080/healthz')===false?1:0);"
       interval: 5s
       timeout: 5s
       retries: 12
@@ -226,7 +226,7 @@ services:
         - node
         - -e
         # Quoted for the same reason as the CalDAV probe above.
-        - "fetch('http://127.0.0.1:3000/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+        - "fetch('http://127.0.0.1:3000/healthz').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
       interval: 5s
       timeout: 5s
       retries: 12

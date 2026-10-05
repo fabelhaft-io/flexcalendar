@@ -42,7 +42,7 @@ test('aggregate executes its happy path and rejects failure, cancellation, and u
         result: 'success',
         outputs: { full: String(full), 'has-components': 'true' },
       },
-      components: { result: 'success' },
+      components: { result: full ? 'skipped' : 'success' },
       'cross-cutting': { result: full ? 'skipped' : 'success' },
       full: { result: full ? 'success' : 'skipped' },
     };
@@ -60,7 +60,10 @@ test('aggregate executes its happy path and rejects failure, cancellation, and u
         .status,
       1,
     );
-    assert.equal(run({ ...good, components: { result: 'skipped' } }).status, 1);
+    assert.equal(
+      run({ ...good, components: { result: 'skipped' } }).status,
+      full ? 0 : 1,
+    );
   }
   const docs = {
     changes: {
@@ -72,4 +75,11 @@ test('aggregate executes its happy path and rejects failure, cancellation, and u
     'cross-cutting': { result: 'success' },
   };
   assert.equal(run(docs).status, 0);
+});
+
+test('full path skips the redundant component matrix', () => {
+  assert.equal(
+    workflow.jobs.components.if,
+    "needs.changes.outputs.full != 'true' && needs.changes.outputs.has-components == 'true'",
+  );
 });

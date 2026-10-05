@@ -22,6 +22,7 @@ import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+import { portableExecHealthcheck } from '../scripts/healthchecks.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.resolve(here, '..', '..');
@@ -46,6 +47,11 @@ const read = (file) => readFile(path.join(here, file), 'utf8');
 const composeText = await read('compose.yaml');
 const compose = parse(composeText);
 const services = compose?.services ?? {};
+
+for (const [name, service] of Object.entries(services)) {
+  check(`${name}: exec-form health-check arguments contain no whitespace (Podman 4.9)`,
+    portableExecHealthcheck(service?.healthcheck?.test));
+}
 
 const requiredServices = {
   postgres: 'Postgres',

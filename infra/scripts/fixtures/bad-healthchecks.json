@@ -1,0 +1,17 @@
+{
+  "services": {
+    "caldav": {
+      "healthcheck": { "test": ["CMD", "php", "-r", "exit(false ? 1 : 0);"] }
+    },
+    "api": {
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "Promise.resolve().then(() => process.exit(0))"
+        ]
+      }
+    }
+  }
+}

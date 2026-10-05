@@ -28,4 +28,23 @@ runs:
       # The Makefile supports PODMAN_COMPOSE overrides for alternate provider
       # locations. No rootful/Docker fallback: if the runner cannot run rootless
       # Podman, this job must fail and the owner must supply a rootless runner.
-      run: make dev PODMAN_COMPOSE='podman compose'
+      run: |
+        if make dev PODMAN_COMPOSE='podman compose'; then
+          exit 0
+        fi
+        # Best-effort diagnostics must never replace the original failure.
+        # Inspect only state/health, never Config.Env (bootstrap credentials).
+        podman version || true
+        export COMPOSE_PROJECT_NAME=calendar-flex-dev
+        podman compose --file infra/dev/compose.yaml ps -a || true
+        containers=$(podman ps -a --filter label=com.docker.compose.project=calendar-flex-dev --format '{{.ID}}' || true)
+        for container in $containers; do
+          state=$(podman inspect --format '{{.State.Status}}' "$container" || true)
+          health=$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" || true)
+          if [ "$state" = exited ] || [ "$health" = unhealthy ]; then
+            echo "Container $container: $state / $health"
+            podman logs --tail 50 "$container" || true
+            podman inspect --format '{{json .State.Health}}' "$container" || true
+          fi
+        done
+        exit 1

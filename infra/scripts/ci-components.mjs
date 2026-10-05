@@ -4,12 +4,12 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { components } from './verify.mjs';
 
-/** @param {string[]} paths */
-export function selectComponents(paths) {
+/** @param {string[]} paths @param {{name: string}[]} knownComponents */
+export function selectComponents(paths, knownComponents = components()) {
   const full = paths.some(
     (path) => !path.includes('/') || /^(infra|\.github)\//.test(path),
   );
-  const names = components()
+  const names = knownComponents
     .map(({ name }) => name)
     .filter((name) => name !== 'tooling');
   const selected = names.filter((name) => {

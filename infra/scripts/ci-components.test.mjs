@@ -2,16 +2,48 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { selectComponents } from './ci-components.mjs';
-import { component } from './verify.mjs';
+import { components, component } from './verify.mjs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  copyFileSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-test('web-only selects web, without unrelated component gates', () => {
-  assert.deepEqual(selectComponents(['apps/web/src/app.tsx']), {
+test('README-only web selects no component and is not a verification package', () => {
+  assert.deepEqual(selectComponents(['apps/web/README.md']), {
     full: false,
-    selected: ['apps-web'],
+    selected: [],
   });
-  // The current web directory is a layout placeholder. The same make target
-  // begins running its four gates automatically when its manifest arrives.
-  component('apps-web');
+  assert.throws(() => component('apps-web'), /Unknown verification component/);
+});
+test('web with a manifest is discovered and selected in a fixture tree', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ci-components-'));
+  try {
+    mkdirSync(join(root, 'infra/scripts'), { recursive: true });
+    mkdirSync(join(root, 'apps/web'), { recursive: true });
+    writeFileSync(join(root, 'apps/web/package.json'), '{}');
+    copyFileSync(
+      'infra/scripts/verify.mjs',
+      join(root, 'infra/scripts/verify.mjs'),
+    );
+    const fixture = await import(
+      pathToFileURL(join(root, 'infra/scripts/verify.mjs')).href
+    );
+    assert.deepEqual(
+      selectComponents(['apps/web/src/app.tsx'], fixture.components()),
+      {
+        full: false,
+        selected: ['apps-web'],
+      },
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 test('cross-cutting files select every component and full verify', () => {
   for (const path of [
@@ -24,7 +56,12 @@ test('cross-cutting files select every component and full verify', () => {
     assert.equal(selection.full, true);
     assert.ok(selection.selected.includes('server-caldav'));
     assert.ok(selection.selected.includes('apps-mobile'));
-    assert.ok(selection.selected.includes('apps-web'));
+    assert.deepEqual(
+      selection.selected,
+      components()
+        .map(({ name }) => name)
+        .filter((name) => name !== 'tooling'),
+    );
   }
 });
 test('component filters, shared dependencies, deletions and docs-only PRs', () => {
@@ -39,7 +76,7 @@ test('component filters, shared dependencies, deletions and docs-only PRs', () =
   assert.ok(
     selectComponents([
       'packages/api-client-ts/src/client.ts',
-    ]).selected.includes('apps-web'),
+    ]).selected.includes('server-api'),
   );
   assert.deepEqual(selectComponents(['docs/02-technology-choices.md']), {
     full: false,
@@ -52,7 +89,7 @@ test('mixed shared-package changes select the union of consumers', () => {
     'packages/crypto_dart/lib/key.dart',
   ]);
   assert.ok(selection.selected.includes('apps-mobile'));
-  assert.ok(selection.selected.includes('apps-web'));
+  assert.ok(!selection.selected.includes('apps-web'));
   assert.ok(selection.selected.includes('server-api'));
 });
 

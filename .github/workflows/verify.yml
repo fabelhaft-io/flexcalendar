@@ -45,7 +45,7 @@ jobs:
   components:
     name: Component (${{ matrix.component }})
     needs: changes
-    if: needs.changes.outputs.has-components == 'true'
+    if: needs.changes.outputs.full != 'true' && needs.changes.outputs.has-components == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -118,6 +118,6 @@ jobs:
           if (needs.changes.result !== 'success') process.exit(1);
           const full = needs.changes.outputs.full === 'true';
           if (needs[full ? 'full' : 'cross-cutting'].result !== 'success') process.exit(1);
-          if (needs.changes.outputs['has-components'] === 'true' && needs.components.result !== 'success') process.exit(1);
+          if (!full && needs.changes.outputs['has-components'] === 'true' && needs.components.result !== 'success') process.exit(1);
           console.log('All selected verification gates passed.');
           JS
