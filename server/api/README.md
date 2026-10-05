@@ -15,6 +15,13 @@ and hit CalDAV directly (CLAUDE.md).
   and onboarding; [E13](../../docs/epics/E13-private-mode.md) adds the Private
   write path. It stores raw iCalendar objects and envelope ciphertext only, and
   never decrypts (INV-01, INV-07).
+- **Local stack
+  ([E02-R03](../../docs/epics/E02-repo-tooling-ci.md)):** the `api` service of
+  [`infra/dev/compose.yaml`](../../infra/dev/compose.yaml) is built from the
+  [`Dockerfile`](Dockerfile) here and runs [`src/server.mjs`](src/server.mjs),
+  a skeleton that answers `GET /healthz` and `GET /` and returns `501`
+  everywhere else. It touches no database, no Zitadel endpoint and no event
+  data; E05-R01 replaces it with the real service.
 - **Toolchain pins**
   ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)): this package's
   [`package.json`](package.json) pins Node 24 through `engines`, and the

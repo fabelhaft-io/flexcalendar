@@ -1,0 +1,72 @@
+# --- calendar-flex local stack: TLS and routing (E02-R03) --------------------
+#
+# Caddy is the only published port of the local stack, and it terminates TLS
+# with its own local CA (`docs/02-technology-choices.md` § Runtime layout). This
+# file is development only: production pins Let's Encrypt (`acme_ca`) and never
+# uses the local CA (E08).
+#
+# The published host port comes from ${CALFLEX_HTTPS_PORT} (default 8443) and
+# only changes where the port is forwarded: requests always arrive here on 8443,
+# so the certificates and the service URLs never depend on it.
+
+{
+	# Issue every certificate from Caddy's local CA. The local stack never talks
+	# to an ACME server: `acme_ca` appears in the production Caddyfile (E08),
+	# never here.
+	local_certs
+
+	# HTTPS on 8443. Rootless Podman cannot bind a port below 1024 without a
+	# sysctl change, and the local stack changes none.
+	https_port 8443
+	# Redirects and the automatic-HTTP endpoint go to an unprivileged port too,
+	# so nothing here needs to bind 80/443 on the developer's machine.
+	http_port 8080
+
+	# No admin API socket: nothing in the stack configures Caddy at runtime.
+	admin off
+}
+
+# `*.localhost` is reserved for loopback (RFC 6761), so these names need no
+# /etc/hosts entry on any browser or on systemd-resolved machines. Set
+# CALFLEX_DEV_DOMAIN to use another suffix (the compose network uses the same
+# names as aliases on Caddy).
+#
+# CalDAV — the source of truth every client talks to (CLAUDE.md). E03-R01 puts
+# the SabreDAV service behind this name.
+caldav.{$CALFLEX_DEV_DOMAIN:localhost} {
+	reverse_proxy caldav:8080
+}
+
+# The REST facade for the project's own clients (E05-R01).
+api.{$CALFLEX_DEV_DOMAIN:localhost} {
+	reverse_proxy api:3000
+}
+
+# Mailpit's web UI. Its SMTP port stays inside the stack.
+mailpit.{$CALFLEX_DEV_DOMAIN:localhost} {
+	reverse_proxy mailpit:8025
+}
+
+# Zitadel. v4 serves the login UI from its own container under
+# /ui/v2/login (ADR 0004, `02` § Runtime layout); everything else — OIDC
+# discovery, the OIDC endpoints, the v1/v2 APIs, the console under /ui/console —
+# is the core. Both live on the same host, so the login session cookie is
+# same-site.
+auth.{$CALFLEX_DEV_DOMAIN:localhost} {
+	@login path /ui/v2/login/*
+	handle @login {
+		reverse_proxy zitadel-login:3000
+	}
+
+	# The bare host is where a developer lands; send them to the login UI. The
+	# redirect is relative, so it keeps whatever host port was published, and the
+	# bare `*` matcher stops Caddy from reading `/ui/v2/login/` as a path
+	# matcher.
+	handle / {
+		redir * /ui/v2/login/ 302
+	}
+
+	handle {
+		reverse_proxy zitadel-api:8080
+	}
+}
