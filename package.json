@@ -14,5 +14,8 @@
       "version": "^24.17.0",
       "onFail": "error"
     }
+  },
+  "devDependencies": {
+    "yaml": "2.9.1"
   }
 }

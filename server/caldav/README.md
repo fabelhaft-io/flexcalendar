@@ -14,6 +14,14 @@ event (CLAUDE.md). Stock calendar apps talk to this service directly.
 - **Related epics:** [E04](../../docs/epics/E04-data-model.md) owns the Postgres
   schema; [E06](../../docs/epics/E06-sharing-feeds-onboarding.md) adds sharing,
   feeds and onboarding on top of this service.
+- **Local stack
+  ([E02-R03](../../docs/epics/E02-repo-tooling-ci.md)):** the `caldav` service
+  of [`infra/dev/compose.yaml`](../../infra/dev/compose.yaml) is built from the
+  [`Dockerfile`](Dockerfile) here and runs [`public/index.php`](public/index.php),
+  a skeleton that answers `GET /healthz` and `GET /` and returns `501` for
+  everything else — including CalDAV methods, because a fabricated answer would
+  be worse than none. It has no database and no SabreDAV yet; E03-R01 replaces
+  it.
 - **Toolchain pin**
   ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)):
   [`composer.json`](composer.json) requires PHP 8.4 and pins

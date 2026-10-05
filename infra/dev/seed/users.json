@@ -1,0 +1,17 @@
+{
+  "comment": "The local stack's development seed (E02-R03). `make seed` creates these users in Zitadel, idempotently: a user whose email already exists is skipped. This seed does not depend on the Phase 0 spike (E01-R02 belongs to the spike's Radicale server and the E15 corpus). Later requirements add calendars and events for these accounts: every calendar is Private until Phase 4 (E04-R03), so seeded events are skeletons without content properties (E03-R09, INV-01).",
+  "users": [
+    {
+      "userName": "alice",
+      "firstName": "Alice",
+      "lastName": "Anders",
+      "email": "alice@example.test"
+    },
+    {
+      "userName": "bob",
+      "firstName": "Bob",
+      "lastName": "Berg",
+      "email": "bob@example.test"
+    }
+  ]
+}

@@ -1,0 +1,319 @@
+# --- calendar-flex local development stack (E02-R03) -------------------------
+#
+# `make dev` starts this file; `make seed` loads infra/dev/seed/ into it.
+#
+# It runs with `podman compose` under **rootless Podman**: never a Docker
+# daemon, never root, and no sysctl changes (`docs/02-technology-choices.md`
+# § Runtime layout). HTTPS is served on ${CALFLEX_HTTPS_PORT:-8443} and never on
+# 443 — a rootless container cannot bind a port below 1024 without changing
+# `net.ipv4.ip_unprivileged_port_start`, and the local stack changes nothing.
+#
+# Every value has a development default, so `make dev` works on a bare
+# checkout. `infra/dev/.env.example` documents all the knobs; copy it to
+# `infra/dev/.env` to override one (that file is gitignored and holds no real
+# secrets — the defaults below are deliberately insecure and dev-only).
+#
+# Image tags are tags, not digests: this is a development stack. Production
+# pins OCI images by digest and is owned by E08.
+
+name: calendar-flex-dev
+
+services:
+  # Postgres holds every durable state in one cluster (D-11): Zitadel's
+  # database today, the CalDAV schema from E04 on. Nothing durable lives on a
+  # container filesystem, so one backup covers the whole stack.
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      # ADR 0004 sizes the production box at 4 GB and asks for a small
+      # shared_buffers; keep the dev instance comparable. E08 owns the
+      # production tuning.
+      - -c
+      - shared_buffers=256MB
+    environment:
+      POSTGRES_USER: ${CALFLEX_POSTGRES_USER:-caldav}
+      POSTGRES_PASSWORD: ${CALFLEX_POSTGRES_PASSWORD:-caldav}
+      POSTGRES_DB: ${CALFLEX_POSTGRES_DB:-caldav}
+    volumes:
+      # Creates Zitadel's database on the first start. Postgres runs every file
+      # in here only when the data volume is empty, and the script guards its
+      # own idempotency.
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    mem_limit: 1g
+    networks:
+      - stack
+
+  # Zitadel, self-hosted (D-03, ADR 0004). v4 ships the login UI as its own
+  # container (`zitadel-login` below); this one is the core: OIDC, the v1/v2
+  # APIs and the console.
+  #
+  # `start-from-init` creates the schema and, on the first start, the
+  # `calendar-flex` organisation with its admin, the login client the UI
+  # container needs, and the seeding service account whose PAT is written to
+  # the shared volume for `make seed`.
+  zitadel-api:
+    image: ghcr.io/zitadel/zitadel:${CALFLEX_ZITADEL_VERSION:-v4.16.0}
+    restart: unless-stopped
+    # The image's own user cannot write the bootstrap PATs into a fresh volume.
+    # Under rootless Podman this uid is the unprivileged user's subuid, never
+    # root on the host.
+    user: "0"
+    command:
+      - start-from-init
+      - --masterkey
+      - ${CALFLEX_ZITADEL_MASTERKEY:-MasterkeyNeedsToHave32Characters}
+    environment:
+      ZITADEL_PORT: "8080"
+      # These three must match the public URL or Zitadel answers "instance not
+      # found" (02 § Runtime layout). The container port is fixed at 8443, so
+      # only the published host port moves.
+      ZITADEL_EXTERNALDOMAIN: auth.${CALFLEX_DEV_DOMAIN:-localhost}
+      ZITADEL_EXTERNALPORT: "${CALFLEX_HTTPS_PORT:-8443}"
+      ZITADEL_EXTERNALSECURE: "true"
+      # Caddy terminates TLS; Zitadel speaks plain HTTP inside the network.
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DATABASE_POSTGRES_DSN: "postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/zitadel?sslmode=disable"
+
+      # First instance: the org, its admin and the two service accounts. The
+      # human admin is `make dev`'s login for the console; the seed machine
+      # user is what `make seed` authenticates with.
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: calendar-flex
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${CALFLEX_ZITADEL_ADMIN_USER:-calflex-admin}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${CALFLEX_ZITADEL_ADMIN_PASSWORD:-Password1!}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: calflex-seed
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: calendar-flex dev seed
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/seed.pat
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Automatically Initialized IAM_LOGIN_CLIENT
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+
+      # The login UI of v4 is a separate app under /ui/v2/login; these point
+      # Zitadel's redirects at it.
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}/ui/v2/login/"
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}/ui/v2/login/login?authRequest="
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}/ui/v2/login/logout?post_logout_redirect="
+      ZITADEL_SAML_DEFAULTLOGINURLV2: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}/ui/v2/login/login?samlRequest="
+    expose:
+      - "8080"
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap
+    healthcheck:
+      test:
+        - CMD
+        - /app/zitadel
+        - ready
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 512m
+    networks:
+      - stack
+
+  # The Zitadel login UI (v4): a Next.js app the core redirects browsers to.
+  # It reads the login client's PAT from the shared volume and calls the core
+  # over the internal network. It runs as its image's own user (`nextjs`): the
+  # PAT files are world-readable (mode 0644), so only the core needs uid 0.
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:${CALFLEX_ZITADEL_VERSION:-v4.16.0}
+    restart: unless-stopped
+    environment:
+      ZITADEL_API_URL: http://zitadel-api:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      ZITADEL_SESSION_COOKIE_SECRET: ${CALFLEX_ZITADEL_LOGIN_SESSION_SECRET:-SessionCookieSecretNeedsAtLeast32Chars}
+      CUSTOM_REQUEST_HEADERS: Host:auth.${CALFLEX_DEV_DOMAIN:-localhost},X-Forwarded-Proto:https
+    expose:
+      - "3000"
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap:ro
+    depends_on:
+      zitadel-api:
+        condition: service_healthy
+    mem_limit: 256m
+    networks:
+      - stack
+
+  # Mailpit: the development SMTP sink (E03-R06 sends iMIP invites into it, and
+  # E05 sends its mails). The SMTP port stays internal; the web UI is reachable
+  # through Caddy at https://mailpit.<domain>:<port>/.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "500"
+      # A development sink: accept whatever a service sends, credentials or
+      # not, over the plain internal network. Never copy this to E08.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    expose:
+      # 8025 is the web UI Caddy proxies; 1025 is the SMTP port services use.
+      - "8025"
+      - "1025"
+    mem_limit: 128m
+    networks:
+      - stack
+
+  # The CalDAV service (D-02). The container currently runs the PHP 8.4
+  # skeleton in server/caldav/, which answers liveness only; E03-R01 replaces
+  # its body with the SabreDAV service. The point of running it now is that the
+  # stack, the routing and the URL are real from day one.
+  caldav:
+    build:
+      context: ../..
+      dockerfile: server/caldav/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - php
+        - -r
+        # Quoted: YAML would read the `? :` of the ternary as a mapping otherwise.
+        - "exit(@file_get_contents('http://127.0.0.1:8080/healthz') === false ? 1 : 0);"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    expose:
+      - "8080"
+    mem_limit: 256m
+    networks:
+      - stack
+
+  # The API service (D-01). Like CalDAV, the container runs the skeleton in
+  # server/api/ until E05-R01 builds the Fastify facade on it.
+  api:
+    build:
+      context: ../..
+      dockerfile: server/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      # Wiring for E05-R01. The API never decrypts and stores no event content
+      # (INV-01, INV-07), and the login password never feeds a key derivation
+      # (INV-12).
+      CALFLEX_DATABASE_URL: "postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
+      CALFLEX_OIDC_ISSUER: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
+      CALFLEX_CALDAV_ORIGIN: "https://caldav.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
+      CALFLEX_SMTP_URL: "smtp://mailpit:1025"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        # Quoted for the same reason as the CalDAV probe above.
+        - "fetch('http://127.0.0.1:3000/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    expose:
+      - "3000"
+    mem_limit: 256m
+    networks:
+      - stack
+
+  # Caddy fronts the stack with its own local CA (02 § Runtime layout): it is
+  # the only published port, and it gives every service an HTTPS name so the
+  # URLs do not change when production arrives (E08 pins Let's Encrypt there).
+  #
+  # The host port is configurable; the container port is fixed, so the
+  # certificates and the URLs inside the network never depend on it.
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    environment:
+      CALFLEX_DEV_DOMAIN: ${CALFLEX_DEV_DOMAIN:-localhost}
+    ports:
+      - "${CALFLEX_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-config:/config
+      - caddy-data:/data
+    depends_on:
+      - api
+      - caldav
+      - mailpit
+      - zitadel-api
+    mem_limit: 128m
+    networks:
+      stack:
+        # So that services inside the network (the seed above all) reach the
+        # stack through the same URLs the developer uses.
+        aliases:
+          - api.${CALFLEX_DEV_DOMAIN:-localhost}
+          - auth.${CALFLEX_DEV_DOMAIN:-localhost}
+          - caldav.${CALFLEX_DEV_DOMAIN:-localhost}
+          - mailpit.${CALFLEX_DEV_DOMAIN:-localhost}
+
+  # `make seed` (profile `seed`, so `make dev` never starts it): one-shot, and
+  # idempotent, so it can run against an already-running stack. It needs no
+  # image build — the program is plain Node with no dependencies.
+  seed:
+    profiles:
+      - seed
+    image: node:24-alpine
+    restart: "no"
+    command:
+      - node
+      - /seed/seed.mjs
+    environment:
+      # Caddy's *container* port, resolved inside the network by its alias above.
+      # It is fixed at 8443 whatever CALFLEX_HTTPS_PORT publishes, so the seed
+      # works on any published port (a seed that dialled the published port
+      # would fail with ECONNREFUSED as soon as that port is not 8443).
+      CALFLEX_SEED_BASE_URL: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:8443"
+      # Zitadel resolves its instance from the request's Host, so the seed sends
+      # the authority a browser would — the published one, port included.
+      CALFLEX_SEED_HOST: "auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
+      CALFLEX_SEED_USERS_FILE: /seed/users.json
+      CALFLEX_SEED_PAT_PATH: /zitadel-bootstrap/seed.pat
+      CALFLEX_SEED_CA_PATH: /caddy-pki/caddy/pki/authorities/local/root.crt
+      CALFLEX_SEED_PASSWORD: ${CALFLEX_SEED_PASSWORD:-Password1!}
+    volumes:
+      - ./seed:/seed:ro
+      # Zitadel writes the seed machine user's PAT here; Caddy's local CA root
+      # is under its data volume, so the seed can verify the local TLS.
+      - caddy-data:/caddy-pki:ro
+      - zitadel-bootstrap:/zitadel-bootstrap:ro
+    depends_on:
+      caddy:
+        condition: service_started
+      zitadel-api:
+        condition: service_healthy
+    mem_limit: 128m
+    networks:
+      - stack
+
+networks:
+  stack:
+
+volumes:
+  caddy-config:
+  caddy-data:
+  postgres-data:
+  zitadel-bootstrap:
