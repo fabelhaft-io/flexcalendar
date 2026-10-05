@@ -10,6 +10,7 @@ import {
   type WorkspaceToolBeforeHookResult,
 } from '@mastra/core/workspace';
 import { hardenedSandbox } from '../lib/sandbox.js';
+import { handoffInstruction, reviewerHandoffSchema } from '../lib/handoff.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const guardrails = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'guardrails.md'), 'utf8');
@@ -100,6 +101,8 @@ Working procedure:
    invariant checks, and concrete fix requests.
 5. Your final turn is validated against a schema. \`openQuestions\` must be concrete and
    non-empty whenever \`status\` is \`BLOCKED\`: it is what the next fix cycle is handed. Any
-   criterion that needs the local stack and wasn't executed means \`BLOCKED\`.`,
+   criterion that needs the local stack and wasn't executed means \`BLOCKED\`.
+
+${handoffInstruction(reviewerHandoffSchema)}`,
   });
 }

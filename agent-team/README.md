@@ -35,8 +35,8 @@ npm run dev-team -- <REQUIREMENT-ID> --paths <prefix>[,<prefix>...] [--with-revi
 
 - `--paths` lists what the implementer may write, repo-relative. A trailing `/` grants a
   directory tree (`server/caldav/`), anything else exactly one file (`Makefile`). `.git`,
-  `agent-team/`, `.claude/` and secrets files (`.env*` except `.env.example`, keys, certs) are
-  refused whatever you pass.
+  `agent-team/`, `.claude/`, `.agents/` and secrets files (`.env*` except `.env.example`, keys,
+  certs) are refused whatever you pass.
 - `--with-reviewer` additionally runs the Mastra reviewer agent, which may only write
   `docs/reviews/<ID>.md`, with up to two in-process fix cycles. Off by default.
 - `--force` runs past the limit of the first attempt plus two fix cycles. Only a human decides
@@ -57,6 +57,14 @@ What a run does:
    too narrow, and the worktree is restored.
 5. Prints the typed handoff: status, the commands the agent ran with exit codes, and the open
    questions, including the stack-dependent checks the reviewer still has to run.
+
+The handoff is the agent's final message: one JSON object, validated by the coordinator against
+the schema in `src/lib/handoff.ts`, which is also in the agent's instructions. The coordinator
+does not use Mastra's `out.object`: in `@mastra/core` 1.64 every step with text is validated and
+the first result wins, so a sentence next to an early tool call replaced a valid final handoff
+with the fallback. Each run keeps the final text in `runs/<ID>/run-<n>/implementer-final-text.txt`
+and, when it fails validation, the reason in `implementer-handoff-error.txt` (`reviewer-*` for
+the Mastra reviewer). The run then reports `BLOCKED` with that reason.
 
 Run it in the background and follow the log:
 

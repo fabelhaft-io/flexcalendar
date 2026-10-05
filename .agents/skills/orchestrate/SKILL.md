@@ -48,9 +48,9 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
    cd agent-team && npm run dev-team -- <ID> --paths <p1>,<p2> > <scratch>/<ID>.run<n>.log 2>&1
    ```
 
-   - `--paths`: a trailing `/` grants a tree; anything else exactly one file. Root files are listed one by one (`Makefile`, `package.json`, `pnpm-lock.yaml`, `.gitignore`, …). Grant the narrowest set the requirement plausibly needs. The coordinator always refuses `.git`, `agent-team/`, `.claude/` and secrets files. Never grant `.agents/` either: it holds this skill.
+   - `--paths`: a trailing `/` grants a tree; anything else exactly one file. Root files are listed one by one (`Makefile`, `package.json`, `pnpm-lock.yaml`, `.gitignore`, …). Grant the narrowest set the requirement plausibly needs. The coordinator always refuses `.git`, `agent-team/`, `.claude/`, `.agents/` (this skill) and secrets files.
    - The coordinator creates `feat/<ID>-<slug>` in `../calendar-flex-agent-<ID>`, cut from `main` and merged forward on reuse. It commits in-scope files only. Out-of-scope edits land in `agent-team/runs/<ID>/run-<n>/out-of-scope/`, which is the sign of a too-narrow `--paths`.
-   - A BLOCKED exit (code 1) can mean a failed handoff schema, not a real blocker. Read the run commit (`git -C <worktree> log -1 --format=%B`) and review the branch anyway.
+   - A BLOCKED exit (code 1) can mean a failed handoff schema, not a real blocker. The reason is in `agent-team/runs/<ID>/run-<n>/implementer-handoff-error.txt`, next to the agent's final text. Review the branch anyway.
 3. **Review** it in its worktree, by [`review-checklist.md`](review-checklist.md). Write `docs/reviews/<ID>.md`:
    - the verdict, the review number and the reviewed commit;
    - each criterion with its command and observed output;
