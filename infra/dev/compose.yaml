@@ -282,8 +282,14 @@ services:
       - node
       - /seed/seed.mjs
     environment:
-      # The public URL, resolved inside the network by Caddy's alias above.
-      CALFLEX_SEED_BASE_URL: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
+      # Caddy's *container* port, resolved inside the network by its alias above.
+      # It is fixed at 8443 whatever CALFLEX_HTTPS_PORT publishes, so the seed
+      # works on any published port (a seed that dialled the published port
+      # would fail with ECONNREFUSED as soon as that port is not 8443).
+      CALFLEX_SEED_BASE_URL: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:8443"
+      # Zitadel resolves its instance from the request's Host, so the seed sends
+      # the authority a browser would — the published one, port included.
+      CALFLEX_SEED_HOST: "auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
       CALFLEX_SEED_USERS_FILE: /seed/users.json
       CALFLEX_SEED_PAT_PATH: /zitadel-bootstrap/seed.pat
       CALFLEX_SEED_CA_PATH: /caddy-pki/caddy/pki/authorities/local/root.crt

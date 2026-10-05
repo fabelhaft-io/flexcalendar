@@ -32,7 +32,13 @@ async function startStubZitadel({ storeCreates = true } = {}) {
     request.on('data', (chunk) => chunks.push(chunk));
     request.on('end', () => {
       const body = chunks.length === 0 ? undefined : JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      requests.push({ method: request.method, url: request.url, body, authorization: request.headers.authorization });
+      requests.push({
+        method: request.method,
+        url: request.url,
+        body,
+        authorization: request.headers.authorization,
+        host: request.headers.host,
+      });
 
       const json = (status, payload) => {
         response.writeHead(status, { 'content-type': 'application/json' });
@@ -88,12 +94,13 @@ const twoUsers = [
   { userName: 'bob', firstName: 'Bob', lastName: 'Berg', email: 'bob@example.test' },
 ];
 
-function runSeed({ baseUrl, usersFile, patFile }) {
+function runSeed({ baseUrl, host, usersFile, patFile }) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [seedProgram], {
       env: {
         ...process.env,
         CALFLEX_SEED_BASE_URL: baseUrl,
+        ...(host === undefined ? {} : { CALFLEX_SEED_HOST: host }),
         CALFLEX_SEED_USERS_FILE: usersFile,
         CALFLEX_SEED_PAT_PATH: patFile,
         CALFLEX_SEED_PASSWORD: 'StubPassword1!',
@@ -159,4 +166,21 @@ test('refuses a users file with fewer than two users', async (t) => {
   assert.notEqual(run.code, 0);
   assert.match(run.stderr, /must list at least two users/);
   assert.equal(zitadel.requests.length, 0);
+});
+
+// The seed connects to Caddy on its container port (8443) but has to tell
+// Zitadel the authority the developer published. Without this header, a stack
+// on any other port would present the wrong authority — this fails if the
+// header is dropped or derived from the connection URL again.
+test('sends the configured authority in the Host header', async (t) => {
+  const zitadel = await startStubZitadel();
+  t.after(() => zitadel.close());
+  const files = await writeSeedFiles(twoUsers);
+
+  const run = await runSeed({ baseUrl: zitadel.url, host: 'auth.localhost:9443', ...files });
+  assert.equal(run.code, 0, `run failed: ${run.stderr}`);
+  assert.ok(zitadel.requests.length > 0);
+  for (const entry of zitadel.requests) {
+    assert.equal(entry.host, 'auth.localhost:9443', `Host on ${entry.method} ${entry.url}`);
+  }
 });

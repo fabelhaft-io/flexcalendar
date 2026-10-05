@@ -52,9 +52,13 @@ Docker daemon, nothing runs as root on the host, and nothing writes a sysctl
 - Every container has a memory limit (ADR 0004), Postgres included.
 - Caddy issues every certificate from its own local CA. Nothing here talks to
   Let's Encrypt; the production Caddyfile pins `acme_ca` (E08).
-- `zitadel-api` and `zitadel-login` run as uid 0 *inside* their containers, as
-  upstream asks: they write the bootstrap tokens into a shared volume. Under
-  rootless Podman that is the unprivileged user's subuid, not root on the host.
+- `zitadel-api` and `zitadel-login` run as uid 0 *inside* their containers. The
+  reason is the bootstrap volume, not upstream: rootless Podman creates the
+  `zitadel-bootstrap` volume owned by the container uid 0, only that uid can
+  create the two personal-access-token files in it, and the same owner-only
+  files are what `zitadel-login` reads back. Under rootless Podman that uid is
+  the unprivileged user's subuid, not root on the host. Drop `user: "0"` when a
+  permission model that survives the bootstrap exists (E08).
 
 To trust the local CA on the host:
 
@@ -71,6 +75,14 @@ and authenticates with a personal access token that Zitadel writes when the
 instance is first created (the `calflex-seed` machine user configured in the
 compose file, PAT in the shared volume). It needs no tooling on the host.
 
+It reaches Zitadel through Caddy — the same TLS-terminating edge the developer
+uses — on Caddy's **container** port, 8443, which does not move when
+`CALFLEX_HTTPS_PORT` changes; it presents the *published* authority in the `Host`
+header, because Zitadel resolves its instance from the request's Host. The two
+are separate knobs (`CALFLEX_SEED_BASE_URL`, `CALFLEX_SEED_HOST`), so `make seed`
+works whatever port the stack publishes. TLS is verified against Caddy's local
+CA, mounted read-only into the one-shot container.
+
 - **Idempotent.** A user whose email already exists is skipped, a lost race
   (`ALREADY_EXISTS`) counts as success, and a second `make seed` creates
   nothing.
@@ -82,7 +94,8 @@ compose file, PAT in the shared volume). It needs no tooling on the host.
   them. Add more by editing `seed/users.json`.
 - **No calendars or events yet.** Every calendar is Private until Phase 4
   (E04-R03), so seeded events are skeletons with no content properties
-  (E03-R09, INV-01). That seeding belongs to E04.
+  (E03-R09, INV-01). Adding calendars and events to the seed belongs to later
+  requirements.
 - The password of the seeded users is `CALFLEX_SEED_PASSWORD`
   (`Password1!`), and the Zitadel admin is `CALFLEX_ZITADEL_ADMIN_USER` /
   `CALFLEX_ZITADEL_ADMIN_PASSWORD` in `.env.example` — both development-only.

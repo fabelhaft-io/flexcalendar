@@ -155,6 +155,26 @@ check('the seed runs as a one-shot service, under its own profile', () => {
   return true;
 });
 
+// The seed runs inside the network, where Caddy always listens on 8443: a base
+// URL built from the *published* port fails with ECONNREFUSED the moment that
+// port is not 8443 (review 1, fix 2). Zitadel, in turn, resolves its instance
+// from the request's Host, so the seed presents the authority a browser uses.
+const seedEnvironment = services.seed?.environment ?? {};
+
+check('the seed reaches Caddy on its container port, not the published one', () => {
+  const baseUrl = String(seedEnvironment.CALFLEX_SEED_BASE_URL ?? '');
+  if (!/:8443$/.test(baseUrl)) return `CALFLEX_SEED_BASE_URL is ${JSON.stringify(baseUrl)}, which must end in :8443`;
+  if (baseUrl.includes('${CALFLEX_HTTPS_PORT')) return 'the published port is the connection port again';
+  return true;
+});
+
+check('the seed sends Zitadel the authority the developer uses', () => {
+  const host = String(seedEnvironment.CALFLEX_SEED_HOST ?? '');
+  return host.startsWith('auth.') && host.includes('${CALFLEX_HTTPS_PORT:-8443}')
+    ? true
+    : `CALFLEX_SEED_HOST is ${JSON.stringify(host)}`;
+});
+
 // A healthcheck whose command words YAML parsed as something else (a `? :`
 // ternary becomes a mapping) fails at container start, not here.
 for (const [name, service] of Object.entries(services)) {
@@ -222,6 +242,15 @@ for (const host of ['caldav', 'api', 'auth', 'mailpit']) {
     caddyfile.includes(`${host}.{$CALFLEX_DEV_DOMAIN`),
   );
 }
+
+// The login UI answers `/ui/v2/login` and everything under it; routing only the
+// wildcard form sends the bare path to the core, which answers 404 (review 1,
+// fix 1).
+check('the Caddyfile routes the login UI both its base path and everything under it', () =>
+  /@login\s+path\s+\/ui\/v2\/login\s+\/ui\/v2\/login\/\*/.test(withoutComments(caddyfile))
+    ? true
+    : 'the base path /ui/v2/login is not routed to zitadel-login',
+);
 
 for (const [, upstream, port] of caddyfile.matchAll(/reverse_proxy\s+([a-z0-9._-]+):(\d+)/g)) {
   check(`Caddy's upstream ${upstream}:${port} is a compose service`, upstream in services);

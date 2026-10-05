@@ -16,7 +16,15 @@
 // credential: nothing here prints the PAT or the seed password.
 //
 // Configuration (all optional, defaults suit the compose stack):
-//   CALFLEX_SEED_BASE_URL    public Zitadel URL  (default https://auth.localhost:8443)
+//   CALFLEX_SEED_BASE_URL    Zitadel URL as reachable from where the seed runs;
+//                            inside the stack that is Caddy on its *container*
+//                            port, which is 8443 whatever the published one is
+//                            (default https://auth.localhost:8443)
+//   CALFLEX_SEED_HOST        Host header to send, i.e. the authority a browser
+//                            uses — the published one. Zitadel resolves its
+//                            instance from the request's Host and is never
+//                            reached in this stack without one (default: the
+//                            base URL's own authority)
 //   CALFLEX_SEED_USERS_FILE  seed data           (default ./users.json)
 //   CALFLEX_SEED_PAT_PATH    seed machine user's personal access token
 //                            (default /zitadel-bootstrap/seed.pat)
@@ -32,6 +40,9 @@ import { request as httpsRequest } from 'node:https';
 
 const settings = {
   baseUrl: process.env.CALFLEX_SEED_BASE_URL ?? 'https://auth.localhost:8443',
+  // Left undefined in-process (the tests' stub) so node sends the Host it
+  // derived from the URL; compose passes the published authority here.
+  host: process.env.CALFLEX_SEED_HOST ?? undefined,
   usersFile: process.env.CALFLEX_SEED_USERS_FILE ?? new URL('users.json', import.meta.url).pathname,
   patPath: process.env.CALFLEX_SEED_PAT_PATH ?? '/zitadel-bootstrap/seed.pat',
   caPath: process.env.CALFLEX_SEED_CA_PATH ?? '/caddy-pki/caddy/pki/authorities/local/root.crt',
@@ -57,6 +68,9 @@ function requestJson(url, { method = 'GET', body, token, ca } = {}) {
         ca,
         headers: {
           accept: 'application/json',
+          // The authority a browser would use. Without it, Caddy's TLS and
+          // routing still work, but Zitadel would see the container port.
+          ...(settings.host ? { host: settings.host } : {}),
           ...(payload ? { 'content-type': 'application/json', 'content-length': payload.length } : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
