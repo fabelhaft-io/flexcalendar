@@ -76,7 +76,13 @@ Agent shell commands run under bubblewrap (`src/lib/sandbox.ts`):
   never reach the host disk.
 - The environment holds only `PATH`, a private `HOME` and cache variables. No API keys.
 - `~/.cache/calendar-flex-agent-team/` is the one host path bound read-write: the corepack, pnpm
-  store, npm and Gradle caches, so pnpm (`corepack pnpm …`) isn't downloaded on every run.
+  store, npm, Composer and Gradle caches, so pnpm (`corepack pnpm …`) isn't downloaded on every run.
+- **PHP and Composer** are on the sandbox's `PATH`, because the host has none
+  (`src/lib/toolchains.ts`). The coordinator downloads a static PHP 8.4 CLI from static-php-cli
+  and the official `composer.phar` once, into `~/.cache/calendar-flex-agent-team-tools/`. It
+  checks both against pinned SHA-256 hashes on every run and binds the directory read-only. If
+  they can't be provisioned (offline, a hash mismatch), the run continues and the agent is told
+  that PHP is unavailable. To bump a version, change the URL and both hashes together.
 - **No Podman.** Rootless `podman` cannot start under bwrap ("Error determining cgroups mode"),
   and the user's Podman socket is deliberately not mounted, because socket access is a sandbox
   escape. `/run/user/<uid>` must never be bound read-write: a failed rootless attempt deleted the

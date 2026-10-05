@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { LocalSandbox } from '@mastra/core/workspace';
+import { ensureToolchains, type Toolchains } from './toolchains.js';
 
 // OS-level shell hardening. LocalFilesystem containment only covers the file *tools*; a shell
 // command via execute_command could otherwise reach anywhere on the host (that is how a run in
@@ -73,13 +74,13 @@ function buildBwrapArgsWithDev(opts: {
 
 /**
  * Persistent, agent-only cache directory, bound read-write into every sandbox so corepack,
- * pnpm, npm and Gradle stop re-downloading on every run. It is deliberately NOT the user's real
+ * pnpm, npm, Composer and Gradle stop re-downloading on every run. It is deliberately NOT the user's real
  * `~/.cache`: nothing the sandbox writes here can touch host tool state. The sandbox's `HOME`
  * points inside it too, because bwrap gives the process no home directory of its own.
  */
 export function agentCacheDir(): string {
   const dir = path.join(os.homedir(), '.cache', 'calendar-flex-agent-team');
-  for (const sub of ['home', 'corepack', 'pnpm-store', 'npm', 'xdg', 'gradle']) {
+  for (const sub of ['home', 'corepack', 'pnpm-store', 'npm', 'xdg', 'gradle', 'composer']) {
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
   }
   return dir;
@@ -89,11 +90,12 @@ export function agentCacheDir(): string {
  * The sandbox's whole environment. Mastra passes only what is listed here, so API keys from
  * agent-team/.env and the user's shell never reach agent commands. pnpm is reached through
  * `corepack pnpm …`, because `corepack enable` would have to write into the (read-only) Node
- * install.
+ * install. PHP and Composer come from the pinned, read-only toolchain directory (`toolchains.ts`).
  */
-function sandboxEnv(cacheDir: string): NodeJS.ProcessEnv {
+function sandboxEnv(cacheDir: string, tools: Toolchains | null): NodeJS.ProcessEnv {
+  const toolPath = tools ? [tools.binDir] : [];
   return {
-    PATH: [path.dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
+    PATH: [path.dirname(process.execPath), ...toolPath, '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
     HOME: path.join(cacheDir, 'home'),
     LANG: 'C.UTF-8',
     COREPACK_HOME: path.join(cacheDir, 'corepack'),
@@ -102,6 +104,9 @@ function sandboxEnv(cacheDir: string): NodeJS.ProcessEnv {
     npm_config_store_dir: path.join(cacheDir, 'pnpm-store'),
     XDG_CACHE_HOME: path.join(cacheDir, 'xdg'),
     GRADLE_USER_HOME: path.join(cacheDir, 'gradle'),
+    COMPOSER_HOME: path.join(cacheDir, 'composer'),
+    COMPOSER_CACHE_DIR: path.join(cacheDir, 'composer', 'cache'),
+    COMPOSER_NO_INTERACTION: '1',
   };
 }
 
@@ -140,7 +145,8 @@ let loggedFallback = false;
  *
  * What is NOT bound, on purpose: `/run/user/<uid>` (the Podman socket — a sandbox escape; and a
  * failed rootless-podman attempt through a read-write bind once deleted the host's `pause.pid`),
- * the user's home directory, and anything outside the worktree except the paths below.
+ * the user's home directory, and anything outside the worktree except the paths below. The
+ * pinned PHP/Composer directory is bound read-only, after the read-write binds.
  * Rootless `podman` itself cannot run under bwrap ("Error determining cgroups mode"), so
  * stack-dependent checks run outside the sandbox, during review.
  */
@@ -150,7 +156,8 @@ export function hardenedSandbox(opts: {
   allowNetwork?: boolean;
 }): LocalSandbox {
   const cacheDir = agentCacheDir();
-  const env = sandboxEnv(cacheDir);
+  const tools = ensureToolchains();
+  const env = sandboxEnv(cacheDir, tools);
   const detection = LocalSandbox.detectIsolation();
   if (os.platform() !== 'linux' || detection.backend !== 'bwrap' || !detection.available) {
     if (!loggedFallback) {
@@ -171,7 +178,7 @@ export function hardenedSandbox(opts: {
       bwrapArgs: buildBwrapArgsWithDev({
         workspacePath: opts.workspacePath,
         allowNetwork: opts.allowNetwork ?? true,
-        readOnlyPaths: opts.readOnlyPaths,
+        readOnlyPaths: [...(tools ? [tools.root] : []), ...(opts.readOnlyPaths ?? [])],
         readWritePaths: [cacheDir],
       }),
     },

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { ensureToolchains } from './toolchains.js';
 
 // Computed once per coordinator run (PATH checks and `--version` calls on the host, no LLM call)
 // and handed to every agent as a fact block in its system prompt, so "is there PHP, can I run
@@ -24,14 +25,16 @@ export interface EnvironmentFacts {
 }
 
 export function probeEnvironment(): EnvironmentFacts {
+  // PHP and Composer are the sandbox's pinned toolchains, not whatever the host has.
+  const tools = ensureToolchains();
   return {
     node: process.version,
     corepack: version('corepack'),
     java: version('java', ['-version']),
     plantuml: version('plantuml', ['-version']),
     podman: version('podman'),
-    php: version('php'),
-    composer: version('composer'),
+    php: tools ? version(tools.php, ['-v']) : null,
+    composer: tools ? version(tools.composer) : null,
     flutter: version('flutter'),
     make: version('make'),
   };
@@ -47,9 +50,13 @@ export function formatEnvironmentFacts(facts: EnvironmentFacts): string {
     `Java: ${or(facts.java, 'not found')}. Gradle wrappers download into a cached GRADLE_USER_HOME.`,
     `plantuml: ${or(facts.plantuml, 'not found')}.`,
     `make: ${or(facts.make, 'not found')}.`,
-    `PHP: ${or(facts.php, 'not installed on this machine')}. Composer: ${or(facts.composer, 'not installed on this machine')}. ` +
-      'On the host, PHP and Composer only run in containers, and containers are not available to you (next line). ' +
-      'Write PHP carefully, and list every PHP check you could not run under openQuestions.',
+    facts.php && facts.composer
+      ? `PHP: ${facts.php}, a static build with pdo_pgsql, mbstring, tokenizer, dom, xml, zip and openssl. ` +
+        `Composer: ${facts.composer}. Both are on PATH (\`php\`, \`composer\`), pinned and read-only. ` +
+        'Run `composer install` in server/caldav before its scripts; its cache persists across runs. ' +
+        'Keep composer.lock in step with composer.json; the coordinator commits it with your other changes.'
+      : 'PHP and Composer: NOT available in this run (the coordinator could not provision them). ' +
+        'Write PHP carefully, and list every PHP check you could not run under openQuestions.',
     `Podman: ${or(facts.podman, 'not found')} on the host, but NOT usable from your sandbox: rootless podman ` +
       'cannot start under bwrap, and the Podman socket is deliberately not mounted. Do not try `podman`, ' +
       '`podman compose`, `docker` or `make dev`. Anything that needs the local stack (integration tests, ' +
