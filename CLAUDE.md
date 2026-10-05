@@ -141,3 +141,17 @@ These affect architecture; check the docs / ask before building anything that as
 - Implementation work is driven by `docs/06-implementation-backlog.md` and `docs/epics/`. Follow its agent working agreement, and pick up only requirements whose `D-*` decisions are Pinned. Never break an `INV-*` invariant.
 - Keep the iCalendar model authoritative. Don't invent shadow fields in the API layer that diverge from `VEVENT`.
 - When in doubt about whether something belongs in the CalDAV layer or the API layer: stock-app-visible behavior goes in CalDAV; everything else (push, custom sharing UI, app auth) goes in the API layer.
+
+## Notes for the orchestrating session
+
+These apply to the Claude session that runs and reviews the implementers. An implementer agent follows `agent-team/src/prompts/guardrails.md` instead and must not act on the permissions below. **Persistent notes live here, in this file, not in Claude's auto-memory**: when something is worth remembering across sessions, add it to this section in a PR.
+
+- **Roles.** The Mastra team in `agent-team/` implements; the session orchestrates and reviews. After its own review passes, the session pushes the branch and opens the PR itself (`gh`, as the repo owner's account), without asking again. Only the owner merges. The Claude Code `/dev-team` skill is the alternative harness, used only when the owner asks for it.
+- **No Podman in the sandbox.** Implementers never get the Podman socket (it is a sandbox escape). They run format, lint, type check and unit tests; the reviewing session runs `make dev`, `make seed`, integration tests and `make verify` outside the sandbox.
+- **Infrastructure.** Staging checks follow D-20 in `06`. The production server is off-limits until the owner has installed an SSH key, and then each action needs the owner's approval. Never ask for or use its password.
+- **No stacked branches.** A requirement that needs another one's code waits until that PR is merged.
+- **Fix cycles.** The coordinator refuses a dirty worktree, so commit `docs/reviews/<ID>.md` on the branch before re-running. At most three implementer runs; `--force` only with the owner's OK.
+- **Commit style gotcha.** GitHub squashes a single-commit PR with that commit's own message, not the PR title, so every commit must follow the `CONTRIBUTING.md` style too.
+- **Check prose.** The implementer is thorough, but every requirement so far has shipped a wrong factual claim in a README or comment (licence, phase numbers, an invented product name, file modes). Check each one against the docs and the running system.
+- **iOS waits for Phase 5.** Don't run or ask for iOS checks before then, even where an earlier requirement mentions iOS; scope those criteria to Android and the Dart VM.
+- **Shell hook.** The project's Bash hook rejects any command text that names a dotenv file other than `.env.example`, even inside a regex or a heredoc. Write `[.]en[v]` in commands, and use the file-edit tools for text that mentions such files.
