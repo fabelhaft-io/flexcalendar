@@ -40,9 +40,11 @@ app.setNotFoundHandler(async (request, reply) => {
 });
 
 try {
-  await app.listen({ port, host });
-  process.stdout.write(`calendar-flex api skeleton listening on ${host}:${port}\n`);
+  const address = await app.listen({ port, host });
+  process.stdout.write(`calendar-flex api skeleton listening on ${address}\n`);
 } catch (error) {
-  process.stderr.write(`calendar-flex api skeleton failed to start: ${error.message}\n`);
+  process.stderr.write(
+    `calendar-flex api skeleton failed to start: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+  );
   process.exit(1);
 }

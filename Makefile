@@ -1,8 +1,8 @@
 # --- calendar-flex ------------------------------------------------------------------
 #
 # One entry point for the monorepo (D-09). Today it owns the local stack of
-# E02-R03; E02-R04 adds `make verify` on top, and the component epics add their
-# own targets.
+# E02-R03 and the verification gates of E02-R04. Component epics register
+# their checks without changing the top-level verification recipe.
 #
 # The stack runs with **rootless Podman** — `podman compose` hands the compose
 # file to the docker-compose binary over the user's Podman socket. There is no
@@ -57,3 +57,19 @@ check-stack: ## Check the local stack definition without a container runtime
 
 test-seed: ## Run the seed program against a stub Zitadel, no containers
 	node --test 'infra/dev/seed/*.test.mjs'
+
+.PHONY: verify verify-invariants verify-corpus
+
+verify: ## Run every package gate, stack checks and registered suites (9 minute budget)
+	timeout --kill-after=5s 540s node infra/scripts/verify.mjs all
+
+verify-invariants: ## Run registered invariant checks against the local stack
+	node infra/scripts/verify.mjs invariants
+
+verify-corpus: ## Run registered corpus checks against the local stack
+	node infra/scripts/verify.mjs corpus
+
+# Discover packages at execution time. New packages need their four scripts;
+# suites use JSON registrations, neither requires changing the verify recipe.
+verify-%:
+	node infra/scripts/verify.mjs $*
