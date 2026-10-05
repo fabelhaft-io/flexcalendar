@@ -38,8 +38,9 @@ Toolchain versions MUST be pinned: `.nvmrc`/`package.json#engines`, `pnpm` via c
 - Accept: a clean checkout builds with the pinned tools only; CI uses the same pins.
 
 ### E02-R03 · Local stack   `agent`
-`infra/dev/compose.yaml` MUST start Postgres, the CalDAV service, the API, Zitadel with its login UI container (per D-03, ADR 0004), Mailpit for SMTP, and Caddy with a local CA, with seed data from E01-R02. It runs under rootless Podman with `podman compose` (`02` § Runtime layout); nothing may require a Docker daemon or root.
-- Accept: `make dev` brings the stack up as an unprivileged user without changing sysctls; `make seed` loads fixtures; CalDAV answers at `https://caldav.localhost:8443`, the API at `https://api.localhost:8443` (the port is configurable).
+`infra/dev/compose.yaml` MUST start Postgres, the CalDAV service, the API, Zitadel with its login UI container (per D-03, ADR 0004), Mailpit for SMTP, and Caddy with a local CA. `make seed` MUST load the stack's own development seed from `infra/dev/seed/`: at least two test users in Zitadel, so later requirements can seed calendars and events for them. It runs under rootless Podman with `podman compose` (`02` § Runtime layout); nothing may require a Docker daemon or root.
+- Accept: `make dev` brings the stack up as an unprivileged user without changing sysctls; `make seed` loads the seed and is idempotent; CalDAV answers at `https://caldav.localhost:8443`, the API at `https://api.localhost:8443` (the port is configurable).
+- Notes: the seed does not depend on the Phase 0 spike. E01-R02's script and fixtures belong to the spike's Radicale server and to the E15 corpus. Requirements that add calendars or events to the seed follow the Phase 1 rules: every calendar is Private until Phase 4 (E04-R03), so seeded events are skeletons with no content properties (E03-R09, INV-01).
 
 ### E02-R04 · Single verification entry point   `agent`
 `make verify` MUST run, for every package: format check, lint, type check, unit tests, and then the invariant checks (E02-R05) and the round-trip corpus (E15-R01) against the local stack.
