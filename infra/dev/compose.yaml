@@ -309,7 +309,7 @@ services:
     networks:
       - stack
 
-  # OpenTofu and token helper share state, not the login UI's credentials.
+  # OpenTofu and token helper share state in Zitadel's database, not UI credentials.
   zitadel-config:
     profiles: [seed]
     build:
@@ -318,6 +318,8 @@ services:
     restart: 'no'
     command: [apply]
     environment:
+      # Same database lifecycle as the instance; only the schema is separate.
+      PG_CONN_STR: "${CALFLEX_TOFU_PG_CONN_STR:-postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/zitadel?sslmode=disable}"
       CALFLEX_ZITADEL_ENVIRONMENT: local
       CALFLEX_OIDC_ISSUER: 'https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}'
       CALFLEX_ZITADEL_BASE_URL: 'https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:8443'
@@ -327,7 +329,6 @@ services:
       CALFLEX_TOKEN_USER: ${CALFLEX_TOKEN_USER:-}
     volumes:
       - ../zitadel:/config:ro
-      - zitadel-state:/state
       - caddy-data:/caddy-pki:ro
       - zitadel-bootstrap:/zitadel-bootstrap:ro
     depends_on:
@@ -346,4 +347,3 @@ volumes:
   caddy-data:
   postgres-data:
   zitadel-bootstrap:
-  zitadel-state:

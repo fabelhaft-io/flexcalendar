@@ -38,23 +38,32 @@ select the public instance. Public API requests go through Caddy, verifying its
 CA and sending the public Host (including the published HTTPS port). No TLS
 verification bypass is used. No port, privilege or sysctl is added.
 
-The backend lives on the private `zitadel-state` volume, with separate
-`local.tfstate`, `staging.tfstate`, `production.tfstate` paths and provider data
-directories. **State contains the helper PAT; do not commit, print or publish
-state or `tofu output -json`.** Protect staging/production state with restricted
-access and the deploy secret-store/backup discipline. Never reuse one state's
-path against another instance. Destroying an instance means discarding its
-state too; restoring a database means restoring the corresponding state.
+The OpenTofu **pg backend** stores state in schema `calflex_tofu` in the
+**same `zitadel` database** as the instance, using `PG_CONN_STR` from the
+environment. Local Compose defaults to the same connection as Zitadel's DSN;
+`CALFLEX_TOFU_PG_CONN_STR` can override it. Outside local, supply the connection
+through the password-manager CLI with verified database TLS. The backend
+creates its own schema; do not point it at a different database or instance.
+Database reset, drop, backup and restore therefore include both configuration
+state and instance data together (D-11). Provider/cache metadata is ephemeral
+under `/tmp/calflex-tofu/<environment>/.terraform`, not a state volume.
+**State contains the helper PAT; do not commit, print or publish state or
+`tofu output -json`.** Restrict database and backup access accordingly.
+Existing local installations with the old `zitadel-state` volume must run
+`make dev-reset` before applying this backend change (destructive); remove the
+obsolete volume with `podman volume rm calendar-flex-dev_zitadel-state` if it
+exists. Do not migrate stale state from a deleted instance.
 
 ## Reviewed auth surface
 
-- Android application/package name `de.flexcalendar.app`; redirect
+- Android application name `de.flexcalendar.app`; redirect
   `de.flexcalendar.app:/oauth2redirect`, logout `de.flexcalendar.app:/logout` in
   every environment. Native public OIDC 1.0, authentication NONE, response CODE,
   grants **authorization code + refresh token**, PKCE required. JWT access-token
   type; no implicit, password, device-code or token-exchange grant. Zero clock
   skew, dev mode off, extra origins empty, role/userinfo assertions off, native
-  success page skipped. No signing-certificate fingerprints configured yet.
+  success page skipped. No `android {}` App Links metadata: empty fingerprints are not persisted by
+  Zitadel, and private-use scheme redirects do not use App Links.
 - API registration uses **PRIVATE_KEY_JWT** auth method, with **no provisioned
   key or client secret**: it is an audience/registration, not an enabled
   machine credential. No other OIDC registration exists.
@@ -92,7 +101,8 @@ state too; restoring a database means restoring the corresponding state.
 ## Staging and production reuse (E08)
 
 Build the same `Dockerfile` and run the same entry point with `/config` mounted
-read-only, a private writable `/state`, and variables from `.env.example`.
+read-only and variables from `.env.example`, including `PG_CONN_STR` pointing
+to that environment's Zitadel database. Only ephemeral cache storage is needed.
 Select `CALFLEX_ZITADEL_ENVIRONMENT=staging|production`, and the matching issuer
 and base URL. Supply `ZITADEL_ACCESS_TOKEN` from the password-manager CLI for
 apply/plan only (bootstrap administrator/IAM_OWNER, not the login UI). The
@@ -128,23 +138,29 @@ production refusal. The real runner CLI is exercised with a stub tofu executable
 **Reviewer, outside the sandbox (destructive; local data only):**
 
 ```sh
-make dev-reset && make dev
-make seed && make seed
-make zitadel-plan            # must exit 0, i.e. no changes
+# Run this entire command TWICE in a row; all plans must exit 0:
+make dev-reset && make dev && make seed && make seed && make zitadel-plan
+make dev-reset && make dev && make seed && make seed && make zitadel-plan
 make token USER=alice        # verifies JWKS + project aud before printing
 make token USER=bob
-# Save only a normalized configuration comparison (registrations/policies),
-# NOT tokens/PATs or raw sensitive state. IDs may change after recreation.
-make dev-reset && make dev   # removes Zitadel's database AND its old tofu state
-make seed && make seed
-make zitadel-plan            # again exit 0, compare semantic configuration
+# Compare normalized registrations/policies before and after each reset.
+# IDs may change; NEVER save tokens/PATs or raw sensitive state.
+
+# Separate teardown: drop ONLY Zitadel's database, keep the rest of Postgres.
+# Stop the stack and discard first-instance PAT files (not database/state files).
+export COMPOSE_PROJECT_NAME=calendar-flex-dev
+podman compose --file infra/dev/compose.yaml down --remove-orphans
+podman volume rm calendar-flex-dev_zitadel-bootstrap
+podman compose --file infra/dev/compose.yaml up --detach --wait postgres
+podman compose --file infra/dev/compose.yaml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "DROP DATABASE zitadel WITH (FORCE)" -c "CREATE DATABASE zitadel"'
+make dev && make seed && make zitadel-plan
 make token USER=alice
+# Compare the same normalized configuration; other databases must be intact.
 ```
 
 The exact containerized plan command is
 `podman compose --file infra/dev/compose.yaml --profile seed run --rm -T zitadel-config plan`
-with `COMPOSE_PROJECT_NAME=calendar-flex-dev` exported, as Make does. Database
-teardown above destroys the whole **local** cluster, not staging/production.
+with `COMPOSE_PROJECT_NAME=calendar-flex-dev` exported, as Make does. Both teardown procedures are **local only**, never staging/production.
 For production's no-helper acceptance, run the mock-provider production plan
 assertions with `tofu -chdir=infra/zitadel test -filter=tests/auth.tftest.hcl` and
 review `environments/production.tfvars` plus the three count expressions.

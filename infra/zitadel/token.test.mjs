@@ -231,6 +231,7 @@ test('apply initializes locked provider then applies chosen environment; plan ex
     await run({
       args: [operation],
       env: {
+        PG_CONN_STR: 'postgresql://test@postgres/zitadel',
         ZITADEL_ACCESS_TOKEN: 'seed-pat',
         CALFLEX_ZITADEL_BASE_URL: s.baseUrl,
       },
@@ -238,7 +239,7 @@ test('apply initializes locked provider then applies chosen environment; plan ex
         calls.push(args);
       },
     });
-    assert.ok(calls[0].includes('-lockfile=readonly'));
+    assert.deepEqual(calls[0], ['init', '-input=false', '-lockfile=readonly']);
     assert.deepEqual(calls[1], [
       operation,
       '-input=false',
@@ -272,11 +273,12 @@ test('runner CLI happy paths apply and token, with stub provider CLI and statefu
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(
     `${directory}/tofu`,
-    `#!/usr/bin/env node\nif(process.argv[2]==='output') console.log(JSON.stringify({project_id:{value:'project'},android_client_id:{value:'android'},token_helper_pat:{value:'helper-pat'}}));\n`,
+    `#!/usr/bin/env node\nif(process.env.PG_CONN_STR !== 'postgresql://test@postgres/zitadel' || process.env.TF_DATA_DIR !== '/tmp/calflex-tofu/local/.terraform' || process.argv.some(a => a.startsWith('-backend-config='))) process.exit(9);\nif(process.argv[2]==='output') console.log(JSON.stringify({project_id:{value:'project'},android_client_id:{value:'android'},token_helper_pat:{value:'helper-pat'}}));\n`,
     { mode: 0o755 },
   );
   const env = {
     PATH: `${process.cwd()}/${directory}:${process.env.PATH}`,
+    PG_CONN_STR: 'postgresql://test@postgres/zitadel',
     ZITADEL_ACCESS_TOKEN: 'seed-pat',
     CALFLEX_ZITADEL_BASE_URL: s.baseUrl,
     CALFLEX_OIDC_ISSUER: issuer,

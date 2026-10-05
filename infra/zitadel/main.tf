@@ -34,10 +34,6 @@ resource "zitadel_application_oidc" "android" {
   id_token_userinfo_assertion  = false
   additional_origins           = []
   skip_native_app_success_page = true
-  android {
-    package_name             = "de.flexcalendar.app"
-    sha256_cert_fingerprints = [] # No signing certificates/keys stored here.
-  }
 }
 # This is a DIFFERENT account from first-instance's login-client. It has the
 # custom-login APIs' required role, never IAM_OWNER; absent in production.

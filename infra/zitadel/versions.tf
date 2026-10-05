@@ -6,5 +6,9 @@ terraform {
       version = "= 3.8.7"
     }
   }
-  backend "local" {}
+  # State belongs to the same database/backup lifecycle as the Zitadel instance.
+  # PG_CONN_STR comes from the environment, never backend CLI arguments.
+  backend "pg" {
+    schema_name = "calflex_tofu"
+  }
 }

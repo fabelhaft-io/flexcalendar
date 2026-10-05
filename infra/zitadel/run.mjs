@@ -19,6 +19,10 @@ export async function run({
   const issuer = env.CALFLEX_OIDC_ISSUER ?? 'https://auth.localhost:8443';
   // Refuse BEFORE reading a credential or state, initializing tofu or contacting an API.
   if (operation === 'token') refuseProduction(issuer, environment);
+  if (!env.PG_CONN_STR)
+    throw new Error(
+      "PG_CONN_STR must point to this instance's Zitadel database",
+    );
   const baseUrl = env.CALFLEX_ZITADEL_BASE_URL ?? issuer;
   const authority = new URL(issuer).host;
   const ca = env.CALFLEX_ZITADEL_CA_PATH
@@ -26,7 +30,8 @@ export async function run({
     : undefined;
   const tofuEnv = {
     ...env,
-    TF_DATA_DIR: env.TF_DATA_DIR ?? `/state/${environment}/.terraform`,
+    TF_DATA_DIR:
+      env.TF_DATA_DIR ?? `/tmp/calflex-tofu/${environment}/.terraform`,
   };
   // Reading an existing helper output needs no bootstrap account at all.
   if (operation !== 'token') {
@@ -78,12 +83,7 @@ export async function run({
       return result.stdout;
     });
   await call(
-    [
-      'init',
-      '-input=false',
-      '-lockfile=readonly',
-      `-backend-config=path=${env.CALFLEX_TOFU_STATE_PATH ?? `/state/${environment}.tfstate`}`,
-    ],
+    ['init', '-input=false', '-lockfile=readonly'],
     operation === 'token',
   );
   if (operation !== 'token') {

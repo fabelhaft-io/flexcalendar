@@ -51,7 +51,8 @@ dev-reset: ## Stop the local stack and delete its volumes (all local data)
 
 seed: dev ## Load infra/dev/seed/ into the stack (idempotent)
 	$(COMPOSE) --profile seed run --rm seed
-	$(COMPOSE) --profile seed run --build --rm -T zitadel-config apply
+	$(COMPOSE) --profile seed build zitadel-config
+	$(COMPOSE) --profile seed run --rm -T zitadel-config apply
 
 check-stack: ## Check the local stack definition without a container runtime
 	node infra/dev/check-stack.mjs
