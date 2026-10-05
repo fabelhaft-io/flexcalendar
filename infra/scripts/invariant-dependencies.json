@@ -1,0 +1,22 @@
+{
+  "npm": {},
+  "composer": {},
+  "platform": {
+    "php": "PHP language runtime; no event-content crypto library.",
+    "composer-runtime-api": "Composer loader API, not cryptography.",
+    "composer-plugin-api": "Composer plugin API, not cryptography.",
+    "ext-openssl": "PHP transport TLS support only; must not be used to open event envelopes.",
+    "ext-hash": "Hashes for integrity checks and delegated-principal authentication; not event-content decryption.",
+    "ext-dom": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-filter": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-iconv": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-json": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-libxml": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-mbstring": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-pdo": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-pdo_pgsql": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-phar": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-tokenizer": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-xmlwriter": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography."
+  }
+}

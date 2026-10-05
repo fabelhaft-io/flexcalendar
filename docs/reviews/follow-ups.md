@@ -6,9 +6,9 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **chore** · the implementer's handoff failed schema validation in 3 of 6 runs: Mastra's per-step structured output let an early step's fallback replace a valid final handoff. Fixed, and `.agents` refused, in `chore/implementer-handoff`.
-2. **E02-R09** · Zitadel configuration as code, `agent+review`.
-3. **E02-R05**, then **E02-R07**, then **E02-R06**.
+1. **E02-R05** · invariant checks: passed review 2, PR open.
+2. **E02-R09** · Zitadel configuration as code, `agent+review`: run 3 of 3 (the last).
+3. **E02-R07**, then **E02-R06**. R07 waits for E02-R09's PR (both edit the `Makefile`).
 4. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
 5. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 6. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
@@ -16,7 +16,7 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 ## Follow-ups waiting for their requirement
 
-- **E02-R05/R06**, a pin-consistency check:
+- **E02-R06**, a pin-consistency check:
   - `.nvmrc` against `devEngines` and the `engines` range;
   - both pubspecs' Dart SDK against the Dart that the `.fvmrc` Flutter release ships.
 - **E02-R06**, CI:
@@ -29,7 +29,9 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
   - the CalDAV image installs `pdo_pgsql`;
   - add `sabre/dav ^4.7` to `composer.json` and `composer.lock` (the lock exists since E02-R04, with the dev tools only);
   - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`).
-- **E05-R01:** replaces the API skeleton in `server/api/src/server.mjs`.
+- **E05-R01:**
+  - replaces the API skeleton in `server/api/src/server.mjs`;
+  - a JWT library such as `jose` is crypto-looking for INV-07 (E02-R05), so it needs an entry in `infra/scripts/invariant-dependencies.json` with its own reason (JWT signature verification against Zitadel's JWKS, no content decryption).
 - **E08:** production pins images by digest; the dev stack's image tags are no template for that.
 - **E10-R01 (Phase 3):**
   - keep the Gradle 9.3.1 wrapper and `gradle/gradle-daemon-jvm.properties` after `flutter create`;
@@ -45,5 +47,5 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-- **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-claude-md` and `-sandbox-php`. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
-- **The pnpm rationale paragraph for `02`:** offered, not answered. The reason is that pnpm's strict `node_modules` is what makes the INV-07 dependency check and the E05-R02 `tsdav` rule hold.
+- **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-claude-md`, `-sandbox-php`, `-handoff`, `-doc-r09`, `-doc-r05` and `-claude-connectors`. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
+- **Guardrails wording** (offered, not answered): E02-R09 run 2 stopped before writing anything because its checks need the stack. One sentence in `agent-team/src/prompts/guardrails.md` would settle it, as its own `chore:` PR: an implementer never stops over a check it can't run in the sandbox; it writes the deliverable and lists those checks for the reviewer.
