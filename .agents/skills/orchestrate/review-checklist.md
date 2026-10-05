@@ -52,8 +52,8 @@ ADRs 0001–0002 still use the old phase numbers; `docs/04` has the mapping.
 ## The spec wins over the code
 
 - Check the requirement against the doc its Spec row cites.
-- A gap in the docs is fixed in the same PR, or needs a new ADR with the user's sign-off.
-- A requirement the user wants changed gets its own `doc(<ID>): …` PR first.
+- A gap in the docs is fixed in the same PR, or needs a new ADR with the owner's sign-off.
+- A requirement the owner wants changed gets its own `doc(<ID>): …` PR first.
 
 ## Secrets and configuration
 

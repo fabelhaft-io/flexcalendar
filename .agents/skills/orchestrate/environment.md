@@ -6,7 +6,7 @@
 - Java 27 is the default; JDK 21 is at `/usr/lib/jvm/java-21-openjdk`.
 - `plantuml`; `gh`, logged in as the repo owner.
 - Containers: rootless Podman. `podman compose` hands the file to docker-compose over the user socket. There is no Docker daemon.
-- PHP, Composer, Dart and Flutter are **not** on the host. Run them in containers: `php:8.4-cli` (copy `composer` out of `composer:2`, or use that image for installs), and `dart:<pinned>`. For Flutter there is no `ghcr.io/cirruslabs/flutter` tag for our pin. Download the official `flutter_linux_<version>-stable.tar.xz` into the scratchpad, check its SHA-256 against `releases_linux.json`, and run it with `HOME` and `PUB_CACHE` pointed there.
+- PHP, Composer, Dart and Flutter are **not** on the host. Run them in containers: `php:8.4-cli` (copy `composer` out of `composer:2`, or use that image for installs), and `dart:<pinned>`. For Flutter there is no `ghcr.io/cirruslabs/flutter` tag for our pin. Download the official `flutter_linux_<version>-stable.tar.xz` into the scratch directory, check its SHA-256 against `releases_linux.json`, and run it with `HOME` and `PUB_CACHE` pointed there.
 - A `composer` shim on `PATH` that runs `php:8.4-cli` lets `make verify` run on the host:
 
   ```sh
@@ -26,9 +26,9 @@
 
 ## Shell pitfalls
 
-- The tool shell is not bash: `==` breaks it and `${PIPESTATUS[…]}` is empty. Wrap anything non-trivial in `bash -c '…'`, or write a script into the scratchpad and run it with `bash`.
-- The project's Bash hook rejects any command text that names a dotenv file other than `.env.example`, even in a regex, a heredoc or `git check-ignore`. Write `[.]en[v]` in commands, and use the file-edit tools for text that mentions such files. Never read `agent-team/.env`.
-- A safety check blocks `rm -rf` inside `bash -c` and scripts, and sometimes inline scripts it can't parse. Use fresh directory names (`clean-$(date +%s)`) instead of deleting, and put Python or Node checks in a scratchpad file.
-- The auto-mode classifier blocks `git branch -D`. Leave branch deletion to the user.
-- Foreground `sleep` is blocked. Use `run_in_background` and wait for the notification. A wait loop on `pgrep -f '<text>'` matches its own command line.
-- `tsx` runs a scratchpad `.ts` file as CJS, so top-level `await` fails. Name it `.mts`.
+- The owner's login shell is fish, not bash: `==` breaks it and `${PIPESTATUS[…]}` is empty. Wrap anything non-trivial in `bash -c '…'`, or write a script into the scratch directory and run it with `bash`.
+- Never read `agent-team/.env` (the model API keys).
+- Leave branch deletion to the owner.
+- A wait loop on `pgrep -f '<text>'` matches its own command line; wait on the background job itself instead.
+- `tsx` runs a `.ts` file outside a package as CJS, so top-level `await` fails. Name it `.mts`.
+- Tool-specific restrictions (hooks, safety checks) are in that tool's own skill, for example `.claude/skills/orchestrate/SKILL.md`.

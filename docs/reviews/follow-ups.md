@@ -1,6 +1,6 @@
 # Implementation loop — queue and follow-ups
 
-The state of the orchestrator loop (`.claude/skills/orchestrate/`): what runs next, the review findings that belong to a later requirement, and the questions waiting for the owner. Update it on the requirement branch whenever a review changes it. The epic Status cells and the PR list stay the source of truth for what is Done.
+The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs next, the review findings that belong to a later requirement, and the questions waiting for the owner. Update it on the requirement branch whenever a review changes it. The epic Status cells and the PR list stay the source of truth for what is Done.
 
 ## Queue
 
@@ -8,7 +8,7 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 1. **E02-R04** · single verification entry point: passed review, PR #13.
 2. **chore** · PHP and Composer in the implementer sandbox: PR #14.
-3. **chore** · the implementer's handoff fails schema validation in 3 of 6 runs (`agent-team/src/lib/handoff.ts`); find out why and fix it.
+3. **chore** · the implementer's handoff fails schema validation in 3 of 6 runs (`agent-team/src/lib/handoff.ts`); find out why and fix it. In the same PR, add `.agents` to the directories the coordinator refuses (`FORBIDDEN_DIRS`), because it holds the orchestrator skill.
 4. **E02-R09** · Zitadel configuration as code, `agent+review`. Waits for #13 (both edit the `Makefile`).
 5. **E02-R05**, then **E02-R07**, then **E02-R06**.
 6. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.

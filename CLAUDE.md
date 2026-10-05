@@ -144,8 +144,8 @@ These affect architecture; check the docs / ask before building anything that as
 
 ## Working notes for Claude
 
-- **Persistent notes live in the repo, never in Claude's auto-memory.** General facts go in this file; the implementation loop's procedure goes in the `/orchestrate` skill (`.claude/skills/orchestrate/`); its queue, follow-ups and open questions go in `docs/reviews/follow-ups.md`. Change them through a PR like any other file.
-- **Running or reviewing requirements with the Mastra team:** use `/orchestrate`. The session orchestrates and reviews; it pushes the branch and opens the PR after its own review passes, and only the owner merges. Implementer agents follow `agent-team/src/prompts/guardrails.md` and never act on the orchestrator's permissions.
+- **Persistent notes live in the repo, never in Claude's auto-memory.** General facts go in this file; the implementation loop's procedure goes in the orchestrator skill (`.agents/skills/orchestrate/`, tool-neutral, with Claude Code's additions in `.claude/skills/orchestrate/`); its queue, follow-ups and open questions go in `docs/reviews/follow-ups.md`. Change them through a PR like any other file.
+- **Running or reviewing requirements with the Mastra team:** use `/orchestrate` (any other agent: follow `.agents/skills/orchestrate/SKILL.md`). The session orchestrates and reviews; it pushes the branch and opens the PR after its own review passes, and only the owner merges. Implementer agents follow `agent-team/src/prompts/guardrails.md` and never act on the orchestrator's permissions.
 - **Every commit follows the `CONTRIBUTING.md` style**, not only the PR title: GitHub squashes a single-commit PR with that commit's own message.
 - **iOS waits for Phase 5.** Don't run or ask for iOS checks before then, even where an earlier requirement mentions iOS; scope those criteria to Android and the Dart VM.
 - **Infrastructure.** Staging checks follow D-20 in `06`. The production server is off-limits until the owner has installed an SSH key, and then each action needs the owner's approval. Never ask for or use its password.
