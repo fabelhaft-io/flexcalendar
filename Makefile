@@ -58,7 +58,7 @@ check-stack: ## Check the local stack definition without a container runtime
 test-seed: ## Run the seed program against a stub Zitadel, no containers
 	node --test 'infra/dev/seed/*.test.mjs'
 
-.PHONY: verify verify-invariants verify-corpus verify-tooling verify-server-api verify-server-caldav verify-apps-mobile verify-packages-crypto_dart
+.PHONY: verify verify-invariants verify-corpus
 
 verify: ## Run every package gate, stack checks and registered suites (9 minute budget)
 	timeout --kill-after=5s 540s node infra/scripts/verify.mjs all
@@ -71,8 +71,5 @@ verify-corpus: ## Run registered corpus checks against the local stack
 
 # Discover packages at execution time. New packages need their four scripts;
 # suites use JSON registrations, neither requires changing the verify recipe.
-verify-tooling verify-server-api verify-server-caldav verify-apps-mobile verify-packages-crypto_dart:
-	node infra/scripts/verify.mjs $(@:verify-%=%)
-
 verify-%:
 	node infra/scripts/verify.mjs $*

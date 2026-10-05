@@ -5,7 +5,8 @@ naming ([Branch naming](#branch-naming)), commit style ([Commit
 style](#commit-style)), the agent working agreement from
 [`docs/06-implementation-backlog.md`](docs/06-implementation-backlog.md) ([The
 `06` agent working agreement](#the-06-agent-working-agreement)), and how to
-add an architecture decision record ([Adding an ADR](#adding-an-adr)).
+add an architecture decision record ([Adding an ADR](#adding-an-adr)), and
+verification ([Single verification entry point](#single-verification-entry-point-e02-r04)).
 
 **The docs are the spec.** Read [`docs/00-overview.md`](docs/00-overview.md)
 through
@@ -183,6 +184,8 @@ changes the system, both change in the same PR (rule 6).
 
 Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`
 and the CalDAV development tools with `cd server/caldav && composer install`.
+The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
+(the E02-R02 pins).
 Start the rootless local stack with `make dev`, then run `make verify`.
 Verification does not start, reset, or seed the stack for you. Stack-dependent
 checks inherit the environment documented in `infra/dev/.env.example`.

@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 export const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const phases = ['format:check', 'lint', 'typecheck', 'test'];
 
-/** @param {string[]} command @param {string} cwd @param {number} timeout */
-export function run(command, cwd = root, timeout = 540_000) {
+/** @param {string[]} command @param {string} cwd @param {number} timeout @param {string} step */
+export function run(command, cwd = root, timeout = 540_000, step = 'check') {
   const result = spawnSync(command[0], command.slice(1), {
     cwd,
     stdio: 'inherit',
@@ -15,7 +15,17 @@ export function run(command, cwd = root, timeout = 540_000) {
   });
   if (result.error || result.status !== 0) {
     // Do not echo command arguments: registered checks may consume sensitive data.
-    throw new Error('Verification check failed or exceeded its time budget.');
+    if (
+      result.error &&
+      'code' in result.error &&
+      result.error.code === 'ENOENT'
+    )
+      throw new Error(
+        `${step}: ${command[0]} not found on PATH (see CONTRIBUTING.md § Single verification entry point).`,
+      );
+    throw new Error(
+      `${step}: verification failed or exceeded its time budget (exit ${result.status ?? 'unavailable'}).`,
+    );
   }
 }
 
@@ -60,12 +70,22 @@ export function component(name) {
     );
     for (const phase of phases) {
       if (!manifest.scripts?.[phase])
-        throw new Error(`Missing required package script: ${phase}`);
-      run(['corepack', 'pnpm', 'run', phase], directory);
+        throw new Error(`${name}: ${phase}: missing required package script.`);
+      run(
+        ['corepack', 'pnpm', 'run', phase],
+        directory,
+        540_000,
+        `${name}: ${phase}`,
+      );
     }
   } else if (existsSync(resolve(directory, 'composer.json'))) {
     for (const phase of phases)
-      run(['composer', 'run-script', phase], directory);
+      run(
+        ['composer', 'run-script', phase],
+        directory,
+        540_000,
+        `${name}: ${phase}`,
+      );
   } else {
     const dartFiles = readdirSync(directory, { recursive: true }).filter(
       (file) =>
@@ -79,15 +99,32 @@ export function component(name) {
       return;
     }
     const flutter = existsSync(resolve(directory, '.fvmrc'));
-    run([flutter ? 'flutter' : 'dart', 'pub', 'get'], directory);
+    run(
+      [flutter ? 'flutter' : 'dart', 'pub', 'get'],
+      directory,
+      540_000,
+      `${name}: dependency resolution`,
+    );
     run(
       ['dart', 'format', '--output=none', '--set-exit-if-changed', '.'],
       directory,
+      540_000,
+      `${name}: format:check`,
     );
-    run([flutter ? 'flutter' : 'dart', 'analyze', '--fatal-infos'], directory);
+    run(
+      [flutter ? 'flutter' : 'dart', 'analyze', '--fatal-infos'],
+      directory,
+      540_000,
+      `${name}: lint/typecheck`,
+    );
     // Dart analysis performs both lint and static type checks.
     if (existsSync(resolve(directory, 'test')))
-      run([flutter ? 'flutter' : 'dart', 'test'], directory);
+      run(
+        [flutter ? 'flutter' : 'dart', 'test'],
+        directory,
+        540_000,
+        `${name}: test`,
+      );
     else console.log(`${name}: test: no registered tests yet; pass`);
   }
 }
@@ -101,17 +138,28 @@ export function suite(directory, name) {
     : [];
   if (!files.length) console.log(`${name}: no registered checks yet; pass`);
   for (const file of files) {
-    const checks = JSON.parse(readFileSync(resolve(directory, file), 'utf8'));
+    const registration = relative(root, resolve(directory, file));
+    let checks;
+    try {
+      checks = JSON.parse(readFileSync(resolve(directory, file), 'utf8'));
+    } catch {
+      throw new Error(
+        `${name}: ${registration}: cannot read valid JSON registration.`,
+      );
+    }
     if (!Array.isArray(checks) || !checks.length)
-      throw new Error('Check registration must be a nonempty array.');
-    for (const command of checks) {
+      throw new Error(
+        `${name}: ${registration}: registration must be a nonempty array.`,
+      );
+    for (const [index, command] of checks.entries()) {
+      const step = `${name}: ${registration}: entry ${index + 1}`;
       if (
         !Array.isArray(command) ||
         !command.length ||
         command.some((arg) => typeof arg !== 'string')
       )
-        throw new Error('Check command must be a nonempty string array.');
-      run(command);
+        throw new Error(`${step}: command must be a nonempty string array.`);
+      run(command, root, 540_000, step);
     }
   }
 }
@@ -120,14 +168,15 @@ export function suite(directory, name) {
 export function main(target) {
   if (target === 'all') {
     // Sequential even with make -j: stack suites only run after package gates.
-    for (const { name } of components()) run(['make', `verify-${name}`]);
+    for (const { name } of components())
+      run(['make', `verify-${name}`], root, 540_000, `component ${name}`);
     for (const name of [
       'check-stack',
       'test-seed',
       'verify-invariants',
       'verify-corpus',
     ])
-      run(['make', name]);
+      run(['make', name], root, 540_000, name);
   } else if (target === 'invariants' || target === 'corpus') {
     suite(resolve(root, 'infra/scripts/verify', target), `verify-${target}`);
   } else component(target);
@@ -139,8 +188,10 @@ if (
 ) {
   try {
     main(process.argv[2]);
-  } catch {
-    console.error('Verification failed.');
+  } catch (error) {
+    console.error(
+      error instanceof Error ? error.message : 'Verification failed.',
+    );
     process.exitCode = 1;
   }
 }

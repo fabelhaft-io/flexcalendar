@@ -1,6 +1,7 @@
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { root, suite, run, components, component } from './verify.mjs';
 
@@ -35,14 +36,16 @@ test('empty suites report success, registrations execute and failures propagate'
       resolve(dir, 'check.json'),
       JSON.stringify([[process.execPath, '-e', 'process.exit(7)']]),
     );
-    assert.throws(() => suite(dir, 'fixture'));
+    assert.throws(
+      () => suite(dir, 'fixture'),
+      /check\.json: entry 1: verification failed/,
+    );
     writeFileSync(resolve(dir, 'check.json'), '[]');
     assert.throws(() => suite(dir, 'fixture'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
-import { readFileSync } from 'node:fs';
 /** @param {string} path */
 function readMarker(path) {
   return readFileSync(path, 'utf8');
@@ -97,4 +100,41 @@ test('all orchestrates components before stack suites and stops on first failure
     rmSync(dir, { recursive: true, force: true });
   }
 });
-import { spawnSync } from 'node:child_process';
+
+test('missing tools identify the component phase and provide setup guidance', () => {
+  const dir = mkdtempSync(resolve(root, 'infra/scripts/verify/missing-tool-'));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(root, 'infra/scripts/verify.mjs'), 'server-caldav'],
+      { env: { ...process.env, PATH: dir }, encoding: 'utf8' },
+    );
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /server-caldav: format:check: composer not found on PATH/,
+    );
+    assert.match(
+      result.stderr,
+      /CONTRIBUTING\.md § Single verification entry point/,
+    );
+    writeFileSync(
+      resolve(dir, 'missing.json'),
+      JSON.stringify([[resolve(dir, 'absent-tool'), 'do-not-print-argument']]),
+    );
+    assert.throws(
+      () => suite(dir, 'fixture'),
+      (error) => {
+        assert.ok(error instanceof Error);
+        assert.match(
+          error.message,
+          /missing\.json: entry 1: .* not found on PATH/,
+        );
+        assert.doesNotMatch(error.message, /do-not-print-argument/);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
