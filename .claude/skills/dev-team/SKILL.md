@@ -37,21 +37,22 @@ set the requirement needs and confirm it with the user once.
 5. **Settle its output yourself.** The agent doesn't commit. Run
    `git -C <worktree> status --porcelain --untracked-files=all`:
    - Commit only files under the writable paths, never secrets, `.env*` (except `.env.example`),
-     `agent-team/` or `.claude/`. Message: `<ID>: implementer run <n> (<status>)`, the agent's
+     `agent-team/` or `.claude/`. Message: `feat(<ID>): implementer run <n> (<status>)`, the agent's
      summary in the body, trailer `Agent-Run: implementer`.
    - Anything else: move a copy to `agent-team/runs/<ID>/run-<n>/out-of-scope/`, then restore or
      remove it in the worktree, and tell the reviewer.
 6. **Spawn `dev-reviewer`** against the same worktree, with the base branch and the writable
    paths. It runs the stack-dependent checks and writes `docs/reviews/<ID>.md`. Read the doc
    yourself before acting on the verdict. A PASS on a runtime criterion that wasn't executed is
-   a BLOCKED. Commit the doc on the branch.
+   a BLOCKED. Commit the doc on the branch as `doc(<ID>): review <n> (<VERDICT>)`.
 7. **On BLOCKED:** re-spawn `dev-implementer` with the findings doc, then re-review. At most
    **2** fix cycles after the first attempt. After that, stop and hand the branch and findings
    doc to the user. Don't fix product code yourself.
 8. **On PASS:**
    - set the requirement's progress in its epic's Status cell, on the same branch;
-   - push the branch and open the PR (`gh pr create --base main`). Title names the requirement
-     ID. The body links `docs/reviews/<ID>.md` and ends with the attribution line your system
+   - push the branch and open the PR (`gh pr create --base main`). Title is
+     `<type>(<ID>): <summary>` with type `feat`, `doc`, `fix`, `chore` or `infra`: PRs are
+     squash-merged, so it becomes the commit subject on `main` (`CONTRIBUTING.md`). The body links `docs/reviews/<ID>.md` and ends with the attribution line your system
      prompt specifies;
    - for `agent+review` requirements, say in the PR body that a human must approve it before
      merge;
