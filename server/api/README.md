@@ -18,7 +18,8 @@ and hit CalDAV directly (CLAUDE.md).
 - **Toolchain pins**
   ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)): this package's
   [`package.json`](package.json) pins Node 24 through `engines`, and the
-  workspace root pins the exact Node patch (`.nvmrc`, `devEngines`) and pnpm
+  workspace root requires Node 24 from 24.17.0 on (`.nvmrc` installs the
+  newest Node 24; `devEngines` accepts any 24.x from 24.17.0) and pins pnpm
   (`packageManager`, via corepack). Add dependencies with
   `corepack pnpm add --filter @calendar-flex/api …` so `pnpm-lock.yaml` stays the
   single source of resolved versions.
