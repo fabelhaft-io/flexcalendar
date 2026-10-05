@@ -50,7 +50,8 @@ Toolchain versions MUST be pinned: `.nvmrc`/`package.json#engines`, `pnpm` via c
 The automatable invariants in `06` MUST be CI checks:
 - INV-05: client packages (`apps/*`, `packages/crypto_*`) contain no code that emits `EXDATE`/`RECURRENCE-ID`.
 - INV-07: `server/**` dependency trees contain no libsodium, tweetnacl, `@noble/*` or similar content-crypto package (allow-list with justification for TLS/hash libs).
-- Accept: each check fails on a deliberately bad fixture commit (tested in CI).
+- Accept: each check is registered in `infra/scripts/verify/invariants/` (E02-R04), so `make verify` runs it, and passes on the current tree.
+- Accept: each check has deliberately bad fixtures in the repo, and unit tests assert that the check fails on each of them for the invariant's reason, not for an unrelated error. CI runs these tests once E02-R06 runs `make verify`; R05 does not wait for it.
 - Notes: INV-06 (the push payload schema test) is added by E07-R04 together with the payload builder, in Phase 4. There is nothing to check before then.
 
 ### E02-R06 · CI pipeline   `agent`
