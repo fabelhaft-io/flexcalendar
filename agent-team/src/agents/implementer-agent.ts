@@ -10,7 +10,7 @@ import {
   type WorkspaceToolBeforeHookResult,
 } from '@mastra/core/workspace';
 import { hardenedSandbox } from '../lib/sandbox.js';
-import { isWritable } from '../lib/handoff.js';
+import { handoffInstruction, implementerHandoffSchema, isWritable } from '../lib/handoff.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const guardrails = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'guardrails.md'), 'utf8');
@@ -122,6 +122,8 @@ Working procedure:
    needs the local stack, as the exact commands the reviewer should run.
 
 Spend your tool-call budget on implementation and step 5, not on open-ended exploration. Don't
-retry the same verification more than once if it already gave you an answer.`,
+retry the same verification more than once if it already gave you an answer.
+
+${handoffInstruction(implementerHandoffSchema)}`,
   });
 }

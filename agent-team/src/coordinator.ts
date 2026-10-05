@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { z } from 'zod';
 import { loadConfig } from './config.js';
 import { findRequirement, branchSlug, resolveSpecDocs, extractH2Section, type Requirement } from './lib/requirements.js';
 import {
@@ -20,6 +21,7 @@ import {
   implementerHandoffSchema,
   reviewerHandoffSchema,
   partitionByScope,
+  parseHandoff,
   type ImplementerHandoff,
   type ReviewerHandoff,
 } from './lib/handoff.js';
@@ -112,15 +114,41 @@ function implementerFallback(reason: string, question: string): ImplementerHando
   };
 }
 
-const SCHEMA_FAILURE = implementerFallback(
-  "Implementer's final turn failed structured-output schema validation.",
-  'The implementer model returned a final turn Mastra could not validate against the handoff schema — ' +
-    'a model/provider quirk, not a budget issue. Check the log\'s "Error in agent stream" line. Whatever ' +
-    'it wrote to disk was still scope-filtered and committed; re-run, or switch models if it recurs.',
-);
-
 function reviewerFallback(findingsDocPath: string, question: string): ReviewerHandoff {
   return { status: 'BLOCKED', findingsDocPath, checks: [], openQuestions: [question] };
+}
+
+/** Per-run files outside the worktree (gitignored): quarantined files and handoff diagnostics. */
+function runDir(requirementId: string, run: number): string {
+  return path.join(__dirname, '..', 'runs', requirementId, `run-${run}`);
+}
+
+type HandoffRead<T> = { ok: true; value: T } | { ok: false; budgetExhausted: boolean; error: string };
+
+/**
+ * Reads an agent's handoff from the text of its last step. `out.object` is not used: in
+ * @mastra/core 1.64, direct-mode structured output validates every step that has text and the
+ * first result wins, so one sentence next to a tool call ("Let me look at the files.") turned a
+ * valid final handoff into the fallback value. Mastra still gets the schema, for the providers
+ * that constrain output to it. The final text and, on failure, the validation error are written
+ * to `dir` as `<label>-final-text.txt` and `<label>-handoff-error.txt`.
+ */
+async function readHandoff<T>(
+  label: string,
+  out: { text: Promise<string>; steps: Promise<unknown[]> },
+  schema: z.ZodType<T>,
+  dir: string,
+): Promise<HandoffRead<T>> {
+  const text = await out.text;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${label}-final-text.txt`), text);
+  const parsed = parseHandoff(schema, text);
+  if (parsed.ok) return parsed;
+  const budgetExhausted = (await out.steps).length >= MAX_STEPS;
+  const errorFile = path.join(dir, `${label}-handoff-error.txt`);
+  fs.writeFileSync(errorFile, `${parsed.error}\n`);
+  log(`${label} handoff failed validation${budgetExhausted ? ` after ${MAX_STEPS} steps` : ''}; see ${errorFile}`);
+  return { ok: false, budgetExhausted, error: parsed.error };
 }
 
 async function runImplementer(opts: {
@@ -130,20 +158,27 @@ async function runImplementer(opts: {
   writablePaths: string[];
   environmentFacts: string;
   prompt: string;
+  runDir: string;
 }): Promise<ImplementerHandoff> {
   const agent = createImplementerAgent(opts);
   const out = await agent.stream(opts.prompt, {
     maxSteps: MAX_STEPS,
-    structuredOutput: { schema: implementerHandoffSchema, errorStrategy: 'fallback', fallbackValue: SCHEMA_FAILURE },
+    structuredOutput: { schema: implementerHandoffSchema, errorStrategy: 'warn' },
   });
   await logAgentProgress('implementer', out);
-  const handoff = await out.object;
-  if (handoff) return handoff;
-  log(`implementer finished without a structured handoff — likely exhausted its ${MAX_STEPS}-step budget`);
+  const handoff = await readHandoff('implementer', out, implementerHandoffSchema, opts.runDir);
+  if (handoff.ok) return handoff.value;
+  if (handoff.budgetExhausted) {
+    return implementerFallback(
+      `Implementer exhausted its ${MAX_STEPS}-step budget before producing a handoff.`,
+      `The implementer ran out of its ${MAX_STEPS}-step budget before reporting. Check the log for redundant ` +
+        'tool calls, then trim those or raise MAX_STEPS.',
+    );
+  }
   return implementerFallback(
-    `Implementer exhausted its ${MAX_STEPS}-step budget before producing a handoff.`,
-    `The implementer ran out of its ${MAX_STEPS}-step budget before reporting. Check the log for redundant ` +
-      'tool calls, then trim those or raise MAX_STEPS.',
+    "Implementer's final turn failed handoff schema validation.",
+    `The implementer's final text does not match the handoff schema (${handoff.error}). The text and the ` +
+      `error are in ${opts.runDir}. Whatever it wrote to disk was still scope-filtered and committed.`,
   );
 }
 
@@ -167,7 +202,7 @@ function settleImplementerOutput(opts: {
   let quarantined: string[] = [];
   let quarantineDir = '';
   if (outOfScope.length) {
-    quarantineDir = path.join(__dirname, '..', 'runs', requirement.id, `run-${run}`, 'out-of-scope');
+    quarantineDir = path.join(runDir(requirement.id, run), 'out-of-scope');
     quarantined = quarantineFiles(worktreePath, outOfScope, quarantineDir);
     log(`moved ${quarantined.length} out-of-scope file(s) to ${quarantineDir}: ${quarantined.join(', ')}`);
   }
@@ -235,6 +270,7 @@ export async function runCoordinator(options: CoordinatorOptions): Promise<Coord
       writablePaths,
       environmentFacts,
       prompt,
+      runDir: runDir(requirement.id, run),
     });
     const settled = settleImplementerOutput({
       worktreePath: worktree.path,
@@ -279,16 +315,19 @@ export async function runCoordinator(options: CoordinatorOptions): Promise<Coord
         `Write your findings to ${findingsDocPath}.\n\n${basePrompt}${scopeNote}`,
       {
         maxSteps: MAX_STEPS,
-        structuredOutput: {
-          schema: reviewerHandoffSchema,
-          errorStrategy: 'fallback',
-          fallbackValue: reviewerFallback(findingsDocPath, "The reviewer's final turn failed schema validation."),
-        },
+        structuredOutput: { schema: reviewerHandoffSchema, errorStrategy: 'warn' },
       },
     );
     await logAgentProgress('reviewer', reviewOut);
-    const review =
-      (await reviewOut.object) ?? reviewerFallback(findingsDocPath, `The reviewer exhausted its ${MAX_STEPS}-step budget.`);
+    const reviewRead = await readHandoff('reviewer', reviewOut, reviewerHandoffSchema, runDir(requirement.id, run));
+    const review = reviewRead.ok
+      ? reviewRead.value
+      : reviewerFallback(
+          findingsDocPath,
+          reviewRead.budgetExhausted
+            ? `The reviewer exhausted its ${MAX_STEPS}-step budget.`
+            : `The reviewer's final text does not match the handoff schema (${reviewRead.error}).`,
+        );
 
     const reviewChanges = getUncommittedFiles(worktree.path);
     const reviewFiles = [...reviewChanges.tracked, ...reviewChanges.untracked];

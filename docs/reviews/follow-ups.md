@@ -6,15 +6,13 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E02-R04** · single verification entry point: passed review, PR #13.
-2. **chore** · PHP and Composer in the implementer sandbox: PR #14.
-3. **chore** · the implementer's handoff fails schema validation in 3 of 6 runs (`agent-team/src/lib/handoff.ts`); find out why and fix it. In the same PR, add `.agents` to the directories the coordinator refuses (`FORBIDDEN_DIRS`), because it holds the orchestrator skill.
-4. **E02-R09** · Zitadel configuration as code, `agent+review`. Waits for #13 (both edit the `Makefile`).
-5. **E02-R05**, then **E02-R07**, then **E02-R06**.
-6. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
-7. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
-8. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
-9. **E15**: R01–R03.
+1. **chore** · the implementer's handoff failed schema validation in 3 of 6 runs: Mastra's per-step structured output let an early step's fallback replace a valid final handoff. Fixed, and `.agents` refused, in `chore/implementer-handoff`.
+2. **E02-R09** · Zitadel configuration as code, `agent+review`.
+3. **E02-R05**, then **E02-R07**, then **E02-R06**.
+4. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
+5. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
+6. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
+7. **E15**: R01–R03.
 
 ## Follow-ups waiting for their requirement
 
@@ -47,5 +45,5 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-- **Merged branches** are still there locally and on GitHub, along with the worktree `../calendar-flex-agent-E02-R03`. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
+- **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-claude-md` and `-sandbox-php`. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
 - **The pnpm rationale paragraph for `02`:** offered, not answered. The reason is that pnpm's strict `node_modules` is what makes the INV-07 dependency check and the E05-R02 `tsdav` rule hold.
