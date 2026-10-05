@@ -12,3 +12,5 @@
   (E02-R01 notes, ADR 0003). Do not scaffold it as part of the layout work.
 - **Not here:** the mobile app (that is `../mobile/`), and no code that emits
   `EXDATE`/`RECURRENCE-ID` (INV-05).
+
+<!-- E02-R06 review: web-only change to exercise path selection -->
