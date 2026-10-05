@@ -28,4 +28,13 @@ runs:
       # The Makefile supports PODMAN_COMPOSE overrides for alternate provider
       # locations. No rootful/Docker fallback: if the runner cannot run rootless
       # Podman, this job must fail and the owner must supply a rootless runner.
-      run: make dev PODMAN_COMPOSE='podman compose'
+      run: |
+        make dev PODMAN_COMPOSE='podman compose' || {
+          podman version
+          podman compose --file infra/dev/compose.yaml ps -a
+          podman logs calendar-flex-dev-caldav-1 2>&1 | tail -40
+          podman inspect --format '{{json .State.Health}}' calendar-flex-dev-caldav-1
+          podman exec calendar-flex-dev-caldav-1 php -r "var_dump(@file_get_contents('http://127.0.0.1:8080/healthz')); var_dump(error_get_last());" || true
+          podman exec calendar-flex-dev-caldav-1 ls -la /app /app/public || true
+          exit 1
+        }
