@@ -178,3 +178,41 @@ changes the system, both change in the same PR (rule 6).
    ADR and set the old one's status to the template's `Superseded by` form,
    pointing at the new record — an accepted ADR's own text is never edited in
    place.
+
+## Single verification entry point (E02-R04)
+
+Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`
+and the CalDAV development tools with `cd server/caldav && composer install`.
+Start the rootless local stack with `make dev`, then run `make verify`.
+Verification does not start, reset, or seed the stack for you. Stack-dependent
+checks inherit the environment documented in `infra/dev/.env.example`.
+
+The entry point runs each package's format check, lint, static type check, and
+unit tests, then `make check-stack`, `make test-seed`, `make verify-invariants`, and
+`make verify-corpus`, in that order, even with `make -j`. Any failure stops the
+run with a nonzero exit. GNU `timeout` caps the complete run at nine minutes
+(with a five-second kill grace period), leaving headroom below the ten-minute
+CI limit. Dependency installation and stack startup are prerequisites, not timed
+verification steps. A timeout is a failure, not a successful fast run.
+
+Use `make verify-tooling`, `make verify-server-api`, `make verify-server-caldav`,
+`make verify-apps-mobile`, or `make verify-packages-crypto_dart` to run just one
+component. Components are discovered by manifests in `server/*`, `apps/*`, and
+`packages/*`; names are repository paths with `/` replaced by `-`. Unknown
+components fail. README-only directories are not packages yet.
+
+Node packages must provide `format:check`, `lint`, `typecheck`, and `test` scripts;
+missing scripts fail rather than being silently skipped. Composer packages expose
+the same four scripts. Dart packages without source explicitly report each empty
+gate; once source exists, `dart format`, SDK analysis (both lint and type checks),
+and unit tests run. Packages with `.fvmrc` use Flutter for resolution, analysis and
+tests; other Dart packages use Dart. Use the pinned SDKs from E02-R02.
+
+Later requirements add named JSON command registrations under
+`infra/scripts/verify/invariants/` or `infra/scripts/verify/corpus/`, or extend the
+package scripts, **not the `verify` recipe**. Each JSON file is a nonempty array
+of nonempty string arrays (executable followed by arguments), run from the repo
+root in filename order, without a shell. Each check owns its fixtures and its
+stack connectivity assertions. Empty suites explicitly print “no registered
+checks yet; pass”. Malformed registrations and failed checks fail closed. Never
+log event content or secrets, including from corpus fixtures.

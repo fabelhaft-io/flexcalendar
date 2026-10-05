@@ -18,5 +18,19 @@
     "optimize-autoloader": true
   },
   "minimum-stability": "stable",
-  "prefer-stable": true
+  "prefer-stable": true,
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "3.89.1",
+    "phpstan/phpstan": "2.1.32",
+    "phpunit/phpunit": "12.4.2"
+  },
+  "scripts": {
+    "format:check": "php-cs-fixer fix --dry-run --using-cache=no --config=.php-cs-fixer.php",
+    "lint": [
+      "@php -l public/index.php",
+      "@php -l .php-cs-fixer.php"
+    ],
+    "typecheck": "phpstan analyse --no-progress --level=6 public",
+    "test": "@php -r \"if (!is_dir('tests')) { echo 'caldav: no registered unit tests yet; pass', PHP_EOL; } else { passthru('vendor/bin/phpunit --no-configuration --do-not-cache-result tests', \\$code); exit(\\$code); }\""
+  }
 }

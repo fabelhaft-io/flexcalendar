@@ -1,0 +1,4 @@
+node_modules/
+vendor/
+.dart_tool/
+build/

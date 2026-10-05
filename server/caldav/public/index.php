@@ -26,7 +26,7 @@ if ($path === false || $path === null || $path === '') {
 
 header('Content-Type: application/json; charset=utf-8');
 
-$body = static function (array $payload): void {
+$body = /** @param array<string, mixed> $payload */ static function (array $payload): void {
     echo json_encode($payload, JSON_UNESCAPED_SLASHES), "\n";
 };
 
