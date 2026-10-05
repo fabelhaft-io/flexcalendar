@@ -130,11 +130,11 @@ services:
 
   # The Zitadel login UI (v4): a Next.js app the core redirects browsers to.
   # It reads the login client's PAT from the shared volume and calls the core
-  # over the internal network.
+  # over the internal network. It runs as its image's own user (`nextjs`): the
+  # PAT files are world-readable (mode 0644), so only the core needs uid 0.
   zitadel-login:
     image: ghcr.io/zitadel/zitadel-login:${CALFLEX_ZITADEL_VERSION:-v4.16.0}
     restart: unless-stopped
-    user: "0"
     environment:
       ZITADEL_API_URL: http://zitadel-api:8080
       NEXT_PUBLIC_BASE_PATH: /ui/v2/login

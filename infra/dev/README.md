@@ -52,13 +52,17 @@ Docker daemon, nothing runs as root on the host, and nothing writes a sysctl
 - Every container has a memory limit (ADR 0004), Postgres included.
 - Caddy issues every certificate from its own local CA. Nothing here talks to
   Let's Encrypt; the production Caddyfile pins `acme_ca` (E08).
-- `zitadel-api` and `zitadel-login` run as uid 0 *inside* their containers. The
-  reason is the bootstrap volume, not upstream: rootless Podman creates the
-  `zitadel-bootstrap` volume owned by the container uid 0, only that uid can
-  create the two personal-access-token files in it, and the same owner-only
-  files are what `zitadel-login` reads back. Under rootless Podman that uid is
-  the unprivileged user's subuid, not root on the host. Drop `user: "0"` when a
-  permission model that survives the bootstrap exists (E08).
+- Only `zitadel-api` runs as uid 0 *inside* its container, and the reason is the
+  bootstrap volume, not upstream: rootless Podman creates the
+  `zitadel-bootstrap` volume owned by the container uid 0, and only that uid can
+  create the two personal-access-token files in it on a fresh volume. Under
+  rootless Podman that uid is the unprivileged user's subuid, not root on the
+  host. Drop `user: "0"` from `zitadel-api` when a permission model that
+  survives the bootstrap exists (E08).
+- `zitadel-login` runs as its image's own user (`nextjs`, uid 1001). The core
+  writes both PAT files mode 0644, so the login container reads
+  `login-client.pat` from the read-only mount with no extra privilege and no
+  error.
 
 To trust the local CA on the host:
 

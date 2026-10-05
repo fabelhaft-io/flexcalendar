@@ -55,8 +55,8 @@ mailpit.{$CALFLEX_DEV_DOMAIN:localhost} {
 auth.{$CALFLEX_DEV_DOMAIN:localhost} {
 	# The login UI answers its base path and everything under it. `/` sends a
 	# developer to `/ui/v2/login/`, and the login app's canonical path is the
-	# bare `/ui/v2/login` (it redirects the trailing slash away) — which
-	# Zitadel's own deploy check probes too (E08-R08). Routing only the wildcard
+	# bare `/ui/v2/login` (it redirects the trailing slash away) — which the
+	# E08-R08 deploy check probes. Routing only the wildcard
 	# form hands that bare path to the core, which answers 404.
 	@login path /ui/v2/login /ui/v2/login/*
 	handle @login {
