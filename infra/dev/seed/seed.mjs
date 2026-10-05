@@ -46,7 +46,7 @@ const settings = {
   usersFile: process.env.CALFLEX_SEED_USERS_FILE ?? new URL('users.json', import.meta.url).pathname,
   patPath: process.env.CALFLEX_SEED_PAT_PATH ?? '/zitadel-bootstrap/seed.pat',
   caPath: process.env.CALFLEX_SEED_CA_PATH ?? '/caddy-pki/caddy/pki/authorities/local/root.crt',
-  password: process.env.CALFLEX_SEED_PASSWORD ?? 'Password1!',
+  password: process.env.CALFLEX_SEED_PASSWORD ?? 'Development1!',
   timeoutMs: Number(process.env.CALFLEX_SEED_TIMEOUT_MS ?? 300_000),
   pollMs: Number(process.env.CALFLEX_SEED_POLL_MS ?? 2_000),
 };
