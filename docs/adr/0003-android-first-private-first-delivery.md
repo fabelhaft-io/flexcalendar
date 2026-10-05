@@ -117,3 +117,9 @@ v1 fetches deltas on app start and foreground, on pull-to-refresh, and every 15 
 ## Open questions
 
 1. ~~Should v1 require a second linked device (or a printed recovery code) before a user can create their first calendar?~~ **Answered 2026-10-04:** saving the recovery code is required, by print, PDF, share or copy, followed by the word check. A second device is prompted for, not required. See decision 4.
+
+## Amendments
+
+### Phase 0 spike closed (2026-10-05)
+
+The spike was run outside the repo and closed without a committed result (E01). It no longer gates Phase 4, and M0 is not a milestone anyone waits for. The consequences above that tie Phase 4 to M0 are superseded. Stock-app behaviour is checked on staging by the device protocol (E15-R05), from M2.

@@ -23,12 +23,12 @@ Goal: the production server our own app needs: CalDAV store, API, auth and backu
 - [ ] API → CalDAV through delegated service identity on an internal listener (D-05). CalDAV ACLs are derived from the API's membership table.
 - [ ] Mode-aware write guard: the CalDAV service rejects content properties (`SUMMARY`, `LOCATION`, …) in a Private calendar's skeleton. This is the server-side backstop against a client that leaks plaintext.
 - [ ] Change outbox written in the same transaction as each calendar object. The push consumer reads it from Phase 4.
-- [ ] Postgres schema: users, calendars (with `mode`), members, invitations, user keys, calendar keys, the sidecar envelope table keyed `(calendar_id, uid, recurrence_id)`, device-link rendezvous and an append-only audit log.
+- [ ] Postgres 18 schema: users, calendars (with `mode` and, for Private calendars, the encrypted name and colour, D-18), members, invitations, user keys, calendar keys, the sidecar envelope table keyed `(calendar_id, uid, recurrence_id, envelope_sha256)` (D-06), the change outbox, device-link rendezvous and an append-only audit log.
 - [ ] **`mode` accepts only `private` until Phase 4.** The API still requires `mode` explicitly on create; there is no default.
 - [ ] **`UID`s and every other generated ID are random UUIDv4.** Content-derived IDs leak titles and can never be changed without breaking every client's sync state.
-- [ ] Zitadel (OIDC + PKCE, JWT access tokens; ADR 0004). Accounts are created by invitation or by an admin, and self-registration is off. Password reset is admin-assisted until SMTP lands in Phase 4. It restores sign-in, never keys (D-17).
+- [ ] Zitadel (OIDC + PKCE, JWT access tokens; ADR 0004), configured as code with OpenTofu from the start, so the local stack, staging and production share one configuration (E02-R09). Accounts are created by invitation or by an admin, and self-registration is off. Password reset is admin-assisted until SMTP lands in Phase 4. It restores sign-in, never keys (D-17).
 - [ ] Node + TypeScript + Fastify API: calendars, event CRUD with ETag preconditions, windowed occurrence expansion with `ical.js`, delta endpoint over `sync-collection`, IANA timezone handling, problem+json errors, and no event content in logs.
-- [ ] Ops: one 4 GB VPS plus a staging environment created on demand (ADR 0004), Caddy with automatic TLS, Postgres WAL archiving plus nightly base backups to two off-site object stores at two providers, uptime and backup-age alerts, and a runbook. **Backups start here** (D-11). Backups of Private calendars are ciphertext: they protect against our failures, not against a user losing their keys.
+- [ ] Ops: one 4 GB VPS plus a staging environment created on demand (ADR 0004), Caddy with automatic TLS, Postgres WAL archiving plus nightly base backups to two off-site object stores at two providers, uptime and backup-age alerts delivered through ntfy (D-19), and a runbook. **Backups start here** (D-11). Backups of Private calendars are ciphertext: they protect against our failures, not against a user losing their keys.
 
 **Not in this phase:** device app passwords, Apple calendar-sharing extensions, iMIP/SMTP, `.ics` feeds, `.mobileconfig`, push. All of them are Phase 4.
 
@@ -67,6 +67,7 @@ Goal: one Flutter app shipped to Android. Family members share calendars that ou
 - [ ] **Device linking**: the new device shows a QR code, an existing device scans it and confirms the short code, and the keys travel sealed. The app prompts users to link a second device.
 - [ ] Private calendars end to end:
   - write path: a skeleton with only the allowed properties and a generic `VALARM` text (D-08), plus an envelope committed in the D-06 order;
+  - calendar names and colours sealed under the calendar's key, so the server only sees `Private calendar` (D-18);
   - read path that opens envelopes into the local cache;
   - client-side search over the decrypted cache;
   - recurring edits as two-step intents (D-07): the API plans with `ical.js`, the client re-seals, and the commit is atomic.
@@ -89,9 +90,9 @@ Exit criteria (M1):
 
 ## Phase 4 — Shared mode, stock apps and push (3–4 weeks)
 
-Goal: requirement #2. A Shared calendar works in Apple Calendar, in Samsung and Google Calendar via DAVx⁵, and in our app, and our app hears about changes quickly. Needs M0.
+Goal: requirement #2. A Shared calendar works in Apple Calendar, in Samsung and Google Calendar via DAVx⁵, and in our app, and our app hears about changes quickly.
 
-- [ ] Fold the M0 quirks log into the CalDAV service.
+- [ ] Run the device protocol (E15-R05) against staging, and fix the stock-app quirks it finds in the CalDAV service. The Phase 0 spike left no quirks log.
 - [ ] Lift the mode constraint so `shared` and `published` are accepted. Creating a calendar presents the mode choice with no default, worded as a constraint on who can take part: *"Private: end-to-end encrypted, everyone you share with needs the app"* vs *"Shared: works in Apple Calendar, Google Calendar and Samsung Calendar"*.
 - [ ] Mode switching:
   - the non-retroactivity warning appears at the point of switching (risk #7);
@@ -194,7 +195,7 @@ Older notes, commits and ADR 0001/0002 may use the numbering from before ADR 000
 
 | Old phase | Now |
 |---|---|
-| 0 Spike | 0, unchanged, but it gates Phase 4 only |
+| 0 Spike | Closed 2026-10-05 without a committed result; gates nothing (E01) |
 | 1 Server foundation | 1 (core) and 4 (stock-app parts: app passwords, Apple sharing, iMIP, feeds) |
 | 2 Web client | 5, plus the onboarding pages and the push fan-out in 4 |
 | 3 Mobile app | 3 (Android) and 5 (iOS) |

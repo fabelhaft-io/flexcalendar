@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Phase | 0–1 (in parallel with E01) |
-| Status | In progress: R01, R02, R08 Done; R03 passed review ([`reviews/E02-R03.md`](../reviews/E02-R03.md)), Done once merged; R04–R07 Ready |
+| Phase | 1 |
+| Status | In progress: R01, R02, R03 ([`reviews/E02-R03.md`](../reviews/E02-R03.md)) and R08 Done; R04–R07 and R09 Ready |
 | Executor | `agent` |
-| Depends on | D-09 (layout), D-01/D-02 for the service skeletons |
+| Depends on | D-09 (layout), D-01/D-02 for the service skeletons, D-03 and D-19 for R09 |
 | Spec | `02-technology-choices.md`, ADR 0002 |
 
 ## Goal
@@ -40,18 +40,18 @@ Toolchain versions MUST be pinned: `.nvmrc`/`package.json#engines`, `pnpm` via c
 ### E02-R03 · Local stack   `agent`
 `infra/dev/compose.yaml` MUST start Postgres, the CalDAV service, the API, Zitadel with its login UI container (per D-03, ADR 0004), Mailpit for SMTP, and Caddy with a local CA. `make seed` MUST load the stack's own development seed from `infra/dev/seed/`: at least two test users in Zitadel, so later requirements can seed calendars and events for them. It runs under rootless Podman with `podman compose` (`02` § Runtime layout); nothing may require a Docker daemon or root.
 - Accept: `make dev` brings the stack up as an unprivileged user without changing sysctls; `make seed` loads the seed and is idempotent; CalDAV answers at `https://caldav.localhost:8443`, the API at `https://api.localhost:8443` (the port is configurable).
-- Notes: the seed does not depend on the Phase 0 spike. E01-R02's script and fixtures belong to the spike's Radicale server and to the E15 corpus. Requirements that add calendars or events to the seed follow the Phase 1 rules: every calendar is Private until Phase 4 (E04-R03), so seeded events are skeletons with no content properties (E03-R09, INV-01).
+- Notes: the seed is the stack's own; nothing comes from the closed Phase 0 spike (E01). R09 adds the Zitadel configuration to `make seed`. Requirements that add calendars or events to the seed follow the Phase 1 rules: every calendar is Private until Phase 4 (E04-R03), so seeded events are skeletons with no content properties (E03-R09, INV-01).
 
 ### E02-R04 · Single verification entry point   `agent`
-`make verify` MUST run, for every package: format check, lint, type check, unit tests, and then the invariant checks (E02-R05) and the round-trip corpus (E15-R01) against the local stack.
-- Accept: non-zero exit on any failure; runtime under 10 min on CI; `make verify-<component>` runs one component.
+`make verify` MUST run, for every package: format check, lint, type check and unit tests, plus `make check-stack` and `make test-seed` from E02-R03, and then two suites against the local stack: `verify-invariants` (E02-R05) and `verify-corpus`. Later requirements register their checks with these targets instead of editing `make verify`. E15-R01 adds the round-trip corpus, E04-R06 the UUID check, E12-R05 the crypto vectors and E07 the INV-06 payload test.
+- Accept: non-zero exit on any failure; runtime under 10 min on CI; `make verify-<component>` runs one component; a suite with no registered checks yet passes and says so, rather than failing or being skipped silently.
 
 ### E02-R05 · Invariant checks in CI   `agent`
 The automatable invariants in `06` MUST be CI checks:
 - INV-05: client packages (`apps/*`, `packages/crypto_*`) contain no code that emits `EXDATE`/`RECURRENCE-ID`.
 - INV-07: `server/**` dependency trees contain no libsodium, tweetnacl, `@noble/*` or similar content-crypto package (allow-list with justification for TLS/hash libs).
-- INV-06: push payload builder has a schema test.
 - Accept: each check fails on a deliberately bad fixture commit (tested in CI).
+- Notes: INV-06 (the push payload schema test) is added by E07-R04 together with the payload builder, in Phase 4. There is nothing to check before then.
 
 ### E02-R06 · CI pipeline   `agent`
 GitHub Actions MUST run `make verify` on every PR, with path filters per component, cached dependencies, and a required status check on `main`.
@@ -64,3 +64,26 @@ GitHub Actions MUST run `make verify` on every PR, with path filters per compone
 
 ### E02-R08 · Conventions doc   `agent`
 `CONTRIBUTING.md` MUST record branch naming, commit style, the `06` agent working agreement, and how to add an ADR.
+
+### E02-R09 · Zitadel configuration as code   `agent+review`
+The Zitadel instance configuration MUST live in `infra/zitadel/` as OpenTofu code with the Zitadel provider (D-19). OpenTofu and the provider versions are pinned the way E02-R02 pins toolchains. The configuration covers:
+- the project (the organisation, its admin, the seed account and the login UI's `IAM_LOGIN_CLIENT` account come from Zitadel's first-instance settings in `infra/dev/compose.yaml`, as E02-R03 set them up);
+- the API's registration;
+- the Android app's native OIDC + PKCE registration, with the **JWT access-token type**, so clients that request the project audience scope get the project ID in `aud`;
+- login and password policies;
+- self-registration off;
+- no custom actions; branding by settings only.
+
+`make seed` applies it to the local stack after E02-R03's users, with OpenTofu running in a container like the seed, so nothing is installed on the host. The same code configures staging (E08-R03) and production (E08-R02).
+
+For tests, `make token USER=<seeded user>` MUST print an access token for that user without a browser:
+- it uses only Zitadel's public APIs, for example the v2 session and OIDC auth-request APIs that a custom login UI uses;
+- it never uses a password grant, and never a token type the app registrations don't issue;
+- it uses its own service account, never the login UI's `IAM_LOGIN_CLIENT` account (which production needs for the login UI), and that account exists only in the local and staging configurations;
+- the helper refuses to run against the production issuer.
+- Accept: on a fresh local stack, `make seed` twice in a row leaves `tofu plan` with no changes.
+- Accept: `make token USER=<seeded user>` prints a JWT whose `aud` contains the project ID and that verifies against Zitadel's JWKS.
+- Accept: tearing down Zitadel's database and re-applying gives an identical configuration.
+- Accept: the production configuration contains no token-helper service account.
+- Deps: E02-R03.
+- Notes: moved out of E08-R08 on 2026-10-05, so auth is in place before E03 and E05 need it. E08-R08 keeps the upgrade cadence. This is `agent+review` because it sets the auth surface: list every grant and policy in the PR.

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-27
-- **Amended by**: [ADR 0003](0003-android-first-private-first-delivery.md) (delivery order, recovery before open signup, key derivation). See § Amendments.
+- **Amended by**: [ADR 0003](0003-android-first-private-first-delivery.md) (delivery order, recovery before open signup, key derivation); pinned decisions D-06–D-08, D-14, D-15, D-17 (2026-10-04) and D-18 (2026-10-05) from `06`. See § Amendments.
 - **Relates to**: [`00-overview.md`](../00-overview.md) (central constraint), [`01-architecture.md`](../01-architecture.md) (sharing model), [`03-native-calendar-integration.md`](../03-native-calendar-integration.md), [`04-implementation-phases.md`](../04-implementation-phases.md) (Phase 5), [`05-risks-and-open-questions.md`](../05-risks-and-open-questions.md) (closes the E2EE open question)
 
 ## Context
@@ -82,7 +82,8 @@ The login password is absent on purpose. It is typed into our own IdP, so a key 
 
 - **AEAD**: XChaCha20-Poly1305, one envelope per event over a canonical JSON payload using **JSCalendar (RFC 8984) field names** — the same information as iCalendar, and it keeps the JMAP path open.
 - **AAD**: `"calflex-v1" || calendar_id || UID || RECURRENCE-ID || epoch || canonical(DTSTART, DTEND, RRULE)`, each field length-prefixed as `spec/crypto.md` defines. Binding the cleartext skeleton makes server-side tampering with timing detectable, and it is safe here precisely because no stock app ever edits a Private calendar. *Amended (D-14):* `calendar_id` and `RECURRENCE-ID` were added, so the server can't move an envelope onto another override of the same event or into another calendar.
-- **Skeleton contents** *(D-08)*: `UID`, `DTSTART`/`DTEND`, `RRULE`/`RDATE`/`EXDATE`, `RECURRENCE-ID`, `SEQUENCE`, `VALARM` and `X-CALFLEX-ENVELOPE-SHA256`. Everything else is in the envelope, including `ATTENDEE` and `ORGANIZER`, so Private calendars have no email invites. `VALARM` is cleartext, so our clients always write a fixed `DESCRIPTION:Reminder` and never the event title.
+- **Skeleton contents** *(D-08)*: `UID`, `DTSTART`/`DTEND`, `RRULE`/`RDATE`/`EXDATE`, `RECURRENCE-ID`, `SEQUENCE`, `VALARM` and `X-CALFLEX-ENVELOPE-SHA256`. Everything else is in the envelope, including `ATTENDEE` and `ORGANIZER`, so Private calendars have no email invites. `VALARM` is cleartext, so our clients always write a fixed `DESCRIPTION:Reminder` and never the event title. *Amended (2026-10-05):* the structural properties RFC 5545 requires or allows in their place (`DTSTAMP`, `DURATION` instead of `DTEND`, `CREATED`, `LAST-MODIFIED`, and `VTIMEZONE` components) are part of the skeleton too. The exhaustive allow-list that the server enforces is in E03-R09.
+- **Calendar metadata** *(D-18)*: a Private calendar's name and colour are encrypted too. The client seals them under the CCK into a calendar-metadata envelope, which the server stores opaquely, and the CalDAV collection is named `Private calendar`. A calendar's name can say as much as an event title.
 - **Key authenticity** *(D-15)*: sealed boxes don't authenticate the sender, and members' public keys are handed out by our server, which could substitute its own. Every user therefore has an Ed25519 identity key. Sealed CCK records and key bundles are signed with it, and members verify each other's identity keys in the app, by scanning a QR code in person or by comparing safety numbers. Key transparency can come later.
 - **Key wrapping**: libsodium sealed boxes (`crypto_box_seal`, X25519). HPKE (RFC 9180) would be more modern but Dart has no maintained implementation.
 - **Rotation**: removing a member starts epoch N+1 for new writes. They keep whatever they already downloaded; no design prevents that.
@@ -148,7 +149,7 @@ Feed URLs must be revocable and rotatable, since URL secrecy is the whole access
 | Private, Tier 1 | Yes, via audited release | Yes, with notice and a cancellable delay | "We can recover it, and we always tell you" |
 | Private, Tier 2 | **No** | **Data is lost** | "We cannot read it" |
 
-Even at Tier 2, "zero knowledge" is not available: we still see event count, timing, recurrence, modification times and the share graph. The overall story — *"private calendars are end-to-end encrypted; calendars that work with Apple and Google Calendar are not, and the app always tells you which is which"* — is honest because the mode is visible in the product.
+Even at Tier 2, "zero knowledge" is not available: we still see the number of calendars and events, timing, recurrence, modification times and the share graph, but not calendar names (D-18). The overall story — *"private calendars are end-to-end encrypted; calendars that work with Apple and Google Calendar are not, and the app always tells you which is which"* — is honest because the mode is visible in the product.
 
 ## Consequences
 
@@ -209,3 +210,7 @@ Applied in place above, each marked where it changes the text:
 - **D-14**: `calendar_id` and `RECURRENCE-ID` are in the AAD.
 - **D-15**: Ed25519 identity keys, signed CCK records and in-app key verification.
 - **D-17**: no KEK from the login password. `KEK_pw` and Argon2id are gone from the key diagram, and keys reach new devices by device linking, the recovery code or (Tier 1) escrow.
+
+### Pinned decisions from `06` (2026-10-05)
+
+- **D-18**: a Private calendar's name and colour are sealed under the CCK, and the server sees only `Private calendar` (§ Private calendars — cryptography). The skeleton list now names the structural properties that RFC 5545 requires.

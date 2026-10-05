@@ -102,6 +102,13 @@ The adapter is scoped to **Shared** calendars ([ADR 0001](adr/0001-calendar-priv
   - Caddy's default issuers are Let's Encrypt *and* ZeroSSL, and it falls back to ZeroSSL when Let's Encrypt fails. CAA would reject that fallback, so every non-local Caddyfile pins the global option `acme_ca https://acme-v02.api.letsencrypt.org/directory`. The local stack (E02-R03) uses Caddy's local CA instead.
   - Certificates are per hostname (HTTP-01 or TLS-ALPN-01), never wildcards, so ports 80 and 443 must be reachable from the internet.
   - Hostnames: `api.flexcalendar.de` (API), `auth.flexcalendar.de` (Zitadel), `caldav.flexcalendar.de` (CalDAV; routed by Caddy only from Phase 4, since M1 doesn't expose CalDAV). Staging uses the same names under `staging.flexcalendar.de`, for example `api.staging.flexcalendar.de`.
+- Platform choices pinned as D-19 (2026-10-05):
+  - **PostgreSQL 18** for the one cluster;
+  - **GHCR** for container images, pinned by digest;
+  - **OpenTofu** with the Zitadel provider for IdP configuration as code;
+  - **a password manager with a CLI** as the secret store, with deploys reading secrets through its CLI;
+  - **ntfy** for ops alerts until SMTP exists, with uptime probes from a hosted service outside our host;
+  - no error reporter before Phase 8 (`04`).
 - The CalDAV server **must be reachable on the public internet on port 443** for stock apps to talk to it. This is a real constraint: no internal-only deployments unless you also ship a VPN profile.
 
 ### Sizing and cost

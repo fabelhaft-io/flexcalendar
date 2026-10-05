@@ -34,10 +34,11 @@ The API MUST ...                       <- normative statement (RFC 2119 words)
 6. **Update the docs in the same PR** when behaviour or a technology choice moves away from `00`–`05` or an ADR. A new decision gets a new ADR, using `adr/0000-template.md`.
 7. **Security-sensitive work is `agent+review`.** Never merge it yourself.
 8. **Never commit secrets**: signing certs, APNs keys, HSM credentials, SMTP credentials, Firebase service accounts. Everything is read from the environment, and `.env.example` documents the variable names.
+9. **Criteria that need real infrastructure run on staging, by the coordinator** (D-20). Agents never deploy. Where a criterion needs a fresh VPS, staging, the backup buckets or an external grader, the coordinator executes it against staging and records the result in the review doc. Production is the owner's.
 
 ## Decisions to pin before agents start (D-*)
 
-The docs left these open, or disagreed with themselves, in ways that would make agents build different incompatible things. **All were pinned on 2026-10-04**, as the Recommendation column states. Three version or vendor details were updated at pinning time: Node 24 instead of 22 (D-01), PHP 8.4 instead of 8.3 (D-02), and AWS KMS as the KMS vendor (D-10). The ADR amendments the decisions call for are in ADR 0001 § Amendments and ADR 0002. D-03 and D-10 were amended the same day by [ADR 0004](adr/0004-single-4gb-host.md) to fit the stack on one 4 GB host. Changing a pinned decision needs a human and, where it touches an ADR, a new ADR or amendment.
+The docs left these open, or disagreed with themselves, in ways that would make agents build different incompatible things. **D-01 to D-17 were pinned on 2026-10-04 and D-18 to D-20 on 2026-10-05**, as the Recommendation column states. Three version or vendor details were updated at pinning time: Node 24 instead of 22 (D-01), PHP 8.4 instead of 8.3 (D-02), and AWS KMS as the KMS vendor (D-10). The ADR amendments the decisions call for are in ADR 0001 § Amendments and ADR 0002. D-03 and D-10 were amended the same day by [ADR 0004](adr/0004-single-4gb-host.md) to fit the stack on one 4 GB host. Changing a pinned decision needs a human and, where it touches an ADR, a new ADR or amendment.
 
 | ID | Decision | Recommendation | Why it blocks | Blocks | Status |
 |---|---|---|---|---|---|
@@ -58,12 +59,15 @@ The docs left these open, or disagreed with themselves, in ways that would make 
 | D-15 | **Public-key authenticity** (missing from ADR 0001) | Sealed boxes don't authenticate the sender, and members' public keys are handed out by our server. A malicious server could substitute its own key when a member is added, receive the CCK and read everything. That breaks the Tier 2 "we cannot read it" claim. **Sign CCK records and key bundles with a per-user Ed25519 identity key, and let members compare safety numbers (or a QR code) in the app.** Key transparency can come later. Needs an ADR 0001 amendment. | Sharing Private calendars, trusted contacts | E12, E13, E14 | **Pinned** 2026-10-04 |
 | D-16 | Crypto on web (ADR 0002 tension) | ADR 0002 says the key hierarchy "lives in Dart only", but the web client has to unwrap keys (via device linking or the recovery code, per D-17), open envelopes and seal CCKs to share. **Web implements that operational subset in TS. Recovery-code generation, Shamir and escrow setup stay Dart-only (mobile) in v1.** Recorded in ADR 0002. | Web Private mode | E12, E13 | **Pinned** 2026-10-04 |
 | D-17 | **Keys must not derive from the login password** (missing from ADR 0001) | ADR 0001 wraps the private key under an Argon2id KEK from "the user password", but that password is typed into our IdP (D-03), which we host. We could derive the KEK, so the Tier 2 claim "we cannot read it" would be false. **Generate keys on the device and keep them in Keystore/Keychain-backed storage. Move them to new devices only by device linking (QR code and short code, keys sealed to the new device's ephemeral X25519 key). The only server-side wrapped copy is under the recovery-code KEK (HKDF). Remove KEK_pw from ADR 0001's key diagram.** Argon2id returns only if a separate passphrase option is added later. OPAQUE is the alternative that keeps password-only login, if both an IdP authenticator and a Dart client exist. Needs an ADR 0001 amendment; see ADR 0003 decision 5. | Key hierarchy, recovery | E04, E12, E14 | **Pinned** 2026-10-04 |
+| D-18 | **Private calendar names** (missing from ADR 0001) | **A Private calendar's name and colour are encrypted.** The client seals them into a calendar-metadata envelope under the CCK. The API stores it opaquely in `calendars.meta_envelope`, and the CalDAV collection carries the fixed display name `Private calendar`. Without this, a calendar called "Chemo" would sit in plaintext in Postgres and CalDAV, which the ADR 0001 claim table doesn't disclose. Shared and Published calendars keep their names in CalDAV, where stock apps read them. Recorded as an ADR 0001 amendment. | Schema, calendars API, crypto spec, write guard | E03, E04, E05, E12, E13 | **Pinned** 2026-10-05 |
+| D-19 | Platform choices left open by `02` | **PostgreSQL 18** (Zitadel supports 14–18; `NULLS NOT DISTINCT` needs ≥ 15). **GHCR** for container images, pinned by digest. **OpenTofu** with the Zitadel provider for IdP configuration as code. **A password manager with a CLI** is the secret store; deploys read secrets through its CLI into the environment. **ntfy** for ops alerts until SMTP exists, with uptime probes from a hosted service outside our host. **No error reporter before Phase 8** (`04`). | Deploy, ops, auth config | E02, E04, E08 | **Pinned** 2026-10-05 |
+| D-20 | Who executes infrastructure acceptance criteria | **The coordinator, against staging only.** It may run `make staging-up`/`staging-down`, `make deploy ENV=staging`, backup checks against the real buckets and external graders, and it records the results in `docs/reviews/<ID>.md`. Production deploys stay with the owner. Implementers and the reviewer agent never deploy. | Every criterion that needs a real VPS | E08, E13-R08 | **Pinned** 2026-10-05 |
 
 **When each decision is first needed** (phase order from ADR 0003). All are pinned now; the table says which phase first builds on each one:
 
 | Before | Decisions |
 |---|---|
-| Phase 1 (server core) | D-01, D-02, D-03, D-05, D-06, D-09, D-10 (VPS part), D-11, D-13 |
+| Phase 1 (server core) | D-01, D-02, D-03, D-05, D-06, D-09, D-10 (VPS part), D-11, D-13, D-18, D-19, D-20 |
 | Phase 2 (crypto core) | D-08, D-14, D-15, D-17 |
 | Phase 3 (Android app) | D-07 |
 | Phase 4 (stock apps) | D-04, D-12 |
@@ -95,21 +99,21 @@ Most epics span phases now: each epic's header says which of its requirements be
 
 | Epic | Title | Phase | Primary executor | Depends on |
 |---|---|---|---|---|
-| [E01](epics/E01-integration-spike.md) | Phase 0 integration spike | 0 (parallel; gates 4) | human (agent-prepared) | — |
-| [E02](epics/E02-repo-tooling-ci.md) | Monorepo, tooling, CI, local stack | 0–1 | agent | D-09 |
-| [E03](epics/E03-caldav-service.md) | CalDAV service (SabreDAV) | 1 (4) | agent+review | E02, D-02, D-05; D-04 for Phase 4 |
-| [E04](epics/E04-data-model.md) | Relational data model and migrations | 1 | agent | E02, D-02, D-06, D-17 |
-| [E05](epics/E05-api-core.md) | API core: auth, events, recurrence | 1 (3, 4) | agent | E03, E04, D-01, D-03; D-07 for R07 |
+| [E01](epics/E01-integration-spike.md) | Phase 0 integration spike. **Done**, gates nothing | 0 | human | — |
+| [E02](epics/E02-repo-tooling-ci.md) | Monorepo, tooling, CI, local stack, IdP config | 1 | agent | D-09; D-03, D-19 for R09 |
+| [E03](epics/E03-caldav-service.md) | CalDAV service (SabreDAV) | 1 (4) | agent+review | E02-R03, E04-R01/R02, D-02, D-05, D-18; D-04 for Phase 4 |
+| [E04](epics/E04-data-model.md) | Relational data model and migrations | 1 | agent | E02-R03, D-02, D-06, D-17, D-18, D-19 |
+| [E05](epics/E05-api-core.md) | API core: auth, events, recurrence | 1 (3, 4) | agent | E02-R07, E02-R09, E03-R01, E04, D-01, D-03, D-18; D-07 for R07 |
 | [E06](epics/E06-sharing-feeds-onboarding.md) | Sharing, feeds, stock-app onboarding | 3 (4) | agent+review | E05 |
 | [E07](epics/E07-change-fanout.md) | Change detection and push fan-out | 4 (5) | agent | E05 |
-| [E08](epics/E08-operations.md) | Hosting, TLS, backups, observability, mail | 1→ | human + agent | E02, D-10, D-11 |
+| [E08](epics/E08-operations.md) | Hosting, TLS, backups, observability, mail | 1→ | human + agent | E02-R03, E02-R06, E02-R09, D-10, D-11, D-19, D-20 |
 | [E09](epics/E09-web-client.md) | Web client | 5 | agent | E05, E06, E07, E12 (TS) |
 | [E10](epics/E10-mobile-app.md) | Flutter mobile app | 3 (4, 5) | agent | E05, E12, E13 |
 | [E11](epics/E11-android-sync-adapter.md) | Android sync adapter (Kotlin) | 6 | agent + human | E03 (Phase 4 reqs), E10 |
-| [E12](epics/E12-crypto-core.md) | Crypto core and shared test vectors | 2 (5, 7) | agent+review | E02, D-08, D-14, D-15, D-17 |
+| [E12](epics/E12-crypto-core.md) | Crypto core and shared test vectors | 2 (3, 5, 7) | agent+review | E02-R02, D-08, D-14, D-15, D-17, D-18 |
 | [E13](epics/E13-private-mode.md) | Private mode end to end | 3 (4, 5) | agent+review | E05, E10, E12, D-06, D-07 |
 | [E14](epics/E14-recovery.md) | Account recovery tiers | 3 (7) | agent+review + human | E12, E13; D-10 for Phase 7 |
-| [E15](epics/E15-interop-regression.md) | Interop and regression test program | cross-cutting | agent + human | E02 |
+| [E15](epics/E15-interop-regression.md) | Interop and regression test program | cross-cutting | agent + human | E02-R04 |
 | [E16](epics/E16-polish-and-mirroring.md) | Phase 8: polish and optional mirroring | 8 | mixed | E11, E13 |
 
 ### Dependency graph
@@ -117,17 +121,18 @@ Most epics span phases now: each epic's header says which of its requirements be
 ```
  D-* pinned ─┐
              v
- E02 tooling ──┬──> E03 CalDAV core ──┐
-               ├──> E04 schema ───────┴──> E05 API core ─────────────┐
-               ├──> E08 ops (continuous)                             │
-               ├──> E15 interop (continuous)                         v
-               └──> E12 crypto core (Dart) ──────────> E10 Android app + E13 Private mode
+ E02-R03 local stack ──┬──> E02-R09 Zitadel config ─────────────────────┐
+                       ├──> E04 schema ──> E03 CalDAV core (+ D-05) ──┐  │
+                       │                                              v  v
+                       │                                         E05 API core ──┐
+                       ├──> E08 ops (continuous)                                │
+ E02-R04 verify ───────┴──> E15 interop (continuous)                            v
+ E12 crypto core (Dart) ─────────────────────────────> E10 Android app + E13 Private mode
                                                        + E06-R02/R09 invites + E14 recovery code, linking
                                                                      │
                                                                      v
                                                          M1: family v1 (Android, Private)
                                                                      │
- E01 spike (parallel) ──> M0 ────────────────────────────────────────┤
                                                                      v
                                          E03/E06 stock-app surface, E07 push, E13 mode switching
                                                                      │
@@ -144,15 +149,15 @@ Most epics span phases now: each epic's header says which of its requirements be
                                                                 E16 polish
 ```
 
-E12 has no product dependencies, so it runs in parallel with the server epics. It is on the critical path to M1 now, not a side track.
+E12 has no product dependencies, so it runs in parallel with the server epics. It is on the critical path to M1 now, not a side track. The Phase 0 spike (E01) is closed and gates nothing.
 
 ## Milestones
 
 | Milestone | Phase | Needs | Exit check (the D-12 wording applies) |
 |---|---|---|---|
-| M0 | 0 | E01 | The same event visible and edited in Apple Calendar, in Samsung or Google Calendar via DAVx⁵, and in the server store. Quirks log committed. **Must be reached before Phase 4 starts.** |
-| M1 | 3 | E02; E03 Phase 1 reqs; E04; E05 Phase 1 reqs + R07; E06-R02, R09; E08-R01..R05, R07; E10 Phase 3 reqs; E12 Phase 2 reqs; E13-R01..R05, R07, R08, R09 (v1 copy); E14-R03, R06, R08, R09 | **Family v1.** Two family members on Android phones share a Private calendar and see each other's edits after refreshing, or within 15 min in the background. The E13-R08 blind check on staging finds nothing. A user who wipes their phone gets back in with the recovery code. A second device links by QR. Restore-from-backup drill passed. |
-| M2 | 4 | M0; E03 Phase 4 reqs; E05-R06; E06-R01, R03..R06, R08; E07-R01, R03..R05; E08-R06; E10-R07 (push), R09; E13-R06 | One Shared calendar visible and editable in Apple Calendar (via `.mobileconfig`), in Samsung or Google Calendar via DAVx⁵, and in our Android app. Our app receives a ping within seconds of a stock-app edit; stock apps show our changes on their next sync. A Shared → Private switch leaves no plaintext `SUMMARY` and writes the audit entry. |
+| M0 | 0 | E01 | **Closed 2026-10-05** with the spike, without a committed result. It gates nothing. Stock-app behaviour is checked on staging by E15-R05 from M2. |
+| M1 | 3 | E02; E03 Phase 1 reqs; E04; E05 Phase 1 reqs + R07; E06-R02, R09; E08-R01..R05, R07; E10 Phase 3 reqs; E12 Phase 2 reqs + R06 (mobile); E13-R01..R05, R07, R08, R09 (v1 copy); E14-R03, R06, R08, R09; E15-R01..R03 | **Family v1.** Two family members on Android phones share a Private calendar and see each other's edits after refreshing, or within 15 min in the background. The E13-R08 blind check on staging finds nothing. A user who wipes their phone gets back in with the recovery code. A second device links by QR. Restore-from-backup drill passed. |
+| M2 | 4 | E03 Phase 4 reqs; E05-R06; E06-R01, R03..R06, R08; E07-R01, R03..R05; E08-R06; E10-R07 (push), R09; E13-R06 | One Shared calendar visible and editable in Apple Calendar (via `.mobileconfig`), in Samsung or Google Calendar via DAVx⁵, and in our Android app. Our app receives a ping within seconds of a stock-app edit; stock apps show our changes on their next sync. A Shared → Private switch leaves no plaintext `SUMMARY` and writes the audit entry. |
 | M3 | 5 | E07-R02; E09; E10 Phase 5 reqs; E12 TS library; E13 web parts | A user runs their calendar entirely from the web app. Web-to-web updates arrive in ≤ 5 s. The iOS app and the web read and write the same Private calendar as Android. |
 | M4 | 6 | E11 | A Pixel and a Samsung phone show a Shared calendar in the stock app without DAVx⁵, with two-way edits. |
 | M5 | 7 | E14 (all), E13-R09, external crypto review | The `04` Phase 7 exit criteria, verbatim. **Open signup stays closed until M5.** |

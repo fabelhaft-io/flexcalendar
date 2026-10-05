@@ -4,8 +4,9 @@ Everything that runs the stack. No application code.
 
 | Directory | What belongs there | Owning epic |
 |---|---|---|
-| `spike/` | the Phase 0 Radicale + Caddy spike on a public host (Let's Encrypt, 443 open) | [E01](../docs/epics/E01-integration-spike.md) |
 | `dev/` | the local stack: Postgres, the CalDAV service, the API, Zitadel with its login UI, Mailpit, and Caddy with a local CA | [E02-R03](../docs/epics/E02-repo-tooling-ci.md) |
+| `zitadel/` | the Zitadel instance configuration as OpenTofu code, applied to the local stack, staging and production | [E02-R09](../docs/epics/E02-repo-tooling-ci.md) |
+| `scripts/` | operational scripts that run against staging, such as the fixture capture and the Private-mode blind check | [E15-R04](../docs/epics/E15-interop-regression.md), [E13-R08](../docs/epics/E13-private-mode.md) |
 | `prod/` | production deploy: Caddy with Let's Encrypt on 443, the services, workers, the IdP and Postgres, from one command | [E08](../docs/epics/E08-operations.md) |
 
 Rules that apply to everything here (`docs/02-technology-choices.md`

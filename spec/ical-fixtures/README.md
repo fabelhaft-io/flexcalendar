@@ -4,8 +4,9 @@
 
 - **What belongs here:** real `.ics` objects captured from each client, one
   directory per source — `apple/`, `samsung/`, `google-davx5/`,
-  `android-adapter/`, `thunderbird/`, `ours/`. The E01 spike seed
-  ([`infra/spike/`](../../infra/README.md)) starts this corpus.
+  `android-adapter/`, `thunderbird/`, `ours/`, plus `synthetic/` for
+  hand-written objects that imitate stock apps. The corpus starts from
+  `ours/` and `synthetic/` (E15-R01); captured objects arrive from Phase 4.
 - Every fixture is read and written back through the API's `ical.js` path and
   the adapter's `iCal4j` path; semantic equality and full property/parameter
   preservation are asserted (INV-02). Any engine disagreement is resolved by a
