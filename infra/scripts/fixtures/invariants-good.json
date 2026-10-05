@@ -1,0 +1,36 @@
+[
+  {
+    "label": "envelope AAD recurrenceId identifier",
+    "invariant": "INV-05",
+    "files": {
+      "packages/crypto_dart/lib/aad.dart": "String aad(String uid, String recurrenceId) => uid + recurrenceId;"
+    }
+  },
+  {
+    "label": "cache recurrence_id field",
+    "invariant": "INV-05",
+    "files": {
+      "apps/mobile/lib/tables.dart": "class CachedOccurrence { final String recurrence_id; CachedOccurrence(this.recurrence_id); }"
+    }
+  },
+  {
+    "label": "whole property tokens only",
+    "invariant": "INV-05",
+    "files": {
+      "apps/web/src/read.ts": "export const exdateCount = 0; export const previous_recurrence_id = \"previous-RECURRENCE-ID\";"
+    }
+  },
+  {
+    "label": "harmless new server dependency",
+    "invariant": "INV-07",
+    "files": {
+      "server/api/package.json": {
+        "dependencies": {
+          "ms": "2.1.3",
+          "shared-utils": "1.0.0"
+        }
+      },
+      "pnpm-lock.yaml": "{\"importers\": {\"server/api\": {\"dependencies\": {\"ms\": {\"version\": \"2.1.3\"}, \"shared-utils\": {\"version\": \"1.0.0\"}}}}, \"snapshots\": {\"ms@2.1.3\": {}, \"shared-utils@1.0.0\": {}}}"
+    }
+  }
+]

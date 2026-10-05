@@ -7,8 +7,11 @@ import {
   writeFileSync,
   readFileSync,
   rmSync,
+  symlinkSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { cryptoName } from './invariants.mjs';
 import { fileURLToPath } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -19,8 +22,7 @@ const fixtures = JSON.parse(
 
 /** @param {Record<string, any>} files @param {(root: string) => void} check */
 function tree(files, check) {
-  // Test writes remain inside the requirement's writable subtree, never /tmp.
-  const root = mkdtempSync(resolve(directory, '.invariant-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'calendar-flex-invariant-test-'));
   try {
     for (const [path, content] of Object.entries(files)) {
       const target = resolve(root, path);
@@ -49,10 +51,7 @@ for (const fixture of fixtures) {
       const result = run(fixture.invariant, root);
       assert.equal(result.status, 1);
       assert.equal(result.stdout, '');
-      assert.equal(
-        result.stderr,
-        `${fixture.invariant}: ${fixture.reason}${fixture.invariant === 'INV-05' ? '; send an intent instead.' : fixture.reason.startsWith('unreviewed') ? '; a non-content-crypto justification is required.' : ' in server tree.'}\n`,
-      );
+      assert.equal(result.stderr, `${fixture.diagnostic}\n`);
     });
   });
 }
@@ -146,7 +145,7 @@ test('malformed input fails closed without logging input contents', () => {
       assert.equal(result.status, 1);
       assert.equal(
         result.stderr,
-        'Invariant check input error (no source data logged).\n',
+        'Invariant check input error: pnpm-lock.yaml (no source data logged).\n',
       );
       assert.equal(result.stdout, '');
     },
@@ -171,3 +170,144 @@ test('missing transitive snapshots cannot silently pass', () => {
     },
   );
 });
+
+const goodFixtures = JSON.parse(
+  readFileSync(resolve(directory, 'fixtures/invariants-good.json'), 'utf8'),
+);
+for (const fixture of goodFixtures) {
+  test(`allows ${fixture.label} for ${fixture.invariant}`, () => {
+    tree(fixture.files, (root) => {
+      const result = run(fixture.invariant, root);
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, `${fixture.invariant}: pass\n`);
+      assert.equal(result.stderr, '');
+    });
+  });
+}
+
+test('INV-05 skips symlinks and Flutter generated directories', () => {
+  tree(
+    {
+      'apps/mobile/ios/.symlinks/plugins/ignored.dart': 'EXDATE',
+      'apps/mobile/ios/Flutter/ephemeral/ignored.dart': 'RECURRENCE-ID',
+      'packages/ordinary/emitter.dart': 'EXDATE',
+    },
+    (root) => {
+      symlinkSync(
+        '../../..',
+        resolve(root, 'apps/mobile/ios/.symlinks/plugins/loop'),
+      );
+      symlinkSync('../..', resolve(root, 'apps/mobile/loop'));
+      symlinkSync('missing.dart', resolve(root, 'apps/mobile/dangling.dart'));
+      symlinkSync('ordinary', resolve(root, 'packages/crypto_link'));
+      const result = run('INV-05', root);
+      assert.equal(result.status, 0);
+      assert.equal(result.stderr, '');
+    },
+  );
+});
+
+for (const name of [
+  'crypt',
+  'cipher',
+  'sodium',
+  'nacl',
+  'aes',
+  'chacha',
+  'salsa',
+  'poly1305',
+  '25519',
+  'secp',
+  'elliptic',
+  'jose',
+  'jwe',
+  'pgp',
+  'openssl',
+  'tls',
+  'ssl',
+  'hash',
+  'hmac',
+  'sha',
+  'argon',
+  'bcrypt',
+  'scrypt',
+  'pbkdf',
+]) {
+  test(`crypto-name heuristic rejects unreviewed ${name} packages`, () => {
+    const packageName = `@example/${name}256-util`;
+    assert.equal(cryptoName(packageName), true);
+    tree(
+      {
+        'server/api/package.json': { dependencies: { [packageName]: '1.0.0' } },
+        'pnpm-lock.yaml': JSON.stringify({
+          importers: {
+            'server/api': {
+              dependencies: { [packageName]: { version: '1.0.0' } },
+            },
+          },
+          snapshots: { [`${packageName}@1.0.0`]: {} },
+        }),
+      },
+      (root) => {
+        const result = run('INV-07', root);
+        assert.equal(result.status, 1);
+        assert.equal(result.stdout, '');
+        assert.equal(
+          result.stderr,
+          ['sodium', 'nacl'].includes(name)
+            ? `INV-07: content-crypto dependency ${packageName}@1.0.0 in server tree.\n`
+            : `INV-07: unreviewed crypto-looking dependency ${packageName}@1.0.0; a non-content-crypto justification is required.\n`,
+        );
+      },
+    );
+  });
+}
+
+test('short crypto names match segments, not arbitrary substrings', () => {
+  for (const name of [
+    'shared-utils',
+    'shallow',
+    'please',
+    'joseph',
+    'tlsutil',
+    'sslutil',
+    'jweutil',
+    'pgputil',
+  ]) {
+    assert.equal(cryptoName(name), false, name);
+  }
+  for (const delimiter of ['-', '_', '.', '/', '@', '2']) {
+    for (const name of ['aes', 'sha', 'tls', 'ssl', 'jwe', 'pgp', 'jose']) {
+      assert.equal(
+        cryptoName(`prefix${delimiter}${name}${delimiter}suffix`),
+        true,
+      );
+    }
+  }
+});
+
+for (const [path, content] of [
+  ['server/api/package.json', 'sensitive-marker malformed JSON'],
+  ['server/php/composer.lock', 'sensitive-marker malformed JSON'],
+]) {
+  test(`input errors name ${path} without contents`, () => {
+    tree(
+      {
+        'server/api/package.json': {},
+        'pnpm-lock.yaml': JSON.stringify({ importers: { 'server/api': {} } }),
+        'server/php/composer.json': {},
+        'server/php/composer.lock': { packages: [], 'packages-dev': [] },
+        [path]: content,
+      },
+      (root) => {
+        const result = run('INV-07', root);
+        assert.equal(result.status, 1);
+        assert.equal(result.stdout, '');
+        assert.equal(
+          result.stderr,
+          `Invariant check input error: ${path} (no source data logged).\n`,
+        );
+      },
+    );
+  });
+}

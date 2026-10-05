@@ -2,47 +2,46 @@
   {
     "label": "web EXDATE emission",
     "invariant": "INV-05",
-    "reason": "forbidden client recurrence property reference",
     "files": {
       "apps/web/src/write.ts": "export const write = () => \"EXDATE:\";"
-    }
+    },
+    "diagnostic": "INV-05: forbidden client recurrence property name in apps/web/src/write.ts; send an intent instead."
   },
   {
     "label": "mobile override emission",
     "invariant": "INV-05",
-    "reason": "forbidden client recurrence property reference",
     "files": {
       "apps/mobile/lib/edit.dart": "String write() => 'RECURRENCE-ID:';"
-    }
+    },
+    "diagnostic": "INV-05: forbidden client recurrence property name in apps/mobile/lib/edit.dart; send an intent instead."
   },
   {
     "label": "crypto underscore emission",
     "invariant": "INV-05",
-    "reason": "forbidden client recurrence property reference",
     "files": {
       "packages/crypto_dart/lib/edit.dart": "String write() => 'exdate:';"
-    }
+    },
+    "diagnostic": "INV-05: forbidden client recurrence property name in packages/crypto_dart/lib/edit.dart; send an intent instead."
   },
   {
     "label": "crypto hyphen property API",
     "invariant": "INV-05",
-    "reason": "forbidden client recurrence property reference",
     "files": {
       "packages/crypto-ts/src/edit.ts": "export const edit = (event: any) => event.addProperty(\"recurrence-id\", \"\");"
-    }
+    },
+    "diagnostic": "INV-05: forbidden client recurrence property name in packages/crypto-ts/src/edit.ts; send an intent instead."
   },
   {
     "label": "native property API",
     "invariant": "INV-05",
-    "reason": "forbidden client recurrence property reference",
     "files": {
-      "apps/mobile/android/src/Edit.kt": "fun edit(event: Event) { event.recurrenceId = value }"
-    }
+      "apps/mobile/android/src/Edit.kt": "fun edit(event: Event) { event.addProperty(\"RECURRENCE-ID\", value) }"
+    },
+    "diagnostic": "INV-05: forbidden client recurrence property name in apps/mobile/android/src/Edit.kt; send an intent instead."
   },
   {
     "label": "direct sodium",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -50,12 +49,12 @@
         }
       },
       "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"libsodium-wrappers\":{\"specifier\":\"1.0.0\",\"version\":\"1.0.0\"}}}},\"snapshots\":{\"libsodium-wrappers@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency libsodium-wrappers@1.0.0 in server tree."
   },
   {
     "label": "transitive nacl",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -63,12 +62,12 @@
         }
       },
       "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"dependencies\":{\"tweetnacl\":\"1.0.0\"}},\"tweetnacl@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency tweetnacl@1.0.0 in server tree."
   },
   {
     "label": "optional noble",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -76,12 +75,12 @@
         }
       },
       "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"optionalDependencies\":{\"@noble/ciphers\":\"1.0.0\"}},\"@noble/ciphers@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency @noble/ciphers@1.0.0 in server tree."
   },
   {
     "label": "aliased content crypto",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -89,12 +88,12 @@
         }
       },
       "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"dependencies\":{\"innocent-alias\":\"crypto-js@1.0.0\"}},\"crypto-js@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency crypto-js@1.0.0 in server tree."
   },
   {
     "label": "unknown similar crypto",
     "invariant": "INV-07",
-    "reason": "unreviewed server dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -102,12 +101,12 @@
         }
       },
       "pnpm-lock.yaml": "{\"lockfileVersion\":\"9.0\",\"importers\":{\"server/api\":{\"dependencies\":{\"fastify\":{\"specifier\":\"5.12.5\",\"version\":\"5.12.5\"}}}},\"snapshots\":{\"fastify@5.12.5\":{\"dependencies\":{\"new-content-cipher\":\"1.0.0\"}},\"new-content-cipher@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: unreviewed crypto-looking dependency new-content-cipher@1.0.0; a non-content-crypto justification is required."
   },
   {
     "label": "linked workspace crypto",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -121,12 +120,12 @@
         "name": "fastify"
       },
       "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"dependencies\":{\"@local/shared\":{\"version\":\"link:../../packages/shared\"}}},\"packages/shared\":{\"dependencies\":{\"tweetnacl\":{\"version\":\"1.0.0\"}}}},\"snapshots\":{\"tweetnacl@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency tweetnacl@1.0.0 in server tree."
   },
   {
     "label": "Composer direct crypto",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/caldav/composer.json": {
         "require": {
@@ -142,12 +141,12 @@
         ],
         "packages-dev": []
       }
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency defuse/php-encryption@1.0.0 in server tree."
   },
   {
     "label": "Composer dev crypto",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/caldav/composer.json": {
         "require-dev": {
@@ -163,12 +162,12 @@
         ],
         "packages-dev": []
       }
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency phpseclib/phpseclib@1.0.0 in server tree."
   },
   {
     "label": "Composer sodium extension",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/caldav/composer.json": {
         "require": {
@@ -179,12 +178,12 @@
         "packages": [],
         "packages-dev": []
       }
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency ext-sodium@* in server tree."
   },
   {
     "label": "Composer transitive crypto",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/caldav/composer.json": {
         "require": {
@@ -197,36 +196,39 @@
             "name": "react/socket",
             "require": {
               "paragonie/halite": "*"
-            }
+            },
+            "version": "1.0.0"
           },
           {
-            "name": "paragonie/halite"
+            "name": "paragonie/halite",
+            "version": "1.0.0"
           }
         ],
         "packages-dev": []
       }
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency paragonie/halite@1.0.0 in server tree."
   },
   {
     "label": "Composer locked dev dependency",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/caldav/composer.json": {},
       "server/caldav/composer.lock": {
         "packages": [],
         "packages-dev": [
           {
-            "name": "paragonie/halite"
+            "name": "paragonie/halite",
+            "version": "1.0.0"
           }
         ]
       }
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency paragonie/halite@1.0.0 in server tree."
   },
   {
     "label": "npm dev dependency",
     "invariant": "INV-07",
-    "reason": "content-crypto dependency",
     "files": {
       "server/api/package.json": {
         "devDependencies": {
@@ -234,12 +236,12 @@
         }
       },
       "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"devDependencies\":{\"tweetnacl\":{\"version\":\"1.0.0\"}}}},\"snapshots\":{\"tweetnacl@1.0.0\":{}}}"
-    }
+    },
+    "diagnostic": "INV-07: content-crypto dependency tweetnacl@1.0.0 in server tree."
   },
   {
     "label": "unreviewed workspace content package",
     "invariant": "INV-07",
-    "reason": "unreviewed server dependency",
     "files": {
       "server/api/package.json": {
         "dependencies": {
@@ -247,9 +249,11 @@
         }
       },
       "packages/crypto/package.json": {
-        "name": "@local/crypto"
+        "name": "@local/crypto",
+        "version": "1.0.0"
       },
       "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"dependencies\":{\"@local/crypto\":{\"version\":\"link:../../packages/crypto\"}}},\"packages/crypto\":{}},\"snapshots\":{}}"
-    }
+    },
+    "diagnostic": "INV-07: unreviewed crypto-looking dependency @local/crypto@1.0.0; a non-content-crypto justification is required."
   }
 ]
