@@ -26,6 +26,7 @@ Radicale validates the native-app integration story in the Phase 0 spike. Produc
 
 The API is thin — auth, push fan-out, sharing UI, a REST/GraphQL facade over CalDAV. Notes:
 
+- Packages are managed with **pnpm** workspaces (D-09), through corepack. pnpm's strict `node_modules` lets a package import only the dependencies it declares, so the INV-07 dependency allow-list check and the E05-R02 rule that only the CalDAV adapter imports `tsdav` hold for what the code can actually load, not only for what a manifest lists. npm, and Yarn with its `node-modules` linker, hoist transitive dependencies to the top, where any package can import them undeclared.
 - For CalDAV client work from the backend, use [`tsdav`](https://github.com/natelindev/tsdav), or raw `fetch` where it lacks a report.
 - iCalendar parsing/generation: [`ical.js`](https://github.com/kewisch/ical.js) (Mozilla; the de facto standard) on the Node side.
 - Push: Firebase Admin SDK (FCM) for both mobile platforms — FCM relays to APNs on iOS, matching the Flutter app's single `firebase_messaging` integration. Talking to APNs directly over HTTP/2 remains an option if we ever want to drop Google from the iOS push path. Web clients get updates over WebSocket/SSE.

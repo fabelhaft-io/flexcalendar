@@ -19,7 +19,7 @@ One Flutter app for iOS 16+ and Android minSdk 26. Android ships first, at M1, w
 - Accept: `make verify-mobile` runs `flutter analyze`, unit and widget tests; `flutter build apk` runs in CI from the start; `flutter build ios --no-codesign` joins in Phase 5.
 
 ### E10-R02 · Auth   `agent`
-OIDC PKCE through `flutter_appauth`, with tokens in `flutter_secure_storage` and refresh handled in a `dio` interceptor.
+OIDC PKCE through `flutter_appauth`, with tokens in `flutter_secure_storage` and refresh handled in a `dio` interceptor. The app's ID and redirect URIs are the ones E02-R09 registers: `de.flexcalendar.app`, `de.flexcalendar.app:/oauth2redirect` and `de.flexcalendar.app:/logout`.
 - Accept: token expiry mid-session refreshes transparently; sign-out clears tokens, the cache, the keys (E12-R06) and, from Phase 4, the push token (E07-R03).
 
 ### E10-R03 · Offline cache   `agent`
