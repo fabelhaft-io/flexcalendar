@@ -69,8 +69,12 @@ GitHub Actions MUST run `make verify` on every PR, with path filters per compone
 The Zitadel instance configuration MUST live in `infra/zitadel/` as OpenTofu code with the Zitadel provider (D-19). OpenTofu and the provider versions are pinned the way E02-R02 pins toolchains. The configuration covers:
 - the project (the organisation, its admin, the seed account and the login UI's `IAM_LOGIN_CLIENT` account come from Zitadel's first-instance settings in `infra/dev/compose.yaml`, as E02-R03 set them up);
 - the API's registration;
-- the Android app's native OIDC + PKCE registration, with the **JWT access-token type**, so clients that request the project audience scope get the project ID in `aud`;
-- login and password policies;
+- the Android app's native OIDC + PKCE registration, with the **JWT access-token type**, so clients that request the project audience scope get the project ID in `aud`. Application ID `de.flexcalendar.app`; redirect URI `de.flexcalendar.app:/oauth2redirect` and post-logout redirect URI `de.flexcalendar.app:/logout`, an RFC 8252 private-use scheme, the same in every environment;
+- login and password policies, every value written out in the code even where it equals Zitadel's default, so a review sees the whole policy:
+  - passwords: at least 12 characters, no composition rules (uppercase, lowercase, number and symbol all off), no expiry;
+  - lockout after 10 failed password attempts, which an admin lifts, like the admin-assisted password reset (ADR 0003); no OTP lockout (`MaxOTPAttempts` 0);
+  - username and password login on; TOTP and passkeys allowed, a second factor not forced; no external identity providers; the password-reset link hidden, because resets are admin-assisted while there is no SMTP (ADR 0003);
+  - lifetimes at Zitadel v4.16's defaults: access and ID token 12 h, refresh token 30 days idle and 90 days absolute, password check 10 days, second-factor check 18 h, multi-factor check 12 h, MFA-setup skip 30 days;
 - self-registration off;
 - no custom actions; branding by settings only.
 
