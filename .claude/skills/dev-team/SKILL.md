@@ -62,5 +62,8 @@ set the requirement needs and confirm it with the user once.
 ## Scope discipline
 
 Don't expand the requirement, don't fix unrelated things you notice, and never change a Pinned
-`D-*` (that needs the user and an ADR). Nothing outward-facing beyond the push and PR in step 8:
-not the server, DNS or cloud accounts.
+`D-*` (that needs the user and an ADR). Nothing outward-facing beyond the push and PR in step 8,
+with one exception: acceptance criteria that need real infrastructure, which you run against
+**staging only** (D-20 in `06`): `make staging-up`/`staging-down`, `make deploy ENV=staging`,
+backup checks against the real buckets, external graders. Record the results in
+`docs/reviews/<ID>.md`. Never production, never DNS, and never on the agents' behalf.

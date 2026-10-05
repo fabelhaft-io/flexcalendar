@@ -30,5 +30,4 @@ event (CLAUDE.md). Stock calendar apps talk to this service directly.
   `composer.lock` arrive with E03-R01.
 - **Not here:** client code, and any content-crypto dependency — the service
   never decrypts (INV-07).
-- The Phase 0 Radicale spike lives in
-  [`infra/spike/`](../../infra/README.md), not here.
+- The Phase 0 Radicale spike is closed (E01) and left nothing in the repo.

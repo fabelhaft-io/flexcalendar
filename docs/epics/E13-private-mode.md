@@ -16,7 +16,8 @@ Calendars whose content the server cannot read, first in the Android app (M1) an
 
 ### E13-R01 · Create Private calendars   `agent`
 From Phase 3 the app creates Private calendars, and the API accepts `private` (E04-R03). Every new calendar gets a CCK at epoch 1 sealed to its owner. In Phase 4, when `shared` is added, creation shows the mode choice with no default, worded as a constraint on who can take part (`04` Phase 4 wording).
-- Accept: a new calendar has a CCK at epoch 1 sealed to its owner; from Phase 4 a UI test shows no preselected mode.
+The calendar's name and colour are sealed into the calendar-metadata envelope under that CCK (D-18, E12-R03) and sent with the create (E05-R03). The server only ever sees the fixed name `Private calendar`. When a member is removed (R05), the owner's client re-seals the metadata at the new epoch.
+- Accept: a new calendar has a CCK at epoch 1 sealed to its owner; its name appears in no CalDAV property and no `calendars` column; from Phase 4 a UI test shows no preselected mode.
 
 ### E13-R02 · Sidecar API   `agent`
 Endpoints to read envelopes in bulk (by calendar, by `uid` list, by delta) and to write them, stored opaquely in `event_envelopes` with the D-06 hash. The API checks only the envelope header, its size (≤ 64 KiB) and hash agreement with the skeleton.
@@ -35,18 +36,18 @@ Adding a member seals the current CCK to their **verified** public key (D-15). R
 - Accept: a removed member's client can't open an event written after the removal; the UI says that the removed member keeps what they already downloaded (ADR 0001 § Rotation).
 
 ### E13-R06 · Mode switching (Phase 4)   `agent+review`
-- **Shared → Private**: before confirming, list members and devices that will lose access (stock-app device credentials, `full` feeds, members without keys). Warn that the change is **not retroactive** at the point of the switch. On confirmation, a client with the CCK rewrites every event as skeleton + envelope, stripping plaintext from CalDAV, and full feeds are revoked.
-- **Private → Shared**: owner confirmation, a warning that members' contributions become readable to us, and a client-side decrypt-and-rewrite.
+- **Shared → Private**: before confirming, list members and devices that will lose access (stock-app device credentials, `full` feeds, members without keys). Warn that the change is **not retroactive** at the point of the switch. On confirmation, a client with the CCK rewrites every event as skeleton + envelope, stripping plaintext from CalDAV. It moves the calendar's name and colour from CalDAV into the metadata envelope (D-18), and full feeds are revoked.
+- **Private → Shared**: owner confirmation, a warning that members' contributions become readable to us, and a client-side decrypt-and-rewrite, the calendar's name and colour included.
 - **Both**: audit entry and notification to every member (INV-10).
-- Accept: integration tests for both directions assert the audit row and notifications, and that no plaintext `SUMMARY` remains in CalDAV after Shared → Private.
+- Accept: integration tests for both directions assert the audit row and notifications, and that neither a plaintext `SUMMARY` nor the calendar's name remains in CalDAV after Shared → Private.
 
 ### E13-R07 · Invite guard   `agent`
 Inviting someone to a Private calendar is refused, or clearly warned about, until they have a key-capable client (a `user_keys` row). A pending member gets the CCK when their keys first appear and the owner's client is online.
 - Accept: UI tests for both states.
 
 ### E13-R08 · Exit verification script   `agent` + `human`
-`scripts/verify-private-blind.sh` creates a Private event with a random marker title through two clients, then greps a Postgres dump (CalDAV objects, sidecar, logs) for the marker.
-- Accept: `human` runs it on staging and the marker isn't found (an M1 criterion; re-run for M5 criterion 1).
+`infra/scripts/verify-private-blind.sh` creates a Private calendar with a random marker name, and a Private event in it with another random marker title, through two clients. It then greps a Postgres dump (CalDAV objects, sidecar, logs) for both markers.
+- Accept: `human` runs it on staging and neither marker is found (an M1 criterion; re-run for M5 criterion 1).
 
 ### E13-R09 · Privacy copy review   `human`
 All in-app, store and marketing text about privacy is checked against the ADR 0001 claim table (INV-11). Before M1: the in-app copy (including the recovery-code save screen, E14-R03) and the Play listing. They must not imply an audit, and they must state that losing every device and the recovery code loses the data (ADR 0003). Before M5: everything.

@@ -165,8 +165,8 @@ changes the system, both change in the same PR (rule 6).
    the constraints, what is hard and what is negotiable, and how it touches
    the CalDAV-is-source-of-truth rule or stock-app round-tripping),
    `Decision`, `Consequences` (what becomes easier or harder, what we now
-   have to build, test or disclose, and the effect on the phases, the Phase 0
-   spike and the risks in `docs/05`), and `Alternatives considered` — one
+   have to build, test or disclose, and the effect on the phases
+   and the risks in `docs/05`), and `Alternatives considered` — one
    line per rejected option saying why. Delete the template's HTML comment
    and any optional section you don't need.
 4. **Index it.** Add a one-line entry under "Decision Records" in

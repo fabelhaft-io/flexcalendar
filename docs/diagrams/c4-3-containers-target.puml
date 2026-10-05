@@ -31,7 +31,7 @@ System_Boundary(cf, "calendar-flex") {
     Container(worker, "Change worker [Phase 4]", "Node 24, TypeScript", "Reads the change outbox, polls sync-collection every 30 s as a fallback, sends data-only pings.", $tags="later")
     Container(caldav, "CalDAV service", "PHP 8.4, SabreDAV 4.7", "Source of truth. Internal listener for the API; public listener for stock apps with device app passwords (Phase 4). Apple sharing, iMIP. Private collections invisible to stock-app credentials (INV-08).")
     Container(release, "Escrow release service [Phase 7]", "minimal service", "Only holder of KMS decrypt. Releases after second factor, notifications and a cancellable 72 h delay; sealed to the recovering device.", $tags="later")
-    ContainerDb(db, "Postgres", "PostgreSQL 16", "CalDAV objects, envelopes, keys, members, invitations, device credentials, feed tokens, push devices, outbox, audit log.")
+    ContainerDb(db, "Postgres", "PostgreSQL 18", "CalDAV objects, envelopes, keys, members, invitations, device credentials, feed tokens, push devices, outbox, audit log.")
   }
 }
 

@@ -28,7 +28,7 @@ Clients MUST be able to register and unregister FCM tokens. Tokens that FCM repo
 
 ### E07-R04 · Data-only FCM pings   `agent`
 The worker MUST send FCM data-only messages `{t:"cal", c:<calendarId>}` to members' devices, excluding the device that made the change when it's known. The iOS APNs relay uses `content-available: 1`.
-- Accept: the payload schema test (INV-06) rejects any other field; no `notification` block is ever sent; rate-limited to one ping per calendar per device per 10 s.
+- Accept: the payload schema test (INV-06), registered with `make verify-invariants` (E02-R04/R05), rejects any other field; no `notification` block is ever sent; rate-limited to one ping per calendar per device per 10 s.
 - Notes: iOS throttles background pushes, so clients must also delta-sync on foreground (E10-R07).
 
 ### E07-R05 · Poller scaling guard   `agent`

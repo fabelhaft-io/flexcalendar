@@ -22,7 +22,7 @@ System_Boundary(cf, "calendar-flex") {
     Container(idp, "Identity provider", "Zitadel (core + login UI)", "OIDC + PKCE login, JWT access tokens. Sees the login password, so no key is ever derived from it (D-17).")
     Container(api, "API", "Node 24, TypeScript, Fastify, ical.js, tsdav", "Calendars, event CRUD with ETags, occurrence expansion, two-step recurring-edit plans (D-07), sidecar envelopes, invites, device-link rendezvous. Never decrypts (INV-07).")
     Container(caldav, "CalDAV service", "PHP 8.4, SabreDAV 4.7", "Source of truth. Skeleton VEVENTs, sync tokens, ACLs derived from membership, mode-aware write guard, change outbox. Internal listener only.")
-    ContainerDb(db, "Postgres", "PostgreSQL 16", "CalDAV objects (skeletons), event_envelopes (ciphertext), users, members, invitations, user_keys (recovery-code wrapped), calendar_keys (sealed), device_links, audit_log. Keycloak's own database.")
+    ContainerDb(db, "Postgres", "PostgreSQL 18", "CalDAV objects (skeletons), event_envelopes (ciphertext), users, members, invitations, user_keys (recovery-code wrapped), calendar_keys (sealed), device_links, audit_log. Zitadel's own database.")
   }
 }
 

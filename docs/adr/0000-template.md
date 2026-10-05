@@ -26,7 +26,7 @@ What we will do, in one or two sentences. Put the details in the subsections bel
 
 What becomes easier, what becomes harder, and what we now have to build, test, or disclose.
 
-Include how this affects the implementation phases, the Phase 0 spike, and the risks in `05-risks-and-open-questions.md`.
+Include how this affects the implementation phases and the risks in `05-risks-and-open-questions.md`.
 
 ## Alternatives considered
 
