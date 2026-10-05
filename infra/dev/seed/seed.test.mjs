@@ -94,7 +94,7 @@ const twoUsers = [
   { userName: 'bob', firstName: 'Bob', lastName: 'Berg', email: 'bob@example.test' },
 ];
 
-function runSeed({ baseUrl, host, usersFile, patFile }) {
+function runSeed({ baseUrl, host, usersFile, patFile, password = 'StubPassword1!' }) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [seedProgram], {
       env: {
@@ -103,7 +103,7 @@ function runSeed({ baseUrl, host, usersFile, patFile }) {
         ...(host === undefined ? {} : { CALFLEX_SEED_HOST: host }),
         CALFLEX_SEED_USERS_FILE: usersFile,
         CALFLEX_SEED_PAT_PATH: patFile,
-        CALFLEX_SEED_PASSWORD: 'StubPassword1!',
+        CALFLEX_SEED_PASSWORD: password === null ? undefined : password,
         CALFLEX_SEED_TIMEOUT_MS: '10000',
         CALFLEX_SEED_POLL_MS: '50',
       },
@@ -183,4 +183,16 @@ test('sends the configured authority in the Host header', async (t) => {
   for (const entry of zitadel.requests) {
     assert.equal(entry.host, 'auth.localhost:9443', `Host on ${entry.method} ${entry.url}`);
   }
+});
+
+// The null test option omits the env value: exercise the program's new default.
+test('default seeded password meets the explicit 12-character policy', async (t) => {
+  const zitadel = await startStubZitadel();
+  t.after(() => zitadel.close());
+  const files = await writeSeedFiles(twoUsers);
+  const result = await runSeed({ baseUrl: zitadel.url, ...files, password: null });
+  assert.equal(result.code, 0, result.stderr);
+  const create = zitadel.requests.find((entry) => entry.url === '/management/v1/users/human/_import');
+  assert.equal(create.body.password, 'Development1!');
+  assert.ok(create.body.password.length >= 12);
 });

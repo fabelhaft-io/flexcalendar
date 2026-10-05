@@ -51,6 +51,7 @@ dev-reset: ## Stop the local stack and delete its volumes (all local data)
 
 seed: dev ## Load infra/dev/seed/ into the stack (idempotent)
 	$(COMPOSE) --profile seed run --rm seed
+	$(COMPOSE) --profile seed run --build --rm -T zitadel-config apply
 
 check-stack: ## Check the local stack definition without a container runtime
 	node infra/dev/check-stack.mjs
@@ -73,3 +74,17 @@ verify-corpus: ## Run registered corpus checks against the local stack
 # suites use JSON registrations, neither requires changing the verify recipe.
 verify-%:
 	node infra/scripts/verify.mjs $*
+
+.PHONY: token zitadel-plan test-zitadel
+
+token: export CALFLEX_TOKEN_USER = $(USER)
+
+token: ## Print a seeded user's verified JWT: make token USER=alice
+	@test '$(origin USER)' = 'command line' || { printf 'use make token USER=<seeded user>\n' >&2; exit 1; }
+	@$(COMPOSE) --profile seed run --rm -T zitadel-config token
+
+zitadel-plan: ## Containerized OpenTofu plan (exit 0 means no changes; 2 means drift)
+	$(COMPOSE) --profile seed run --rm -T zitadel-config plan
+
+test-zitadel: ## Unit-test the configuration runner and token helper without containers
+	node --test 'infra/zitadel/*.test.mjs'

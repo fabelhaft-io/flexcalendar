@@ -24,6 +24,7 @@ make dev-reset  # stop it and delete the volumes (all local data)
 | `api` | built from [`server/api/`](../../server/api/) | the REST facade for our own clients (D-01) | `https://api.<domain>:<port>/` |
 | `caddy` | `caddy:2.11-alpine` | the only published port; terminates TLS with its local CA | — |
 | `seed` | `node:24-alpine` | one-shot, profile `seed`: `make seed` | — |
+| `zitadel-config` | Node + pinned OpenTofu | one-shot apply/plan/token, profile `seed` (E02-R09) | — |
 
 `<domain>` is `CALFLEX_DEV_DOMAIN` (`localhost`) and `<port>` is
 `CALFLEX_HTTPS_PORT` (`8443`). `*.localhost` is reserved for loopback
@@ -101,7 +102,7 @@ CA, mounted read-only into the one-shot container.
   (E03-R09, INV-01). Adding calendars and events to the seed belongs to later
   requirements.
 - The password of the seeded users is `CALFLEX_SEED_PASSWORD`
-  (`Password1!`), and the Zitadel admin is `CALFLEX_ZITADEL_ADMIN_USER` /
+  (`Development1!`), and the Zitadel admin is `CALFLEX_ZITADEL_ADMIN_USER` /
   `CALFLEX_ZITADEL_ADMIN_PASSWORD` in `.env.example` — both development-only.
 
 This seed is the stack's own. It does not depend on the Phase 0 spike;
@@ -148,3 +149,6 @@ curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-
 curl … https://api.localhost:8443/healthz
 make seed && make seed     # the second run must create nothing
 ```
+
+E02-R09 adds a containerized OpenTofu apply after the user seed, and a separate
+non-production token helper. See [the configuration and review protocol](../zitadel/README.md).
