@@ -8,6 +8,7 @@ import {
   mkdirSync,
   writeFileSync,
   copyFileSync,
+  readFileSync,
   rmSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -94,11 +95,39 @@ test('mixed shared-package changes select the union of consumers', () => {
 });
 
 test('change detector executes a real git diff happy path', () => {
+  const env = { ...process.env };
+  delete env.GITHUB_OUTPUT;
   const result = spawnSync(
     process.execPath,
     ['infra/scripts/ci-components.mjs', 'HEAD', 'HEAD'],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', env },
   );
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /has-components=false/);
+  assert.equal(
+    result.stdout,
+    'full=false\ncomponents=["tooling"]\nhas-components=false\n',
+  );
+});
+
+test('change detector writes GitHub outputs to a file instead of stdout', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ci-components-output-'));
+  try {
+    const output = join(root, 'output');
+    const result = spawnSync(
+      process.execPath,
+      ['infra/scripts/ci-components.mjs', 'HEAD', 'HEAD'],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_OUTPUT: output },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.equal(
+      readFileSync(output, 'utf8'),
+      'full=false\ncomponents=["tooling"]\nhas-components=false\n',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
