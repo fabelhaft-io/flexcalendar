@@ -83,7 +83,10 @@ Agent shell commands run under bubblewrap (`src/lib/sandbox.ts`):
   host's `pause.pid` through such a bind. Everything that needs the local stack (`make dev`,
   integration tests, `make verify`) is run by the reviewer outside the sandbox.
 - The file tools are confined to the worktree, and their writes are checked against `--paths`.
-- Each shell command may run for up to 10 minutes.
+- Each shell command is killed after 10 minutes, whatever `timeout` the model asks for. The
+  harness enforces this itself (`enforceCommandTimeout` in `sandbox.ts`): `@mastra/core` 1.64
+  ignores `LocalSandbox`'s own `timeout` option, so without it a command started without a
+  timeout would never end.
 
 ## Fix cycles
 

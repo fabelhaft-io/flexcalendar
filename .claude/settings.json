@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // empty' | { read -r cmd; if [ -z \"$cmd\" ]; then exit 0; fi; matches=$(printf '%s' \"$cmd\" | grep -oE '\\.env[A-Za-z0-9_.-]*'); bad=0; for m in $matches; do if [ \"$m\" != \".env.example\" ]; then bad=1; fi; done; if [ \"$bad\" = \"1\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: Bash commands may not reference .env* files (secrets) other than .env.example.\"}}'; fi; }"
+            "command": "jq -r '.tool_input.command // empty' | { cmd=$(cat); if [ -z \"$cmd\" ]; then exit 0; fi; matches=$(printf '%s' \"$cmd\" | grep -oE '\\.env[A-Za-z0-9_.-]*'); bad=0; for m in $matches; do if [ \"$m\" != \".env.example\" ]; then bad=1; fi; done; if [ \"$bad\" = \"1\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: Bash commands may not reference .env* files (secrets) other than .env.example.\"}}'; fi; }"
           }
         ]
       }

@@ -173,7 +173,7 @@ function settleImplementerOutput(opts: {
   }
 
   const message =
-    `${requirement.id}: implementer run ${run} (${handoff.status})\n\n` +
+    `feat(${requirement.id}): implementer run ${run} (${handoff.status})\n\n` +
     `${handoff.summary.trim() || '(no summary)'}`.slice(0, 4000) +
     `\n\nAgent-Run: implementer\nAgent-Run-Number: ${run}\nAgent-Model: ${opts.model}\nAgent-Status: ${handoff.status}`;
   const committed = commitFiles(worktreePath, inScope, message);
@@ -297,7 +297,7 @@ export async function runCoordinator(options: CoordinatorOptions): Promise<Coord
     commitFiles(
       worktree.path,
       reviewFiles.filter((f) => f === findingsDocPath),
-      `${requirement.id}: record review findings (${review.status})\n\nAgent-Run: reviewer`,
+      `doc(${requirement.id}): review findings (${review.status})\n\nAgent-Run: reviewer`,
     );
 
     if (review.status === 'PASS') {

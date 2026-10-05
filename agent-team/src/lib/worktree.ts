@@ -142,12 +142,34 @@ export function quarantineFiles(worktreePath: string, files: string[], quarantin
 }
 
 /**
+ * The paths `git add` still has to stage, read from the current status: the new path of a
+ * staged rename or copy but not its source, and no staged deletion. Those are already in the
+ * index, and naming a path that is in neither the index nor the worktree makes `git add` fail
+ * with "pathspec did not match any files".
+ */
+function pathsToStage(worktreePath: string): Set<string> {
+  const stageable = new Set<string>();
+  const entries = git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], worktreePath).split('\0');
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    const xy = entry.slice(0, 2);
+    // Renames/copies carry the source path as the next NUL-separated field; skip it.
+    if (xy.includes('R') || xy.includes('C')) i++;
+    if (xy !== 'D ') stageable.add(entry.slice(3));
+  }
+  return stageable;
+}
+
+/**
  * Stages and commits exactly `files` — nothing else. Agents have no git write access (see
  * sandbox.ts), so this is the only path from on-disk change to commit.
  */
 export function commitFiles(worktreePath: string, files: string[], message: string): boolean {
   if (files.length === 0) return false;
-  git(['add', '-A', '--', ...files], worktreePath);
+  const stageable = pathsToStage(worktreePath);
+  const toAdd = files.filter((f) => stageable.has(f));
+  if (toAdd.length) git(['add', '-A', '--', ...toAdd], worktreePath);
   const staged = git(['diff', '--cached', '--name-only'], worktreePath).trim();
   if (!staged) return false;
   git(['commit', '-m', message], worktreePath);
