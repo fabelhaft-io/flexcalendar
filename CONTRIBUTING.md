@@ -31,10 +31,11 @@ Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
   i.e. `feat/<REQUIREMENT-ID>-<slug>`, where `<slug>` is a short kebab-case
   description. The example is the one in `docs/06` § Agent working agreement,
   rule 2.
-- **PRs target `main`** and name the requirement ID in the title, for example
-  `E05-R03: Event CRUD with ETag preconditions`. Keep one requirement per PR
-  where practical (rule 2 again); a PR that quietly fixes a second thing is
-  not one.
+- **PRs target `main`** and use the same format in the title, for example
+  `feat(E05-R03): event CRUD with ETag preconditions`. Keep one requirement
+  per PR where practical (rule 2 again); a PR that quietly fixes a second
+  thing is not one. PRs are squash-merged, so the PR title becomes the commit
+  subject on `main`.
 - **Fix runs stay on the same branch.** The agent harness creates the branch
   in a worktree at `../calendar-flex-agent-<ID>` and reuses it, merged forward
   from `main`, for every later run of that requirement — review findings are
@@ -50,7 +51,7 @@ Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
 ## Commit style
 
 ```text
-E05-R03: apply recurring-event intents with ical.js
+feat(E05-R03): apply recurring-event intents with ical.js
 
 The API now applies "this occurrence", "this and following" and "all"
 intents to the iCalendar object instead of letting the client rewrite
@@ -66,14 +67,15 @@ Agent-Model: <provider>/<model-id>
 Agent-Status: DONE
 ```
 
-- **Subject**: `E<nn>-R<nn>: <summary>` — the requirement ID first, so
-  `git log --oneline` is greppable by requirement (`E02-R01: repository
-  layout` is an existing example). Lowercase unless the summary starts with a
-  proper noun, imperative, no trailing period, 72 characters or fewer.
-- **Changes that belong to no requirement** (repo-wide chores, doc-only edits)
-  take a short lowercase type prefix instead of an ID: `docs:`, `chore:`,
-  `build:`, `ci:`. Existing example:
-  `docs: the project licence is Apache-2.0`.
+- **Subject**: `<type>(<requirement-id>): <short summary>` — a type, the
+  requirement ID in parentheses, then the summary. The types are `feat` (a new
+  capability), `doc` (documentation only, never `docs`), `fix` (a defect fix),
+  `chore` (housekeeping that changes no behaviour) and `infra` (build, CI,
+  containers, deployment); there is no `build` or `ci`. For example
+  `feat(E02-R02): This is a placeholder summary`. The summary is imperative,
+  has no trailing period and is 72 characters or fewer.
+- **Changes that belong to no requirement** (for example a harness change)
+  drop the parentheses: `chore: …`.
 - **Body**: wrapped at 72 columns, saying what changed and why, which spec
   docs, `D-*` or `INV-*` the change follows, and what was actually verified
   (with the commands and their results). Keep it honest: a check you did not
@@ -91,9 +93,10 @@ Agent-Status: DONE
   shell cannot `git commit`. The harness takes the implementer's summary
   verbatim as the body and appends `Agent-Run`, `Agent-Run-Number`,
   `Agent-Model` and `Agent-Status` trailers, with a subject of
-  `E<nn>-R<nn>: implementer run <n> (<STATUS>)`. A commit made after a review
-  reads like `E<nn>-R<nn>: review <n> (<VERDICT>)`, for example
-  `E02-R02: review 1 (BLOCKED)`.
+  `feat(<ID>): implementer run <n> (<STATUS>)` (the harness writes that form
+  once PR #6 is merged). A commit made after a review reads like
+  `doc(<ID>): review <n> (<VERDICT>)`, for example
+  `doc(E02-R02): review 1 (BLOCKED)`.
 - **Never bypass the checks**: no `--no-verify` (or `-n`), no skipped or
   amended-out hooks, no `git push --force` to a shared branch. If a hook
   fails, fix the cause.
