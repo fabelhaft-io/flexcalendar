@@ -22,3 +22,14 @@ Rules that apply to everything here (`docs/02-technology-choices.md`
   uses Caddy's local CA instead.
 - **No secrets in the repo**: values come from the environment, and a new
   variable gets a line in the relevant `.env.example`.
+
+## Zitadel configuration as code
+
+[E02-R09's configuration and acceptance protocol](zitadel/README.md) pin
+OpenTofu and the Zitadel provider, specify the complete auth surface, and use
+one module for local/staging/production. `make seed` now applies it after the
+development users; `make zitadel-plan` checks drift; `make token USER=alice`
+prints a JWKS-verified JWT for tests without a browser. The helper is a separate
+local/staging service account and refuses the production issuer. Configuration
+state contains credentials and lives in its own schema in Zitadel's Postgres
+database, sharing the instance's backup, restore and teardown lifecycle; never in git.

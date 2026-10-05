@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | In progress: R01, R02, R03, R04 and R08 Done; R05 passed review ([`reviews/E02-R05.md`](../reviews/E02-R05.md)), Done once merged; R06, R07 and R09 Ready |
+| Status | In progress: R01, R02, R03, R04, R05 and R08 Done; R09 passed review ([`reviews/E02-R09.md`](../reviews/E02-R09.md)), Done once merged; R06 and R07 Ready |
 | Executor | `agent` |
 | Depends on | D-09 (layout), D-01/D-02 for the service skeletons, D-03 and D-19 for R09 |
 | Spec | `02-technology-choices.md`, ADR 0002 |

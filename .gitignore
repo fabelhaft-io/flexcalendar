@@ -250,3 +250,11 @@ apps/mobile/android/local.properties
 
 # Composer
 server/caldav/vendor/
+
+# OpenTofu state may contain credentials; only provider lockfiles are tracked.
+infra/zitadel/.tools/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
