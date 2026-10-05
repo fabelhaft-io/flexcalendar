@@ -1,0 +1,10 @@
+# Dart SDK pin (E02-R02) for the crypto core consumed by `apps/mobile`. The
+# library itself arrives with E12; this file exists so the package cannot be
+# resolved or built with a Dart SDK other than the one Flutter 3.47.6 ships
+# (apps/mobile/.fvmrc).
+name: crypto_dart
+description: calendar-flex Dart crypto core — key hierarchy, envelopes, recovery code (E12).
+publish_to: "none"
+
+environment:
+  sdk: ^3.13.5

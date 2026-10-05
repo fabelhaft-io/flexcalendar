@@ -1,0 +1,22 @@
+{
+  "name": "calendar-flex/caldav",
+  "description": "calendar-flex CalDAV service: SabreDAV 4.7+ embedded in a small PHP 8.4 service with the Postgres PDO backend (D-02). The service itself arrives with E03-R01.",
+  "type": "project",
+  "license": "Apache-2.0",
+  "require": {
+    "php": "8.4.*",
+    "ext-json": "*",
+    "ext-pdo": "*",
+    "ext-pdo_pgsql": "*"
+  },
+  "config": {
+    "platform": {
+      "php": "8.4.0"
+    },
+    "platform-check": true,
+    "sort-packages": true,
+    "optimize-autoloader": true
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

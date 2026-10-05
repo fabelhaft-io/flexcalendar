@@ -1,0 +1,9 @@
+{
+  "name": "@calendar-flex/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "calendar-flex API: Node 24 LTS + TypeScript + Fastify REST facade over CalDAV (D-01). The service itself arrives with E05-R01.",
+  "engines": {
+    "node": ">=24.17.0 <25"
+  }
+}
