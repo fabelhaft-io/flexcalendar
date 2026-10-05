@@ -46,8 +46,8 @@ export function components() {
     ...directories(resolve(root, 'packages')),
   ]
     .filter((directory) =>
-      ['package.json', 'composer.json', 'pubspec.yaml'].some((file) =>
-        existsSync(resolve(directory, file)),
+      ['package.json', 'composer.json', 'pubspec.yaml', 'README.md'].some(
+        (file) => existsSync(resolve(directory, file)),
       ),
     )
     .map((directory) => ({
@@ -86,6 +86,11 @@ export function component(name) {
         540_000,
         `${name}: ${phase}`,
       );
+  } else if (!existsSync(resolve(directory, 'pubspec.yaml'))) {
+    // Layout placeholders (E02-R01) still have a named CI component before
+    // their manifest arrives; do not mistake them for Dart packages.
+    for (const phase of phases)
+      console.log(`${name}: ${phase}: no registered checks yet; pass`);
   } else {
     const dartFiles = readdirSync(directory, { recursive: true }).filter(
       (file) =>

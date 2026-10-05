@@ -25,9 +25,9 @@
     "yaml": "2.9.1"
   },
   "scripts": {
-    "format:check": "prettier --check package.json eslint.config.mjs .prettierrc.json \"infra/scripts/**/*.mjs\" infra/scripts/invariant-dependencies.json \"infra/scripts/fixtures/*.json\" \"infra/scripts/verify/invariants/*.json\"",
+    "format:check": "prettier --check package.json eslint.config.mjs .prettierrc.json \"infra/scripts/**/*.mjs\" infra/scripts/invariant-dependencies.json \"infra/scripts/fixtures/*.json\" \"infra/scripts/verify/invariants/*.json\" \".github/**/*.yml\"",
     "lint": "eslint infra/scripts eslint.config.mjs",
-    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 infra/scripts/verify.mjs infra/scripts/verify.test.mjs infra/scripts/invariants.mjs infra/scripts/invariants.test.mjs",
-    "test": "node --test infra/scripts/*.test.mjs"
+    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 infra/scripts/*.mjs",
+    "test": "node infra/scripts/check-pins.mjs && node --test infra/scripts/*.test.mjs"
   }
 }

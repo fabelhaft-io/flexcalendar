@@ -1,0 +1,70 @@
+name: Pinned verification tools
+description: Read repository pins and install cached dependencies before Make gates.
+inputs:
+  component:
+    description: Component name, or all for full verification
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: .nvmrc
+    - name: Locate pnpm store (Corepack reads packageManager)
+      id: pnpm
+      shell: bash
+      run: echo "store=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.pnpm.outputs.store }}
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml', 'package.json', '.nvmrc') }}
+        restore-keys: ${{ runner.os }}-pnpm-
+    - name: Install TS dependencies
+      shell: bash
+      run: corepack pnpm install --frozen-lockfile
+    - name: Read PHP and Java pins
+      id: pins
+      shell: bash
+      run: |
+        node -e 'const p = require("./server/caldav/composer.json"); console.log("php=" + p.config.platform.php.split(".").slice(0,2).join("."))' >> "$GITHUB_OUTPUT"
+        sed -n 's/^toolchainVersion=/java=/p' apps/mobile/android/gradle/gradle-daemon-jvm.properties >> "$GITHUB_OUTPUT"
+    - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+      if: inputs.component == 'server-caldav' || inputs.component == 'all'
+      with:
+        php-version: ${{ steps.pins.outputs.php }}
+        extensions: pdo_pgsql, mbstring, tokenizer, dom, xml, zip, openssl
+        tools: composer
+        coverage: none
+    - name: Locate Composer cache
+      if: inputs.component == 'server-caldav' || inputs.component == 'all'
+      id: composer
+      shell: bash
+      run: echo "cache=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      working-directory: server/caldav
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.component == 'server-caldav' || inputs.component == 'all'
+      with:
+        path: ${{ steps.composer.outputs.cache }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('server/caldav/composer.lock') }}
+        restore-keys: ${{ runner.os }}-composer-
+    - name: Install PHP dependencies
+      if: inputs.component == 'server-caldav' || inputs.component == 'all'
+      shell: bash
+      working-directory: server/caldav
+      run: composer install --no-interaction --prefer-dist
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      if: inputs.component == 'apps-mobile' || inputs.component == 'packages-crypto_dart' || inputs.component == 'all'
+      with:
+        flutter-version-file: apps/mobile/.fvmrc
+        channel: stable
+        cache: 'true'
+        pub-cache: 'true'
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      if: inputs.component == 'apps-mobile' || inputs.component == 'all'
+      with:
+        distribution: temurin
+        java-version: ${{ steps.pins.outputs.java }}
+    - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      if: inputs.component == 'apps-mobile' || inputs.component == 'all'
+      with:
+        cache-read-only: ${{ github.event_name == 'pull_request' }}

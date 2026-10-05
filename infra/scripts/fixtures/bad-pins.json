@@ -1,0 +1,12 @@
+[
+  { "field": "nvm", "value": "25", "error": ".nvmrc disagrees" },
+  { "field": "runtime", "value": "^23.17.0", "error": ".nvmrc disagrees" },
+  { "field": "engines", "value": ">=25 <26", "error": "engines.node excludes" },
+  { "field": "flutter", "value": "3.47.7", "error": ".fvmrc disagrees" },
+  { "field": "mobileSdk", "value": "^3.14.0", "error": "apps/mobile Dart SDK" },
+  {
+    "field": "cryptoSdk",
+    "value": "<3.13.5",
+    "error": "packages/crypto_dart SDK"
+  }
+]

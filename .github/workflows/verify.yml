@@ -1,0 +1,123 @@
+name: Verify
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  changes:
+    name: Detect components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      full: ${{ steps.select.outputs.full }}
+      components: ${{ steps.select.outputs.components }}
+      has-components: ${{ steps.select.outputs.has-components }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          component: tooling
+      - name: Select component gates
+        id: select
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            # Main builds always run the complete verification, including the
+            # first push (whose before SHA can be all zeroes).
+            echo 'full=true' >> "$GITHUB_OUTPUT"
+            echo 'has-components=false' >> "$GITHUB_OUTPUT"
+            echo 'components=["tooling"]' >> "$GITHUB_OUTPUT"
+          else
+            node infra/scripts/ci-components.mjs "$BASE" "$HEAD"
+          fi
+  components:
+    name: Component (${{ matrix.component }})
+    needs: changes
+    if: needs.changes.outputs.has-components == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.components) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          component: ${{ matrix.component }}
+      - name: Component Make gate
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: make "verify-$COMPONENT"
+  cross-cutting:
+    name: Cross-cutting gates
+    needs: changes
+    if: needs.changes.outputs.full != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          component: tooling
+      - uses: ./.github/actions/stack
+      - name: Cross-cutting Make gates (also on web-only and docs-only PRs)
+        run: make verify-tooling check-stack test-seed verify-invariants verify-corpus
+      - name: Stop stack
+        if: always()
+        run: make dev-down
+  full:
+    name: Full make verify
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          component: all
+      - uses: ./.github/actions/stack
+      - run: make verify
+      - name: Stop stack
+        if: always()
+        run: make dev-down
+  required:
+    # This single stable name is the branch-protection check, not the matrix.
+    name: Verify required
+    needs: [changes, components, cross-cutting, full]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fail closed on failures or cancellation, allow intentional skips
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          node - <<'JS'
+          const needs = JSON.parse(process.env.NEEDS);
+          if (Object.values(needs).some(job => ['failure', 'cancelled'].includes(job.result))) process.exit(1);
+          if (needs.changes.result !== 'success') process.exit(1);
+          const full = needs.changes.outputs.full === 'true';
+          if (needs[full ? 'full' : 'cross-cutting'].result !== 'success') process.exit(1);
+          if (needs.changes.outputs['has-components'] === 'true' && needs.components.result !== 'success') process.exit(1);
+          console.log('All selected verification gates passed.');
+          JS
