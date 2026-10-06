@@ -50,6 +50,18 @@ your worktree. When this file and the docs disagree, the docs win; say so in `op
 - You cannot run Podman yourself (see "Known environment"). Write the container and stack
   files, run the checks that work in the sandbox, and list the stack-dependent commands the
   reviewer must run in `openQuestions`.
+- **Never stop before writing because a check can't run in the sandbox** (the stack, Podman, a
+  toolchain you can't get). Write the whole deliverable first, run what the sandbox can, and
+  list the rest in `openQuestions` for the reviewer. You may still report `BLOCKED` when the
+  deliverable itself couldn't be exercised, but only with everything written: a `BLOCKED`
+  handoff that wrote nothing costs a fix cycle and tells the reviewer nothing.
+- **Toolchains you download stay out of the worktree.** Files under your writable paths are
+  committed by the coordinator, so an SDK unpacked there ends up in git. In the Mastra sandbox
+  the one persistent, writable host path is `~/.cache/calendar-flex-agent-team/`: download and
+  unpack there, and check the archive's SHA-256 against the vendor's published value. For
+  Flutter, take the official `flutter_linux_<version>-stable.tar.xz` from
+  `https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/`, with its hash
+  from `releases_linux.json` in the parent `releases/` directory.
 - pnpm comes through corepack: `corepack pnpm <args>`.
 
 ## Git, network and deploy safety
