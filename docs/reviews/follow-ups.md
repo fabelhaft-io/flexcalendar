@@ -6,9 +6,8 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E02-R09** · Zitadel configuration as code, `agent+review`: passed review 3 after a fourth run the owner allowed (`--force`), PR open.
-2. **E02-R06** · CI pipeline: in progress (it doesn't touch the `Makefile`).
-3. **E02-R07**: waits for E02-R09's PR (both edit the `Makefile`).
+1. **E02-R06** · CI pipeline: passed review 4 after a fourth run the owner allowed (`--force`), PR #21.
+2. **E02-R07**: waits for #21 (both edit `package.json` and `infra/scripts/`). No doc picks the OpenAPI generators (TS, and Dart in `apps/mobile`): expect the run to ask.
 4. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
 5. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 6. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
@@ -16,14 +15,8 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 ## Follow-ups waiting for their requirement
 
-- **E02-R06**, a pin-consistency check:
-  - `.nvmrc` against `devEngines` and the `engines` range;
-  - both pubspecs' Dart SDK against the Dart that the `.fvmrc` Flutter release ships.
-- **E02-R06**, CI:
-  - read the pins, never repeat them: `actions/setup-node` with `node-version-file: .nvmrc`; pnpm through corepack from `packageManager`; `subosito/flutter-action` with `flutter-version-file: apps/mobile/.fvmrc`; `shivammathur/setup-php` 8.4; `actions/setup-java` 21 with `gradle/actions/setup-gradle`;
-  - JDK 21 isn't auto-provisioned (no toolchain download URLs);
-  - CI runs `pnpm install` and `composer install`, and starts the stack before `make verify`, which deliberately doesn't start it (E02-R04);
-  - making the check required on `main` is a repo setting, so ask the owner.
+- **Done 2026-10-06:** **"Verify required"** (E02-R06) is a required status check on `main`, in the ruleset "my main my rules" (GitHub Actions app only). The ruleset's one-approval rule is unchanged.
+
 - **E02-R07:** add `info.license: Apache-2.0` to `spec/openapi.yaml`; confirm `servers` and the OpenAPI version.
 - **E03-R01:**
   - the CalDAV image installs `pdo_pgsql`;
@@ -46,7 +39,9 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 - **Not in any requirement yet** (from E02-R04):
   - Markdown is not linted (an owner decision);
   - `infra/dev/*.mjs` (`check-stack`, the seed) and `infra/zitadel/*.mjs` (E02-R09; `make test-zitadel` exists but `make verify` doesn't run it) are in no format, lint or type gate;
-  - `infra/dev/seed/seed.mjs:124` has an ESLint `no-useless-assignment` error that predates E02-R09.
+  - `infra/dev/seed/seed.mjs:124` has an ESLint `no-useless-assignment` error that predates E02-R09;
+  - the tooling test `healthchecks.test.mjs` (E02-R06) binds host ports 8080 and 3000 and runs `php`, so `make verify` on a dev host needs those ports free and PHP on `PATH`, as `CONTRIBUTING.md` already requires;
+  - the skipped component matrix shows as `Component (${{ matrix.component }})` on full and docs-only runs (cosmetic).
 - **Text nits on `main`**, for whoever touches the file next:
   - `infra/zitadel/README.md` § state tells "existing local installations" to remove an old `zitadel-state` volume; that volume existed only during E02-R09's review, never on `main`;
   - `CONTRIBUTING.md` says the harness writes the new subject "once PR #6 is merged", which is stale;
@@ -55,5 +50,5 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-- **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-claude-md`, `-sandbox-php`, `-handoff`, `-doc-r09`, `-doc-r05` and `-claude-connectors`. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
+- **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-agent-E02-R05`, `-agent-E02-R09`, `-claude-md`, `-sandbox-php`, `-handoff`, `-doc-r09`, `-doc-r05`, `-claude-connectors`, `-r06-webonly`, `-r06-web2` and `-r06-fail`. The review-only branches `review/E02-R06-*` (test PRs #22–#24, closed) can go too. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
 - **Guardrails wording** (offered, not answered): E02-R09 run 2 stopped before writing anything because its checks need the stack. One sentence in `agent-team/src/prompts/guardrails.md` would settle it, as its own `chore:` PR: an implementer never stops over a check it can't run in the sandbox; it writes the deliverable and lists those checks for the reviewer.

@@ -1,0 +1,50 @@
+name: Rootless local stack
+description: Start the Makefile stack against the runner user's Podman socket.
+runs:
+  using: composite
+  steps:
+    - name: Connect Compose to rootless Podman
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(id -u)" -ne 0
+        podman info --format '{{.Host.Security.Rootless}}' | grep -qx true
+        systemctl --user start podman.socket
+        echo "DOCKER_HOST=unix://${XDG_RUNTIME_DIR}/podman/podman.sock" >> "$GITHUB_ENV"
+        # Ubuntu runners supply Compose v2 as a CLI plugin. It is only a
+        # Compose client here; it connects to Podman, never a Docker daemon.
+        # Select the provider explicitly instead of falling back to podman-compose
+        # (which does not support the Makefile's up --wait).
+        provider=$(command -v docker-compose || true)
+        if [ -z "$provider" ]; then
+          for candidate in /usr/libexec/docker/cli-plugins/docker-compose /usr/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose; do
+            if [ -x "$candidate" ]; then provider=$candidate; break; fi
+          done
+        fi
+        test -n "$provider"
+        echo "PODMAN_COMPOSE_PROVIDER=$provider" >> "$GITHUB_ENV"
+    - name: Start stack before stack-dependent verification
+      shell: bash
+      # The Makefile supports PODMAN_COMPOSE overrides for alternate provider
+      # locations. No rootful/Docker fallback: if the runner cannot run rootless
+      # Podman, this job must fail and the owner must supply a rootless runner.
+      run: |
+        if make dev PODMAN_COMPOSE='podman compose'; then
+          exit 0
+        fi
+        # Best-effort diagnostics must never replace the original failure.
+        # Inspect only state/health, never Config.Env (bootstrap credentials).
+        podman version || true
+        export COMPOSE_PROJECT_NAME=calendar-flex-dev
+        podman compose --file infra/dev/compose.yaml ps -a || true
+        containers=$(podman ps -a --filter label=com.docker.compose.project=calendar-flex-dev --format '{{.ID}}' || true)
+        for container in $containers; do
+          state=$(podman inspect --format '{{.State.Status}}' "$container" || true)
+          health=$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" || true)
+          if [ "$state" = exited ] || [ "$health" = unhealthy ]; then
+            echo "Container $container: $state / $health"
+            podman logs --tail 50 "$container" || true
+            podman inspect --format '{{json .State.Health}}' "$container" || true
+          fi
+        done
+        exit 1
