@@ -7,11 +7,11 @@ import 'package:retrofit/retrofit.dart';
 
 import '../models/health.dart';
 
-part 'fallback_client.g.dart';
+part 'health_client.g.dart';
 
 @RestApi()
-abstract class FallbackClient {
-  factory FallbackClient(Dio dio, {String? baseUrl}) = _FallbackClient;
+abstract class HealthClient {
+  factory HealthClient(Dio dio, {String? baseUrl}) = _HealthClient;
 
   @GET('/healthz')
   Future<Health> getHealth();

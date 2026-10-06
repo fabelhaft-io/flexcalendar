@@ -3,7 +3,7 @@
 // ignore_for_file: type=lint, unused_import, invalid_annotation_target, unnecessary_import
 
 // Clients
-export 'fallback/fallback_client.dart';
+export 'health/health_client.dart';
 // Data classes
 export 'models/health.dart';
 export 'models/health_status.dart';

@@ -4,7 +4,7 @@
 
 import 'package:dio/dio.dart';
 
-import 'fallback/fallback_client.dart';
+import 'health/health_client.dart';
 
 /// calendar-flex API `v0.0.0`.
 ///
@@ -17,8 +17,7 @@ class RestClient {
 
   static String get version => '0.0.0';
 
-  FallbackClient? _fallback;
+  HealthClient? _health;
 
-  FallbackClient get fallback =>
-      _fallback ??= FallbackClient(_dio, baseUrl: _baseUrl);
+  HealthClient get health => _health ??= HealthClient(_dio, baseUrl: _baseUrl);
 }
