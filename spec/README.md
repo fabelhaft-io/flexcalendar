@@ -21,5 +21,5 @@ coordinated change across every runtime that reads it.
 corepack and pinned Flutter/Dart on PATH, and commit both generated clients.
 `make gen-check` regenerates and names stale, missing or untracked generated
 files; `make verify` runs it in CI even for contract-only changes. API tests
-validate the document with swagger-parser 12.1.0 and compare Fastify responses.
+validate the document with swagger-parser 13.1.0 and compare Fastify responses.
 No generator requires a JVM.

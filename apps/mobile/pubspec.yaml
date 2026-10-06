@@ -6,11 +6,11 @@
 # next to this file; CI reads the same version from it (see `apps/mobile/README.md`).
 name: calendar_flex
 description: calendar-flex mobile app — Android first (minSdk 26), iOS from Phase 5 (ADR 0003).
-publish_to: 'none'
+publish_to: "none"
 
 environment:
   sdk: ^3.13.5
-  flutter: '>=3.47.6 <4.0.0'
+  flutter: ">=3.47.6 <4.0.0"
 
 dependencies:
   dio: 5.11.1

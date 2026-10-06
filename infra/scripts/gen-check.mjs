@@ -32,24 +32,33 @@ export function differences(before, after) {
     (path) => before.get(path) !== after.get(path),
   );
 }
-export function main() {
-  const before = snapshot(root, generated);
+/** @param {string} directory */
+function generate(directory) {
   const generation = spawnSync('make', ['gen'], {
-    cwd: root,
+    cwd: directory,
     stdio: 'inherit',
   });
   if (generation.status !== 0) throw new Error('API client generation failed.');
-  const changed = differences(before, snapshot(root, generated));
+}
+/** @param {string} directory @param {string[]} paths @param {(directory: string) => void} generateStep */
+export function main(
+  directory = root,
+  paths = generated,
+  generateStep = generate,
+) {
+  const before = snapshot(directory, paths);
+  generateStep(directory);
+  const changed = differences(before, snapshot(directory, paths));
   // Also catch files already stale in the commit and extra/untracked outputs.
   const tracked = spawnSync(
     'git',
-    ['diff', '--name-only', 'HEAD', '--', ...generated],
-    { cwd: root, encoding: 'utf8' },
+    ['diff', '--name-only', 'HEAD', '--', ...paths],
+    { cwd: directory, encoding: 'utf8' },
   );
   const untracked = spawnSync(
     'git',
-    ['ls-files', '--others', '--exclude-standard', '--', ...generated],
-    { cwd: root, encoding: 'utf8' },
+    ['ls-files', '--others', '--exclude-standard', '--', ...paths],
+    { cwd: directory, encoding: 'utf8' },
   );
   if (tracked.status !== 0 || untracked.status !== 0)
     throw new Error('Cannot check generated files with git.');

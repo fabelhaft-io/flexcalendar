@@ -32,7 +32,7 @@ void main() {
   test('generated dio client decodes health response', () async {
     final dio = Dio()..httpClientAdapter = HealthAdapter();
     final client = RestClient(dio, baseUrl: 'https://api.localhost:8443');
-    final health = await client.fallback.getHealth();
+    final health = await client.health.getHealth();
     expect(health.status, HealthStatus.ok);
     expect(health.service, HealthService.api);
     dio.close();

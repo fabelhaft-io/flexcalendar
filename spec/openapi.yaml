@@ -19,6 +19,7 @@ servers:
 paths:
   /healthz:
     get:
+      tags: [health]
       operationId: getHealth
       responses:
         '200':

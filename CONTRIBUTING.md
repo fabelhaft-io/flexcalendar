@@ -182,6 +182,15 @@ changes the system, both change in the same PR (rule 6).
 
 ## Single verification entry point (E02-R04)
 
+Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`
+and the CalDAV development tools with `cd server/caldav && composer install`.
+The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
+(the E02-R02 pins). `make verify` also requires the pinned Flutter and Dart
+on `PATH` for the mobile component and client generation.
+Start the rootless local stack with `make dev`, then run `make verify`.
+Verification does not start, reset, or seed the stack for you. Stack-dependent
+checks inherit the environment documented in `infra/dev/.env.example`.
+
 API contracts live in `spec/openapi.yaml`. After changes run `make gen` with the
 pinned Flutter/Dart on PATH and `corepack pnpm` available, and commit generated
 TS (`packages/api-client-ts/src/schema.d.ts`) and Dart (`apps/mobile/lib/api/`)
@@ -192,17 +201,12 @@ component gates. `make gen && git diff --exit-code` is also a stale-client check
 on a clean checkout. Generator pins and the two-step Dart pipeline are documented
 in the client READMEs; no generator uses a JVM.
 
-Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`
-and the CalDAV development tools with `cd server/caldav && composer install`.
-The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
-(the E02-R02 pins).
-Start the rootless local stack with `make dev`, then run `make verify`.
-Verification does not start, reset, or seed the stack for you. Stack-dependent
-checks inherit the environment documented in `infra/dev/.env.example`.
+`gen-check` is in the `all` sequence rather than a JSON registration: it does
+not need the stack, so neither the invariant nor corpus suite fits this check.
 
 The entry point runs each package's format check, lint, static type check, and
-unit tests, then `make check-stack`, `make test-seed`, `make verify-invariants`, and
-`make verify-corpus`, in that order, even with `make -j`. Any failure stops the
+unit tests, then `make gen-check`, `make check-stack`, `make test-seed`,
+`make verify-invariants`, and `make verify-corpus`, in that order, even with `make -j`. Any failure stops the
 run with a nonzero exit. GNU `timeout` caps the complete run at nine minutes
 (with a five-second kill grace period), leaving headroom below the ten-minute
 CI limit. Dependency installation and stack startup are prerequisites, not timed
