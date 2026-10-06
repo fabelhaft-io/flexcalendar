@@ -12,3 +12,5 @@ Run `make gen` at the repository root after a contract change and commit both
 clients. `make gen-check` runs generation and rejects stale, missing or untracked
 generated files, without rejecting unrelated edits. CI invokes it in `make verify`.
 The wrapper and tests are hand-written; only `src/schema.d.ts` is generated.
+
+(review only: README touch)
