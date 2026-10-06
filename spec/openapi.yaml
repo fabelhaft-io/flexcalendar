@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: calendar-flex API
-  version: 0.0.0
+  version: 0.0.1
   license: { name: Apache-2.0, identifier: Apache-2.0 }
   description: >-
     API contract for the readiness probe. E05 adds the product API.
