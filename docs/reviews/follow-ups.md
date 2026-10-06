@@ -6,7 +6,7 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-06. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E02-R07** · OpenAPI-first contract: review 1 BLOCKED on six small fixes (`reviews/E02-R07.md`), draft PR #26. Run 2 is fix cycle 1 of 2.
+1. **E02-R07** · OpenAPI-first contract: review 2 BLOCKED on one small fix (`make gen` must wipe `apps/mobile/lib/api` first), draft PR #26. Run 3 is fix cycle 2 of 2.
 4. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
 5. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 6. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
