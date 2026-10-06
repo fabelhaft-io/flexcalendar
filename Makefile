@@ -94,6 +94,7 @@ test-zitadel: ## Unit-test the configuration runner and token helper without con
 
 gen: ## Regenerate TS and Dart API clients using the pinned tools
 	corepack pnpm --filter @calendar-flex/api-client run gen
+	rm -rf apps/mobile/lib/api
 	cd apps/mobile && flutter pub get && dart run swagger_parser && dart run build_runner build && dart format lib/api
 
 gen-check: ## Fail on stale, missing or untracked generated API files

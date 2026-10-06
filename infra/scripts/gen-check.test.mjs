@@ -6,6 +6,18 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { snapshot, differences, main } from './gen-check.mjs';
 
+test('make gen removes the previous Dart output before swagger_parser', () => {
+  const result = spawnSync('make', ['-n', 'gen'], {
+    cwd: resolve(import.meta.dirname, '../..'),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const removal = result.stdout.indexOf('rm -rf apps/mobile/lib/api');
+  const generation = result.stdout.indexOf('dart run swagger_parser');
+  assert.ok(removal >= 0, 'make gen must wipe the generated Dart directory');
+  assert.ok(generation > removal, 'removal must precede swagger_parser');
+});
+
 test('snapshots name edited, deleted and newly generated files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'gen-fixture-'));
   try {

@@ -27,7 +27,9 @@
 ## API client generation (E02-R07)
 
 `swagger_parser.yaml` reads `../../spec/openapi.yaml` (OpenAPI 3.1.0) and writes
-`lib/api/`. No app entry point or Flutter framework dependency is scaffolded here.
+`lib/api/`. This directory is entirely generated and wiped by `make gen` before
+regeneration, so files removed from the spec cannot linger. No app entry point or
+Flutter framework dependency is scaffolded here.
 Generator and runtime dependencies are exact pins in `pubspec.yaml`; transitive
 versions are locked in `pubspec.lock`. `analyzer` is pinned to 13.3.0 because
 build_runner 2.16.1 uses `contextFeatures`, removed in analyzer 14.x.
