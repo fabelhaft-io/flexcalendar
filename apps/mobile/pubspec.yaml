@@ -11,3 +11,17 @@ publish_to: "none"
 environment:
   sdk: ^3.13.5
   flutter: ">=3.47.6 <4.0.0"
+
+dependencies:
+  dio: 5.11.1
+  retrofit: 4.10.0
+  json_annotation: 4.12.0
+
+dev_dependencies:
+  swagger_parser: 1.45.0
+  build_runner: 2.16.1
+  retrofit_generator: 10.2.11
+  json_serializable: 6.14.1
+  test: 1.32.0
+  # build_runner 2.16.1 uses an analyzer API removed in 14.x.
+  analyzer: 13.3.0

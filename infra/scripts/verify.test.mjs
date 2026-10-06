@@ -79,12 +79,22 @@ test('all orchestrates components before stack suites and stops on first failure
     assert.equal(happy.status, 0);
     const expected = [
       ...components().map(({ name }) => `verify-${name}`),
+      'gen-check',
       'check-stack',
       'test-seed',
       'verify-invariants',
       'verify-corpus',
     ];
     assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), expected);
+    writeFileSync(log, '');
+    const generationFailure = spawnSync(process.execPath, [command, 'all'], {
+      env: { ...env, VERIFY_TEST_FAIL: 'gen-check' },
+    });
+    assert.notEqual(generationFailure.status, 0);
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), [
+      ...components().map(({ name }) => `verify-${name}`),
+      'gen-check',
+    ]);
     writeFileSync(log, '');
     const failure = spawnSync(process.execPath, [command, 'all'], {
       env: { ...env, VERIFY_TEST_FAIL: 'test-seed' },

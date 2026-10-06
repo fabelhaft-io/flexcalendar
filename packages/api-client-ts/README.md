@@ -1,13 +1,14 @@
-# `packages/api-client-ts/` — generated TypeScript API client
+# `packages/api-client-ts` — OpenAPI fetch client
 
-**Owning epic:** [E02-R07 — OpenAPI-first contract](../../docs/epics/E02-repo-tooling-ci.md);
-its consumer is [E09](../../docs/epics/E09-web-client.md).
+The private workspace `@calendar-flex/api-client` exports a typed `createClient`
+wrapper over `openapi-fetch` 0.17.0. `src/schema.d.ts` is generated, never edited,
+from `spec/openapi.yaml` (OpenAPI 3.1.0), using `openapi-typescript` 7.13.0.
 
-- **What belongs here:** the TypeScript client **generated from
-  [`spec/openapi.yaml`](../../spec/openapi.yaml)**. It is generated, never
-  hand-edited — E02-R07 makes CI fail when the generated client is stale
-  (`make gen && git diff --exit-code`).
-- The Dart client for [`apps/mobile`](../../apps/mobile/README.md) is generated
-  from the same contract and is needed from Phase 3; the TS client can wait
-  until Phase 5 (E02-R07 notes).
-- The API contract itself lives in `spec/openapi.yaml`, not here.
+Generation pins a **local TypeScript 5.9.3**: openapi-typescript needs the 5.x
+compiler API, which the repository's TypeScript 7.0.2 does not expose. pnpm links
+that peer to the local copy. Typechecking still uses the root TypeScript 7.
+
+Run `make gen` at the repository root after a contract change and commit both
+clients. `make gen-check` runs generation and rejects stale, missing or untracked
+generated files, without rejecting unrelated edits. CI invokes it in `make verify`.
+The wrapper and tests are hand-written; only `src/schema.d.ts` is generated.

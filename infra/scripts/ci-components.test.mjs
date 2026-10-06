@@ -131,3 +131,20 @@ test('change detector writes GitHub outputs to a file instead of stdout', () => 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('contract and generated-only changes always select full verification', () => {
+  for (const path of [
+    'spec/openapi.yaml',
+    'apps/mobile/swagger_parser.yaml',
+    'apps/mobile/pubspec.yaml',
+    'apps/mobile/pubspec.lock',
+    'packages/api-client-ts/package.json',
+    'packages/api-client-ts/src/schema.d.ts',
+    'apps/mobile/lib/api/models/health.dart',
+  ])
+    assert.equal(selectComponents([path]).full, true, path);
+  assert.equal(
+    selectComponents(['packages/api-client-ts/README.md']).full,
+    false,
+  );
+});

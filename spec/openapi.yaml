@@ -1,29 +1,43 @@
-# spec/openapi.yaml — API contract (E02-R01 layout placeholder)
-#
-# Owned by E02-R07 ("OpenAPI-first contract"): the TypeScript client in
-# packages/api-client-ts, the Dart dio client in apps/mobile and the Fastify
-# route schemas in server/api are generated from this document or validated
-# against it (CI fails with `make gen && git diff --exit-code` when the
-# generated clients are stale).
-#
-# The real paths and schemas arrive with E05 (API core) and the client epics,
-# not with E02-R01. Until then this is a valid, intentionally empty contract so
-# that the repository layout exists as specified. The server URLs and the
-# OpenAPI minor version are E02-R07's to confirm.
+# API contract: generated clients and Fastify schemas must agree with this file.
 openapi: 3.1.0
 info:
   title: calendar-flex API
   version: 0.0.0
+  license: { name: Apache-2.0, identifier: Apache-2.0 }
   description: >-
-    Placeholder API contract. Paths and schemas are added by E05 (API core) and
-    the client epics; this document exists so that spec/openapi.yaml is present
-    in the E02-R01 repository layout.
+    API contract for the readiness probe. E05 adds the product API.
 servers:
-  # Hostnames and the local stack port are from docs/02-technology-choices.md.
   - url: https://api.flexcalendar.de
     description: production
   - url: https://api.staging.flexcalendar.de
     description: staging, created on demand
-  - url: https://api.localhost:8443
-    description: local stack (E02-R03)
-paths: {}
+  - url: https://api.localhost:{port}
+    description: local stack (CALFLEX_HTTPS_PORT)
+    variables:
+      port:
+        default: '8443'
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: getHealth
+      responses:
+        '200':
+          description: API is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, service]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          enum: [api]

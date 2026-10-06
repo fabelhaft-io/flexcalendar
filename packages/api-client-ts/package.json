@@ -1,0 +1,21 @@
+{
+  "name": "@calendar-flex/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "gen": "openapi-typescript ../../spec/openapi.yaml -o src/schema.d.ts",
+    "format:check": "prettier --check package.json src/index.ts test tsconfig.json",
+    "lint": "eslint test",
+    "typecheck": "../../node_modules/.bin/tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

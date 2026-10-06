@@ -7,7 +7,18 @@ import { components } from './verify.mjs';
 /** @param {string[]} paths @param {{name: string}[]} knownComponents */
 export function selectComponents(paths, knownComponents = components()) {
   const full = paths.some(
-    (path) => !path.includes('/') || /^(infra|\.github)\//.test(path),
+    (path) =>
+      !path.includes('/') ||
+      /^(infra|\.github)\//.test(path) ||
+      path === 'spec/openapi.yaml' ||
+      [
+        'apps/mobile/swagger_parser.yaml',
+        'apps/mobile/pubspec.yaml',
+        'apps/mobile/pubspec.lock',
+        'packages/api-client-ts/package.json',
+      ].includes(path) ||
+      path === 'packages/api-client-ts/src/schema.d.ts' ||
+      path.startsWith('apps/mobile/lib/api/'),
   );
   const names = knownComponents
     .map(({ name }) => name)
