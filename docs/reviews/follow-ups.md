@@ -6,11 +6,10 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E02-R07** · OpenAPI-first contract: passed review 3 after three runs and one reviewer `chore` commit (the Dart client, regenerated outside the sandbox), PR #26.
-2. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
-3. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
-4. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
-5. **E15**: R01–R03.
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10. E04-R01 is Ready (E02 is Done) but waits for the owner's pick of the migration tool, see "Open with the owner".
+2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
+3. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
+4. **E15**: R01–R03.
 
 ## Follow-ups waiting for their requirement
 
@@ -39,11 +38,11 @@ As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it b
   - confirm Flutter's Gradle run honours the daemon JVM criteria;
   - the `dev|staging|prod` flavors keep the one application ID `de.flexcalendar.app`, with no `applicationIdSuffix`: the redirect scheme is registered once (PR #16, owner-approved).
 - **Not in any requirement yet** (from E02-R04):
-  - Markdown is not linted (an owner decision);
   - `infra/dev/*.mjs` (`check-stack`, the seed) and `infra/zitadel/*.mjs` (E02-R09; `make test-zitadel` exists but `make verify` doesn't run it) are in no format, lint or type gate;
   - `infra/dev/seed/seed.mjs:124` has an ESLint `no-useless-assignment` error that predates E02-R09;
   - the tooling test `healthchecks.test.mjs` (E02-R06) binds host ports 8080 and 3000 and runs `php`, so `make verify` on a dev host needs those ports free and PHP on `PATH`, as `CONTRIBUTING.md` already requires;
   - the skipped component matrix shows as `Component (${{ matrix.component }})` on full and docs-only runs (cosmetic).
+  - on pushes to `main`, `cancel-in-progress` cancels the earlier merge's run when two merges land seconds apart (2026-10-06, 22:24 UTC: #33's run, cancelled by #32's). The later run tests the combined tree. Restrict `cancel-in-progress` to pull requests if each merge commit should keep its own run;
 - **Text nits on `main`**, for whoever touches the file next:
   - `infra/zitadel/README.md` § state tells "existing local installations" to remove an old `zitadel-state` volume; that volume existed only during E02-R09's review, never on `main`;
   - `CONTRIBUTING.md` says the harness writes the new subject "once PR #6 is merged", which is stale;
@@ -52,5 +51,6 @@ As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-- **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-agent-E02-R05`, `-agent-E02-R09`, `-claude-md`, `-sandbox-php`, `-handoff`, `-doc-r09`, `-doc-r05`, `-claude-connectors`, `-r06-webonly`, `-r06-web2` and `-r06-fail`. The review-only branches `review/E02-R06-*` (test PRs #22–#24, closed) can go too. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
-- **Skill lessons** (offered 2026-10-06, for a `chore:` PR to `.agents/skills/orchestrate/`): the points the owner listed, plus: the review host's `php` shim needs an image with `pdo_pgsql` (`server/caldav/composer.json` requires it, and `php:8.4-cli` has none); the `flutter` and `dart` shims run with `HOME` and `PUB_CACHE` in the scratch directory; `make verify` on the host now needs the pinned Flutter, and `flutter pub get` leaves an untracked `apps/mobile/android/app/` that the coordinator would refuse as a dirty worktree.
+- **Merged branches and worktrees** are still there locally as of 2026-10-07 (the removal command was given); the remote branches are already gone. The review-only branches `review/E02-R06-*` and `review/E02-R07-*` go with them.
+- **E04-R01 migration tool:** the epic says "for example `node-pg-migrate` or Drizzle migrations", and no `D-*` picks one, so the run waits for the owner, as E02-R07's generators did. The requirement also moves the stack to PostgreSQL 18 and adds `make migrate` (root `Makefile`, `package.json`, `pnpm-lock.yaml`).
+- **Markdown linting:** not linted today, and undecided. The E02-R04 review left it as "the owner's decision" and the E02-R08 review asked to decide it; an earlier version of this file wrongly called it a decision already made. Suggestion: not for now, because the docs are long-form prose with wide tables that default rules (line length) would flag. If yes, a small `chore:` commits a `.markdownlint` config and adds the check to `make verify`.
