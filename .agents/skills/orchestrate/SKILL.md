@@ -33,6 +33,7 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 ## Hard rules
 
 - Never merge, force-push, skip hooks or commit to `main`. Only the owner merges.
+- Commits are signed through the owner's 1Password SSH agent. If `git commit` hangs or prints `1Password: failed to fill whole buffer`, stop and ask the owner to unlock it. Never bypass signing, not even for a throwaway commit on a scratch branch. Build throwaway fixtures in a separate scratch repository (`git archive` into a directory, then `git init` there), not as a commit on a branch of this repo.
 - Never change a Pinned `D-*`. That needs the owner and an ADR.
 - Nothing outward-facing beyond pushing branches and opening PRs. Staging checks follow D-20 in `06`. The production server is off-limits until the owner has installed an SSH key, then only with their approval for each action, and you never ask for or use its password.
 - Never read or print secrets: `agent-team/.env`, tokens in container volumes, the password manager.
@@ -51,6 +52,7 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
    - `--paths`: a trailing `/` grants a tree; anything else exactly one file. Root files are listed one by one (`Makefile`, `package.json`, `pnpm-lock.yaml`, `.gitignore`, …). Grant the narrowest set the requirement plausibly needs. The coordinator always refuses `.git`, `agent-team/`, `.claude/`, `.agents/` (this skill) and secrets files.
    - The coordinator creates `feat/<ID>-<slug>` in `../calendar-flex-agent-<ID>`, cut from `main` and merged forward on reuse. It commits in-scope files only. Out-of-scope edits land in `agent-team/runs/<ID>/run-<n>/out-of-scope/`, which is the sign of a too-narrow `--paths`.
    - A BLOCKED exit (code 1) can mean a failed handoff schema, not a real blocker. The reason is in `agent-team/runs/<ID>/run-<n>/implementer-handoff-error.txt`, next to the agent's final text. Review the branch anyway.
+   - **Brief before run 1.** Follow-ups that belong to the requirement reach the implementer only through `docs/reviews/<ID>.md` on its branch, which the coordinator feeds into the prompt. So create the branch and worktree yourself (`git worktree add ../calendar-flex-agent-<ID> -b feat/<ID>-<slug> main`; the slug is the coordinator's: the requirement title lower-cased, runs of non-alphanumerics as `-`, at most 40 characters), commit the brief there as `doc(<ID>): brief before run 1`, and then run. Put in it: the follow-ups from `follow-ups.md`, facts you checked upstream (versions, peer ranges, whether a generator runs on the pinned toolchain), the design constraints you want, what the sandbox can't run and what to do about it (write everything, list the rest). The coordinator truncates the file at 12,000 characters (`MAX_FINDINGS_CHARS`), so keep the newest review and its fix requests at the top and older sections below.
 3. **Review** it in its worktree, by [`review-checklist.md`](review-checklist.md). Write `docs/reviews/<ID>.md`:
    - the verdict, the review number and the reviewed commit;
    - each criterion with its command and observed output;
@@ -59,7 +61,12 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
    - follow-ups that belong to other requirements, also added to `follow-ups.md`.
 
    `docs/reviews/E02-R03.md` and `E02-R04.md` show the expected depth.
-4. **BLOCKED:** commit the doc on the branch as `doc(<ID>): review <n> (BLOCKED)`, because the coordinator refuses a dirty worktree. Re-run the same command; the coordinator feeds the doc to the implementer. At most three implementer runs: the first plus two fix cycles. After that, hand the branch and findings to the owner. `--force` only with their OK. An **owner change request** after a PASS takes the same path: add a section to the doc, commit it, re-run and review again.
+4. **BLOCKED:** commit the doc on the branch as `doc(<ID>): review <n> (BLOCKED)`, because the coordinator refuses a dirty worktree. Re-run the same command; the coordinator feeds the doc to the implementer. At most three implementer runs: the first plus two fix cycles. After that, hand the branch and findings to the owner. A fourth run needs the owner's explicit OK (`--force`). Read the handoff's `openQuestions` before you count a BLOCKED as a blocker:
+   - Only checks the sandbox can't run (Podman, the stack, a missing SDK) is a review request, not a blocker: review the branch as usual, and run those checks yourself.
+   - Nothing written because such a check couldn't run: answer with a review that tells it to write the deliverable, run what the sandbox can, and list the stack checks for the reviewer. `guardrails.md` says this too, but the review should repeat it.
+   - Before every re-run, `git status` in the worktree. Review commands leave artefacts the coordinator refuses as a dirty worktree (`flutter pub get` writes an untracked `apps/mobile/android/app/…`). Remove them.
+
+   An **owner change request** after a PASS takes the same path: add a section to the doc, commit it, re-run and review again.
 5. **PASS:**
    - add the new review section on top of the doc. Set the epic's Status cell on the branch: this requirement "passed review (link), Done once merged", and anything merged since marked Done. Two open branches that edit the same Status line get **identical** text; check with `git merge-tree --write-tree`;
    - update `follow-ups.md` on the branch: remove what this requirement resolved, add what its review found, and move the queue on;
@@ -70,6 +77,6 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 
 ## Things you may do yourself
 
-- Generate lockfiles or other artefacts that the sandbox can't produce, in a separate commit on the branch (`chore(<ID>): …`), saying so in the review and the PR.
+- Generate lockfiles or other artefacts that the sandbox can't produce, in a separate commit on the branch (`chore(<ID>): …`), saying so in the review and the PR. Examples: `pnpm-lock.yaml`, or a generated Dart client (E02-R07), regenerated from an empty output directory with the pinned Flutter, as the requirement's own `make gen` would.
 - Harness and tooling fixes outside any requirement (`agent-team/`, `.claude/`, `.agents/`), as their own `chore: …` PR, when the owner asked for them. The queue in `follow-ups.md` lists the ones agreed.
 - Doc fixes for a requirement the owner wants changed: their own `doc(<ID>): …` PR, merged before the requirement runs, because the coordinator builds its prompt from `main`.
