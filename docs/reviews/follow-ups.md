@@ -15,6 +15,8 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 
 ## Follow-ups waiting for their requirement
 
+- **Done 2026-10-06:** **"Verify required"** (E02-R06) is a required status check on `main`, in the ruleset "my main my rules" (GitHub Actions app only). The ruleset's one-approval rule is unchanged.
+
 - **E02-R07:** add `info.license: Apache-2.0` to `spec/openapi.yaml`; confirm `servers` and the OpenAPI version.
 - **E03-R01:**
   - the CalDAV image installs `pdo_pgsql`;
@@ -49,5 +51,4 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 ## Open with the owner
 
 - **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-agent-E02-R05`, `-agent-E02-R09`, `-claude-md`, `-sandbox-php`, `-handoff`, `-doc-r09`, `-doc-r05`, `-claude-connectors`, `-r06-webonly`, `-r06-web2` and `-r06-fail`. The review-only branches `review/E02-R06-*` (test PRs #22–#24, closed) can go too. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
-- **Required check on `main`:** make the GitHub check **"Verify required"** required in the branch protection of `main` (E02-R06). It is the single aggregate job; the per-component jobs are skipped on purpose and must not be required.
 - **Guardrails wording** (offered, not answered): E02-R09 run 2 stopped before writing anything because its checks need the stack. One sentence in `agent-team/src/prompts/guardrails.md` would settle it, as its own `chore:` PR: an implementer never stops over a check it can't run in the sandbox; it writes the deliverable and lists those checks for the reviewer.
