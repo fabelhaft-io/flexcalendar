@@ -38,6 +38,7 @@ As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it b
   - confirm Flutter's Gradle run honours the daemon JVM criteria;
   - the `dev|staging|prod` flavors keep the one application ID `de.flexcalendar.app`, with no `applicationIdSuffix`: the redirect scheme is registered once (PR #16, owner-approved).
 - **Not in any requirement yet** (from E02-R04):
+  - Markdown is not linted, and stays that way: the owner decided on 2026-10-07 that a linter for `docs/` makes no sense (the docs are long-form prose with wide tables). Do not raise it again. The E02-R04 and E02-R08 reviews left it open;
   - `infra/dev/*.mjs` (`check-stack`, the seed) and `infra/zitadel/*.mjs` (E02-R09; `make test-zitadel` exists but `make verify` doesn't run it) are in no format, lint or type gate;
   - `infra/dev/seed/seed.mjs:124` has an ESLint `no-useless-assignment` error that predates E02-R09;
   - the tooling test `healthchecks.test.mjs` (E02-R06) binds host ports 8080 and 3000 and runs `php`, so `make verify` on a dev host needs those ports free and PHP on `PATH`, as `CONTRIBUTING.md` already requires;
@@ -53,4 +54,3 @@ As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it b
 
 - **Merged branches and worktrees** are still there locally as of 2026-10-07 (the removal command was given); the remote branches are already gone. The review-only branches `review/E02-R06-*` and `review/E02-R07-*` go with them.
 - **E04-R01 migration tool:** the epic says "for example `node-pg-migrate` or Drizzle migrations", and no `D-*` picks one, so the run waits for the owner, as E02-R07's generators did. The requirement also moves the stack to PostgreSQL 18 and adds `make migrate` (root `Makefile`, `package.json`, `pnpm-lock.yaml`).
-- **Markdown linting:** not linted today, and undecided. The E02-R04 review left it as "the owner's decision" and the E02-R08 review asked to decide it; an earlier version of this file wrongly called it a decision already made. Suggestion: not for now, because the docs are long-form prose with wide tables that default rules (line length) would flag. If yes, a small `chore:` commits a `.markdownlint` config and adds the check to `make verify`.
