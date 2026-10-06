@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | In progress: R01–R06, R08 and R09 Done; R07 passed review ([`reviews/E02-R07.md`](../reviews/E02-R07.md)), Done once merged |
+| Status | **Done**: R01–R09 merged, R07 last ([PR #26](https://github.com/fabelhaft-io/flexcalendar/pull/26), 2026-10-06) |
 | Executor | `agent` |
 | Depends on | D-09 (layout), D-01/D-02 for the service skeletons, D-03 and D-19 for R09 |
 | Spec | `02-technology-choices.md`, ADR 0002 |
