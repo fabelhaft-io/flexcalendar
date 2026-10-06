@@ -4,10 +4,9 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 ## Queue
 
-As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it builds on are merged.
+As of 2026-10-06. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E02-R06** · CI pipeline: passed review 4 after a fourth run the owner allowed (`--force`), PR #21.
-2. **E02-R07**: waits for #21 (both edit `package.json` and `infra/scripts/`). No doc picks the OpenAPI generators (TS, and Dart in `apps/mobile`): expect the run to ask.
+1. **E02-R07** · OpenAPI-first contract: review 1 BLOCKED on six small fixes (`reviews/E02-R07.md`), draft PR #26. Run 2 is fix cycle 1 of 2.
 4. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
 5. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 6. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
@@ -23,8 +22,12 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
   - add `sabre/dav ^4.7` to `composer.json` and `composer.lock` (the lock exists since E02-R04, with the dev tools only);
   - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`).
 - **E05-R01:**
-  - replaces the API skeleton in `server/api/src/server.mjs`;
+  - replaces the API skeleton (`server/api/src/app.mjs`, started by `server.mjs`) and drops the `GET /` allow-list entry in `server/api/test/contract.test.mjs` with it;
+  - extends that contract test (E02-R07 review 1): it compares the `application/json` response schemas only. Add parameters, query, body and headers, flag response codes a route defines and the spec lacks, and decide how annotation keys (`description`, `example`) compare when the first schema with one arrives;
+  - tags every operation in `spec/openapi.yaml`, because swagger_parser makes one Dart client per tag;
   - a JWT library such as `jose` is crypto-looking for INV-07 (E02-R05), so it needs an entry in `infra/scripts/invariant-dependencies.json` with its own reason (JWT signature verification against Zitadel's JWKS, no content decryption).
+- **E10-R01 (E02-R07 review 1):** `flutter create` must keep `apps/mobile/lib/api/`, `swagger_parser.yaml`, the exact pins and `pubspec.lock`. `flutter pub get` writes an untracked `android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`, so the scaffold's `.gitignore` must cover it. `analyzer` is pinned to 13.3.0 because `build_runner` 2.16.1 breaks on analyzer 14 (`contextFeatures`); drop the pin when a `build_runner` release supports 14.
+- **Renovate (when it is set up):** group `analyzer` with `build_runner`, and `openapi-typescript` with its `typescript` 5.x pin in `packages/api-client-ts`.
 - **E10-R02:** the app always sends PKCE S256 (`flutter_appauth` does by default). Zitadel v4.16 enforces the verifier when a challenge was sent, but it doesn't require PKCE from the public Android client (E02-R09 review 3).
 - **E08:**
   - production pins images by digest; the dev stack's image tags are no template for that;
@@ -51,4 +54,5 @@ As of 2026-10-05. Each requirement starts only once it is Ready and the PRs it b
 ## Open with the owner
 
 - **Merged branches** are still there locally and on GitHub, along with the clean worktrees `../calendar-flex-agent-E02-R03`, `-agent-E02-R04`, `-agent-E02-R05`, `-agent-E02-R09`, `-claude-md`, `-sandbox-php`, `-handoff`, `-doc-r09`, `-doc-r05`, `-claude-connectors`, `-r06-webonly`, `-r06-web2` and `-r06-fail`. The review-only branches `review/E02-R06-*` (test PRs #22–#24, closed) can go too. Deleting them is the owner's call; suggestion: turn on "Automatically delete head branches".
-- **Guardrails wording** (offered, not answered): E02-R09 run 2 stopped before writing anything because its checks need the stack. One sentence in `agent-team/src/prompts/guardrails.md` would settle it, as its own `chore:` PR: an implementer never stops over a check it can't run in the sandbox; it writes the deliverable and lists those checks for the reviewer.
+- **Guardrails wording** (offered, not answered): E02-R09 run 2 stopped before writing anything because its checks need the stack. One sentence in `agent-team/src/prompts/guardrails.md` would settle it, as its own `chore:` PR: an implementer never stops over a check it can't run in the sandbox; it writes the deliverable and lists those checks for the reviewer. A second sentence from E02-R07: toolchains an implementer downloads go to `~/.cache/calendar-flex-agent-team/`, never into the worktree. Run 1 unpacked a 1.7 GB Flutter SDK into `apps/mobile/.sdk/`, inside its granted paths and not ignored, so the coordinator would have committed it. It stayed out only through a local `.git/info/exclude` entry the orchestrator added.
+- **Skill lessons** (offered 2026-10-06, for a `chore:` PR to `.agents/skills/orchestrate/`): the points the owner listed, plus: the review host's `php` shim needs an image with `pdo_pgsql` (`server/caldav/composer.json` requires it, and `php:8.4-cli` has none); the `flutter` and `dart` shims run with `HOME` and `PUB_CACHE` in the scratch directory; `make verify` on the host now needs the pinned Flutter, and `flutter pub get` leaves an untracked `apps/mobile/android/app/` that the coordinator would refuse as a dirty worktree.
