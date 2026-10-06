@@ -171,6 +171,7 @@ export function main(target) {
     for (const { name } of components())
       run(['make', `verify-${name}`], root, 540_000, `component ${name}`);
     for (const name of [
+      'gen-check',
       'check-stack',
       'test-seed',
       'verify-invariants',

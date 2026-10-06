@@ -1,0 +1,5 @@
+swagger_parser:
+  schema_path: ../../spec/openapi.yaml
+  output_directory: lib/api
+  language: dart
+  client_postfix: Client

@@ -89,3 +89,12 @@ zitadel-plan: ## Containerized OpenTofu plan (exit 0 means no changes; 2 means d
 
 test-zitadel: ## Unit-test the configuration runner and token helper without containers
 	node --test 'infra/zitadel/*.test.mjs'
+
+.PHONY: gen gen-check
+
+gen: ## Regenerate TS and Dart API clients using the pinned tools
+	corepack pnpm --filter @calendar-flex/api-client run gen
+	cd apps/mobile && flutter pub get && dart run swagger_parser && dart run build_runner build && dart format lib/api
+
+gen-check: ## Fail on stale, missing or untracked generated API files
+	node infra/scripts/gen-check.mjs

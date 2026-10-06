@@ -182,6 +182,16 @@ changes the system, both change in the same PR (rule 6).
 
 ## Single verification entry point (E02-R04)
 
+API contracts live in `spec/openapi.yaml`. After changes run `make gen` with the
+pinned Flutter/Dart on PATH and `corepack pnpm` available, and commit generated
+TS (`packages/api-client-ts/src/schema.d.ts`) and Dart (`apps/mobile/lib/api/`)
+outputs plus any lockfile changes. `make gen-check` regenerates both clients and
+fails, naming any stale, missing or untracked generated file. It checks only
+generated paths, not unrelated worktree changes, and runs in `make verify` after
+component gates. `make gen && git diff --exit-code` is also a stale-client check
+on a clean checkout. Generator pins and the two-step Dart pipeline are documented
+in the client READMEs; no generator uses a JVM.
+
 Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`
 and the CalDAV development tools with `cd server/caldav && composer install`.
 The `server-caldav` component requires PHP 8.4 and Composer on `PATH`

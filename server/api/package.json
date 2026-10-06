@@ -11,10 +11,14 @@
     "start": "node src/server.mjs",
     "format:check": "prettier --check package.json src test",
     "lint": "eslint src test",
-    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 src/server.mjs test/*.test.mjs",
+    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 src/*.mjs test/*.test.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "fastify": "5.12.5"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "12.1.0",
+    "yaml": "2.9.1"
   }
 }
