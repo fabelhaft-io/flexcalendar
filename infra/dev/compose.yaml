@@ -43,6 +43,9 @@ services:
       - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
       - postgres-data:/var/lib/postgresql
     healthcheck:
+      # The entrypoint temporary server listens only on the Unix socket. A socket
+      # probe goes green before the real server starts, while TCP clients such
+      # as Zitadel are still refused; probe TCP instead.
       test:
         - CMD-SHELL
         - pg_isready --host 127.0.0.1 --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
@@ -252,14 +255,8 @@ services:
         up,
         --database-url-var,
         CALFLEX_MIGRATE_DATABASE_URL,
-        --migrations-dir,
-        migrations,
-        --schema,
-        public,
-        --check-order,
-        --single-transaction,
-        --lock,
-        --no-verbose,
+        -f,
+        migrate.config.json,
       ]
     environment:
       CALFLEX_MIGRATE_DATABASE_URL: '${CALFLEX_MIGRATE_DATABASE_URL:-postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}}'

@@ -59,18 +59,80 @@ test('one changed byte is refused for each script', async () => {
   }
 });
 
+/** @param {string} source */
+function hasIrreversibleReason(source) {
+  const lines = source.split('\n');
+  const index = lines.findIndex((line) =>
+    /^\s*export const down = false\s*;?/.test(line),
+  );
+  if (index < 0) return false;
+  // Require a nonempty line comment attached to the declaration, not an
+  // unrelated comment elsewhere (including a parameter JSDoc).
+  return (
+    /\/\/\s*\S/.test(lines[index]) ||
+    (index > 0 && /^\s*\/\/\s*\S/.test(lines[index - 1]))
+  );
+}
+
+test('irreversible reason must be a line comment attached to down = false', () => {
+  assert.equal(
+    hasIrreversibleReason(
+      '// Retained data cannot be recovered.\nexport const down = false;\n',
+    ),
+    true,
+  );
+  assert.equal(
+    hasIrreversibleReason(
+      '/** Migration builder. */\nexport const down = false;\n',
+    ),
+    false,
+  );
+  assert.equal(
+    hasIrreversibleReason('export const down = false; // No state to undo.\n'),
+    true,
+  );
+  assert.equal(
+    hasIrreversibleReason(
+      '// Unrelated comment.\nexport const up = () => {};\nexport const down = false;\n',
+    ),
+    false,
+  );
+});
+
 test('migration layout and explicit rollback contract; Make targets exist', async () => {
-  const migrations = await readdir(new URL('migrations/', api));
-  assert.equal(migrations.length, 2);
+  const migrations = (await readdir(new URL('migrations/', api))).sort();
+  const sabreMigrations = [
+    '1791496692781_sabredav-calendars.mjs',
+    '1791496692782_sabredav-propertystorage.mjs',
+  ];
+  for (const name of sabreMigrations) assert.ok(migrations.includes(name));
+  let previousTimestamp = 0;
   for (const name of migrations) {
-    assert.match(name, /^\d{13}_[a-z-]+\.mjs$/);
+    assert.match(name, /^\d{13}_[a-z-]+\.(mjs|sql)$/);
+    const timestamp = Number(name.slice(0, 13));
+    assert.ok(
+      timestamp > previousTimestamp,
+      'timestamps must be unique and ascending',
+    );
+    previousTimestamp = timestamp;
     const source = await readFile(new URL(`migrations/${name}`, api), 'utf8');
-    const migration = await import(new URL(`migrations/${name}`, api).href);
-    assert.equal(typeof migration.up, 'function');
-    assert.ok(typeof migration.down === 'function' || migration.down === false);
-    if (migration.down === false)
-      assert.match(source, /\/\/[^\n]+|\/\*[\s\S]+?\*\//);
-    assert.match(source, /readVerifiedScript/);
+    if (name.endsWith('.mjs')) {
+      const migration = await import(new URL(`migrations/${name}`, api).href);
+      assert.equal(typeof migration.up, 'function');
+      assert.ok(
+        typeof migration.down === 'function' || migration.down === false,
+      );
+      if (migration.down === false)
+        assert.ok(
+          hasIrreversibleReason(source),
+          'irreversible down needs an attached reason',
+        );
+    } else {
+      assert.match(source, /^-- Up Migration\s*$/m);
+      assert.match(source, /^-- Down Migration\s*$/m);
+    }
+    if (sabreMigrations.includes(name))
+      assert.match(source, /\breadVerifiedScript\s*\(\s*['"]pgsql\./);
   }
   const make = await readFile(
     new URL('../../../Makefile', import.meta.url),

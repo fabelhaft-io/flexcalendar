@@ -9,12 +9,10 @@
   "main": "src/server.mjs",
   "scripts": {
     "start": "node src/server.mjs",
-    "format:check": "prettier --check package.json src test migrations \"sabredav/*.mjs\" \"sabredav/*.json\"",
+    "format:check": "prettier --check package.json migrate.config.json src test migrations \"sabredav/*.mjs\" \"sabredav/*.json\"",
     "lint": "eslint src test migrations sabredav/*.mjs",
     "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 src/*.mjs test/*.test.mjs migrations/*.mjs sabredav/*.mjs",
-    "test": "node --test test/*.test.mjs",
-    "migrate": "node-pg-migrate up --database-url-var CALFLEX_MIGRATE_DATABASE_URL --migrations-dir migrations --schema public --check-order --single-transaction --lock --no-verbose",
-    "migrate-down": "node-pg-migrate down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL --migrations-dir migrations --schema public --check-order --single-transaction --lock --no-verbose"
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "fastify": "5.12.5",

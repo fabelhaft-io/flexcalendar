@@ -15,6 +15,7 @@
 !pnpm-workspace.yaml
 !server/api/package.json
 !server/api/src
+!server/api/migrate.config.json
 !server/api/migrations
 !server/api/sabredav
 

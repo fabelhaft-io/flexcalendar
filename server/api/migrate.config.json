@@ -1,0 +1,8 @@
+{
+  "migrations-dir": "migrations",
+  "schema": "public",
+  "check-order": true,
+  "singleTransaction": true,
+  "lock": true,
+  "verbose": false
+}

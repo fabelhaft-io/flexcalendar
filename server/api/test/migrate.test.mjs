@@ -3,6 +3,7 @@ import { test, before, after } from 'node:test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   readFile,
+  readdir,
   mkdtemp,
   cp,
   appendFile,
@@ -129,14 +130,15 @@ function migrate(
       ...direction,
       '--database-url-var',
       'CALFLEX_MIGRATE_DATABASE_URL',
-      '--migrations-dir',
-      directory,
-      '--schema',
-      'public',
-      '--check-order',
-      '--single-transaction',
-      '--lock',
-      '--no-verbose',
+      '-f',
+      directory === path.join(api, 'migrations')
+        ? path.join(api, 'migrate.config.json')
+        : path.join(
+            directory.endsWith('/migrations')
+              ? path.dirname(directory)
+              : directory,
+            'migrate.config.json',
+          ),
     ],
     {
       cwd: api,
@@ -150,9 +152,11 @@ function migrate(
   );
 }
 /** @param {pg.Client} client */
-async function tables(client) {
+async function tables(client, scoped = false) {
   const result = await client.query(
-    "SELECT schemaname || '.' || tablename AS name FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY name",
+    scoped
+      ? "SELECT schemaname || '.' || tablename AS name FROM pg_tables WHERE schemaname = 'sabredav' OR (schemaname = 'public' AND tablename = 'pgmigrations') ORDER BY name"
+      : "SELECT schemaname || '.' || tablename AS name FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY name",
   );
   return result.rows.map((row) => row.name);
 }
@@ -185,9 +189,19 @@ async function empty(client) {
     0,
   );
 }
-async function fixture() {
+async function fixture(migrationsDir = 'migrations') {
   const dir = await mkdtemp(path.join(tmpdir(), 'calflex-migration-'));
   temporary.push(dir);
+  const settings = JSON.parse(
+    await readFile(path.join(api, 'migrate.config.json'), 'utf8'),
+  );
+  // node-pg-migrate 9.0.0 gives the config directory precedence over CLI
+  // --migrations-dir, so each fixture gets a copy with only its path changed.
+  settings['migrations-dir'] = path.join(dir, migrationsDir);
+  await writeFile(
+    path.join(dir, 'migrate.config.json'),
+    JSON.stringify(settings),
+  );
   return dir;
 }
 
@@ -195,11 +209,16 @@ test('fresh schema, idempotence, down to zero, then up again', async () => {
   const { name, client } = await fresh();
   try {
     assert.equal(migrate(name).status, 0);
-    assert.deepEqual(await tables(client), expected);
+    assert.deepEqual(await tables(client, true), expected);
     const first = (
       await client.query('SELECT * FROM public.pgmigrations ORDER BY id')
     ).rows;
-    assert.equal(first.length, 2);
+    assert.equal(
+      first.length,
+      (await readdir(path.join(api, 'migrations'))).filter((file) =>
+        /\.(mjs|sql)$/.test(file),
+      ).length,
+    );
     const second = migrate(name);
     assert.equal(second.status, 0);
     assert.match(second.stdout, /No migrations to run/);
@@ -208,11 +227,80 @@ test('fresh schema, idempotence, down to zero, then up again', async () => {
         .rows,
       first,
     );
-    assert.deepEqual(await tables(client), expected);
+    assert.deepEqual(await tables(client, true), expected);
     assert.equal(migrate(name, ['down', '0']).status, 0);
     await empty(client);
     assert.equal(migrate(name).status, 0);
-    assert.deepEqual(await tables(client), expected);
+    assert.deepEqual(await tables(client, true), expected);
+  } finally {
+    await client.end();
+  }
+});
+
+async function sabreFixture() {
+  const dir = await fixture();
+  await cp(path.join(api, 'migrations'), path.join(dir, 'migrations'), {
+    recursive: true,
+  });
+  await cp(path.join(api, 'sabredav'), path.join(dir, 'sabredav'), {
+    recursive: true,
+  });
+  return dir;
+}
+
+test('search_path is reset before a later unqualified table is created', async () => {
+  const { name, client } = await fresh();
+  try {
+    const dir = await sabreFixture();
+    // Sort after the current chain, including future API migrations.
+    await writeFile(
+      path.join(dir, 'migrations', '9999999999999_search-path-probe.mjs'),
+      "export const up = pgm => pgm.sql('CREATE TABLE search_path_probe (id integer)');\nexport const down = pgm => pgm.sql('DROP TABLE public.search_path_probe');\n",
+    );
+    assert.equal(migrate(name, ['up'], path.join(dir, 'migrations')).status, 0);
+    assert.deepEqual(await tables(client, true), expected);
+    assert.deepEqual(
+      (
+        await client.query(
+          "SELECT schemaname FROM pg_tables WHERE tablename = 'search_path_probe'",
+        )
+      ).rows,
+      [{ schemaname: 'public' }],
+    );
+  } finally {
+    await client.end();
+  }
+});
+
+test('propertystorage down alone leaves six tables; up restores seven', async () => {
+  const { name, client } = await fresh();
+  try {
+    const dir = await sabreFixture();
+    // Isolate these two migrations so later API migrations cannot change which
+    // migration down 1 reverses.
+    for (const file of await readdir(path.join(dir, 'migrations'))) {
+      if (!/^[0-9]+_sabredav-(calendars|propertystorage)\.mjs$/.test(file))
+        await rm(path.join(dir, 'migrations', file));
+    }
+    const directory = path.join(dir, 'migrations');
+    assert.equal(migrate(name, ['up'], directory).status, 0);
+    assert.equal(migrate(name, ['down', '1'], directory).status, 0);
+    assert.deepEqual(
+      await tables(client, true),
+      expected.filter((table) => table !== 'sabredav.propertystorage'),
+    );
+    assert.equal(
+      (await client.query('SELECT count(*)::int AS n FROM public.pgmigrations'))
+        .rows[0].n,
+      1,
+    );
+    assert.equal(migrate(name, ['up'], directory).status, 0);
+    assert.deepEqual(await tables(client, true), expected);
+    assert.equal(
+      (await client.query('SELECT count(*)::int AS n FROM public.pgmigrations'))
+        .rows[0].n,
+      2,
+    );
   } finally {
     await client.end();
   }
@@ -243,7 +331,7 @@ for (const file of ['pgsql.calendars.sql', 'pgsql.propertystorage.sql']) {
 test('irreversible migration refuses down and retains its row and table', async () => {
   const { name, client } = await fresh();
   try {
-    const dir = await fixture();
+    const dir = await fixture('.');
     await writeFile(
       path.join(dir, `${Date.now()}_irreversible.mjs`),
       "export const up = pgm => pgm.sql('CREATE TABLE public.irreversible (id integer)');\n// No down: test of intentional irreversibility.\nexport const down = false;\n",

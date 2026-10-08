@@ -186,7 +186,8 @@ Install the workspace dependencies with `corepack pnpm install --frozen-lockfile
 and the CalDAV development tools with `cd server/caldav && composer install`.
 The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
 (the E02-R02 pins). `make verify` also requires the pinned Flutter and Dart
-on `PATH` for the mobile component and client generation.
+on `PATH` for the mobile component and client generation, plus working rootless
+Podman on `PATH` for the API migration component tests.
 Start the rootless local stack with `make dev`, then run `make verify`.
 Verification does not start, reset, or seed the stack for you. Stack-dependent
 checks inherit the environment documented in `infra/dev/.env.example`.

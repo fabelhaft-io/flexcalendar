@@ -108,4 +108,4 @@ migrate: ## Apply pending migrations (starts only Postgres; idempotent)
 
 migrate-down: ## Destructive dev-only rollback of ONE migration
 	$(COMPOSE) up --detach --wait postgres
-	$(COMPOSE) --profile migrate run --build --rm -T migrate node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL --migrations-dir migrations --schema public --check-order --single-transaction --lock --no-verbose
+	$(COMPOSE) --profile migrate run --build --rm -T migrate node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL -f migrate.config.json
