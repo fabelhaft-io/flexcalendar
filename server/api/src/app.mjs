@@ -46,3 +46,5 @@ export function buildApp(options = {}) {
 
   return app;
 }
+
+// Review-only change: selects the server-api component job without the stack.
