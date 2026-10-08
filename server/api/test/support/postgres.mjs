@@ -103,6 +103,13 @@ export async function fresh() {
   } finally {
     await admin.end();
   }
+  const databaseAdmin = new pg.Client(config(name, 'postgres'));
+  try {
+    await databaseAdmin.connect();
+    await databaseAdmin.query('ALTER SCHEMA public OWNER TO calflex_migrate');
+  } finally {
+    await databaseAdmin.end();
+  }
   const client = new pg.Client(config(name));
   await client.connect();
   return { name, client };

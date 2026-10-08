@@ -171,14 +171,15 @@ change an existing role: the bootstrap runs only on an empty volume.
 The bootstrap creates three plain LOGIN roles (no superuser, CREATEDB or
 CREATEROLE). `calflex_migrate` owns the database and the `public` and `sabredav`
 schemas and runs migrations without CREATEROLE. The API uses `calflex_api`
-(public-table DML, audit INSERT/SELECT only, no SabreDAV access); CalDAV uses
+(public-table DML except audit INSERT/SELECT only, `caldav_changes` SELECT
+only, no `delegation_nonces` or SabreDAV access); CalDAV uses
 `calflex_caldav` (SabreDAV DML, outbox/replay-store DML, membership reads and
 only `device_credentials.last_used_at` updates). Their dev-only passwords are
 `CALFLEX_MIGRATE_PASSWORD`, `CALFLEX_API_PASSWORD`, and
 `CALFLEX_CALDAV_PASSWORD`; defaults are in `.env.example`. URI-encode passwords
 in connection URLs. Roles are provisioned by bootstrap, never migrations.
 Zitadel and its configuration runner still use the separate `zitadel` database
-and the bootstrap login locally; E08 will give Zitadel its own role.
+and the bootstrap login locally; no requirement gives Zitadel its own role yet.
 
 E04-R02 stores calendar metadata opaquely and creates no name/colour columns.
 The metadata-envelope check requires it exactly for Private calendars. The

@@ -82,6 +82,18 @@ test('each login has exactly its table and schema grants; audit is append-only',
           rolcreaterole: false,
         });
         for (const schema of ['public', 'sabredav']) {
+          const grants = (
+            await client.query(
+              `SELECT
+              has_schema_privilege($1, $2, 'USAGE') AS usage,
+              has_schema_privilege($1, $2, 'CREATE') AS create`,
+              [role, schema],
+            )
+          ).rows[0];
+          assert.deepEqual(grants, {
+            usage: role !== 'calflex_api' || schema === 'public',
+            create: role === 'calflex_migrate',
+          });
           const ddl = `CREATE TABLE ${schema}.grant_probe (id uuid)`;
           if (role === 'calflex_migrate') {
             await client.query(ddl);
@@ -100,13 +112,16 @@ test('each login has exactly its table and schema grants; audit is append-only',
               role === 'calflex_migrate' ||
               (role === 'calflex_api' &&
                 schema === 'public' &&
-                table !== 'audit_log') ||
+                !['audit_log', 'caldav_changes', 'delegation_nonces'].includes(
+                  table,
+                )) ||
               (role === 'calflex_caldav' &&
                 (schema === 'sabredav' ||
                   ['caldav_changes', 'delegation_nonces'].includes(table)));
             const read =
               fullDml ||
-              (role === 'calflex_api' && table === 'audit_log') ||
+              (role === 'calflex_api' &&
+                ['audit_log', 'caldav_changes'].includes(table)) ||
               (role === 'calflex_caldav' &&
                 schema === 'public' &&
                 ['users', 'calendars', 'calendar_members'].includes(table));

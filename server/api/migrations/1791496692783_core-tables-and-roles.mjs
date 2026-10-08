@@ -104,8 +104,10 @@ export const up = (pgm) => {
     GRANT SELECT, INSERT, UPDATE, DELETE ON
       public.users, public.calendars, public.calendar_members,
       public.invitations, public.device_credentials, public.feed_tokens,
-      public.push_devices, public.device_links, public.caldav_changes,
-      public.delegation_nonces TO calflex_api;
+      public.push_devices, public.device_links TO calflex_api;
+    -- API reads the CalDAV-written outbox only; E07 adds its worker grants.
+    -- The CalDAV replay store delegation_nonces grants nothing to the API.
+    GRANT SELECT ON public.caldav_changes TO calflex_api;
     GRANT SELECT, INSERT ON public.audit_log TO calflex_api;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA sabredav TO calflex_caldav;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA sabredav TO calflex_caldav;
