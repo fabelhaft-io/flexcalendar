@@ -99,3 +99,13 @@ gen: ## Regenerate TS and Dart API clients using the pinned tools
 
 gen-check: ## Fail on stale, missing or untracked generated API files
 	node infra/scripts/gen-check.mjs
+
+.PHONY: migrate migrate-down
+
+migrate: ## Apply pending migrations (starts only Postgres; idempotent)
+	$(COMPOSE) up --detach --wait postgres
+	$(COMPOSE) --profile migrate run --build --rm -T migrate
+
+migrate-down: ## Destructive dev-only rollback of ONE migration
+	$(COMPOSE) up --detach --wait postgres
+	$(COMPOSE) --profile migrate run --build --rm -T migrate node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL --migrations-dir migrations --schema public --check-order --single-transaction --lock --no-verbose

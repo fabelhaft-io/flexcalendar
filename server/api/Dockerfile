@@ -28,6 +28,8 @@ COPY --from=dependencies /repo/node_modules ./node_modules
 COPY --from=dependencies /repo/server/api/node_modules ./server/api/node_modules
 COPY --from=dependencies /repo/server/api/package.json ./server/api/package.json
 COPY server/api/src ./server/api/src
+COPY server/api/migrations ./server/api/migrations
+COPY server/api/sabredav ./server/api/sabredav
 USER node
 EXPOSE 3000
 # The readiness probe lives in infra/dev/compose.yaml, where the rest of the

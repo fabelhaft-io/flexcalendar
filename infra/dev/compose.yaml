@@ -23,7 +23,7 @@ services:
   # database today, the CalDAV schema from E04 on. Nothing durable lives on a
   # container filesystem, so one backup covers the whole stack.
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     command:
       - postgres
@@ -41,11 +41,11 @@ services:
       # in here only when the data volume is empty, and the script guards its
       # own idempotency.
       - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test:
         - CMD-SHELL
-        - pg_isready --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+        - pg_isready --host 127.0.0.1 --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
       interval: 5s
       timeout: 5s
       retries: 12
@@ -236,6 +236,35 @@ services:
     mem_limit: 256m
     networks:
       - stack
+
+  # One migration chain, owned by the API; only started by make migrate.
+  migrate:
+    profiles: [migrate]
+    build:
+      context: ../..
+      dockerfile: server/api/Dockerfile
+    restart: 'no'
+    working_dir: /repo/server/api
+    command:
+      [
+        node,
+        node_modules/node-pg-migrate/bin/node-pg-migrate.js,
+        up,
+        --database-url-var,
+        CALFLEX_MIGRATE_DATABASE_URL,
+        --migrations-dir,
+        migrations,
+        --schema,
+        public,
+        --check-order,
+        --single-transaction,
+        --lock,
+        --no-verbose,
+      ]
+    environment:
+      CALFLEX_MIGRATE_DATABASE_URL: '${CALFLEX_MIGRATE_DATABASE_URL:-postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}}'
+    mem_limit: 256m
+    networks: [stack]
 
   # Caddy fronts the stack with its own local CA (02 § Runtime layout): it is
   # the only published port, and it gives every service an HTTPS name so the

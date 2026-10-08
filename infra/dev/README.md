@@ -16,7 +16,7 @@ make dev-reset  # stop it and delete the volumes (all local data)
 
 | Service | Image | Purpose | Reachable at |
 |---|---|---|---|
-| `postgres` | `postgres:17-alpine` | every durable state, in one cluster (D-11): the `caldav` database and Zitadel's | internal, `postgres:5432` |
+| `postgres` | `postgres:18-alpine` | every durable state, in one cluster (D-11): the `caldav` database and Zitadel's | internal, `postgres:5432` |
 | `zitadel-api` | `ghcr.io/zitadel/zitadel:v4.16.0` | the identity provider: OIDC, JWT, the console (D-03, ADR 0004) | `https://auth.<domain>:<port>/` |
 | `zitadel-login` | `ghcr.io/zitadel/zitadel-login:v4.16.0` | Zitadel v4's login UI, its own container | `https://auth.<domain>:<port>/ui/v2/login/` |
 | `mailpit` | `axllent/mailpit:v1.31.4` | the SMTP sink invitations and mail land in (E03-R06, E05) | `https://mailpit.<domain>:<port>/`, SMTP on the internal `mailpit:1025` |
@@ -152,3 +152,27 @@ make seed && make seed     # the second run must create nothing
 
 E02-R09 adds a containerized OpenTofu apply after the user seed, and a separate
 non-production token helper. See [the configuration and review protocol](../zitadel/README.md).
+
+## API-owned migrations (E04-R01)
+
+Run `make migrate` to start only Postgres and apply pending migrations through
+`node-pg-migrate` 9.0.0 in the API image. Repeating it is a no-op. Optionally
+set `CALFLEX_MIGRATE_DATABASE_URL` in the environment; never log that URL.
+`make migrate-down` reverses one migration and **destroys its data**; this is
+for development only. Production rollback is a backup restore (E08-R04).
+
+PostgreSQL 18 stores data under `/var/lib/postgresql/18/docker`; the volume
+mount is `/var/lib/postgresql`. A volume created by 17 needs `make dev-reset`
+(**deletes all local data**) before starting 18; this is not an upgrade tool.
+
+Schema changes belong only in `server/api/migrations/<unix-ms>_<slug>.mjs`
+(or `.sql` with Up/Down Migration sections). Every migration must have a down,
+or export `down = false` with a comment explaining why. SabreDAV's two SQL
+scripts are pristine upstream copies in `server/api/sabredav/`; their record
+pins the tag, commit, URLs and hashes. Never format or edit the vendored SQL.
+Only calendars and property storage are imported, into `sabredav`; no default
+admin account, users, principals, addressbooks or locks are imported.
+
+`make verify` runs API component tests against their own disposable Postgres 18
+container, independent of the local stack. From the first production release,
+CI must also migrate a copy of the last released schema (E08 follow-up).

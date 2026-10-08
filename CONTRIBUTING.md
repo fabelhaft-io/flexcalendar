@@ -233,3 +233,16 @@ root in filename order, without a shell. Each check owns its fixtures and its
 stack connectivity assertions. Empty suites explicitly print “no registered
 checks yet; pass”. Malformed registrations and failed checks fail closed. Never
 log event content or secrets, including from corpus fixtures.
+
+## Migration checks (E04-R01)
+
+`make verify` now requires working **rootless Podman** on PATH, including the
+ability to pull `docker.io/library/postgres:18-alpine` and publish an ephemeral
+loopback port. The API component suite creates its own disposable PostgreSQL
+container and fresh databases; it fails, rather than skips, without Podman.
+The full dev stack additionally requires the `podman compose` provider.
+
+Use `make migrate` to apply the API-owned migration chain (idempotent);
+`make migrate-down` rolls back one step and destroys data, for dev/test only.
+A local volume created by PostgreSQL 17 needs `make dev-reset` before 18 starts
+(the reset deletes all local data). Production rollback restores backups.
