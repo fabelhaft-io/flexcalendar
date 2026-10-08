@@ -6,9 +6,9 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 (passed review 3, PR #38, Done once merged), E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
-   - **Stacked by the owner's decision of 2026-10-09:** E04-R02 runs on top of `feat/E04-R01-migration-tooling`, assuming PR #38 is accepted. Its branch stays local until #38 is merged. #38 is squashed, so a plain `git merge main` would conflict on the hunks both requirements touch: after the merge the branch is rebased with `git rebase --onto main <E04-R01 tip>` (never pushed before, so nothing is force-pushed), and only then pushed with its PR.
-   - E03-R01 waits for both merges.
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 (passed review 3, PR #38, Done once merged), E04-R02 (passed review 2, no PR yet), E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
+   - **Stacked by the owner's decision of 2026-10-09:** E04-R02 ran on top of `feat/E04-R01-migration-tooling`, assuming PR #38 is accepted. Its branch stays local until #38 is merged. #38 is squashed, so a plain `git merge main` would conflict on the hunks both requirements touch: after the merge the branch is rebased with `git rebase --onto main <E04-R01 tip>` (`19e0bbb`; never pushed before, so nothing is force-pushed), and only then pushed with its PR.
+   - E03-R01 waits for both merges. The owner's stacking decision covered E04-R02 only.
 2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 3. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
 4. **E15**: R01–R03.
@@ -21,14 +21,19 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
   - the CalDAV image installs `pdo_pgsql`;
   - add `sabre/dav` to `composer.json` and `composer.lock` (the lock exists since E02-R04, with the dev tools only), at 4.7.1, the tag whose scripts E04-R01 imports. The Composer package has no `examples/` directory, so the lock can't be compared with the scripts directly: the Accept line checks `composer.lock`'s version and source reference against the record E04-R01 commits (`server/api/sabredav/record.json`: `tag` and `commit`). `composer require sabre/dav:4.7.1` takes the commit `f36f002dce082e1d425c4a0dc8c71a6b176c3b07`;
   - point the SabreDAV PDO backends at the schema `sabredav` (E04-R01) and qualify the service's own reads as `public.users` and so on;
-  - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`).
-- **E04-R02 (E04-R01 review 3):**
-  - switch `CALFLEX_MIGRATE_DATABASE_URL` (`infra/dev/compose.yaml`'s `migrate` service) from the bootstrap login `caldav` to `calflex_migrate`. The roles are cluster objects with secrets, so they don't belong in migrations: create them where the cluster is initialised (`infra/dev/postgres/initdb/` locally, E08 in production). The `sabredav` schema and its tables are owned by whichever login ran the migrations, `caldav` today: make `calflex_migrate` the owner (a fresh `make dev-reset` chain is enough locally);
-  - `server/api/test/migrate.test.mjs`: the first `down = false` migration makes the "down to zero" case fail, so that case must stop at it. Table assertions are scoped to `sabredav` plus `public.pgmigrations`, so new `public` tables don't break them;
-  - `server/api/migrate.config.json` holds dashed keys only: node-pg-migrate 9.0.0 reads those from the file, lets the file override the command line, and takes `single-transaction` and `lock` from its CLI defaults (`true`), which the rollback cases guard.
-- **E04-R06:** SabreDAV's tables in the schema `sabredav` use `SERIAL` integer keys, and the upstream scripts are not ours to change. "Every generated ID column defaults to `gen_random_uuid()`" must exempt that schema by name. The integers never reach an href: a calendar's collection URI is `calendarinstances.uri`, which holds the API's UUID (E03 § Layout).
+  - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`);
+  - the compose `caldav` service already has `CALFLEX_DATABASE_URL` as `calflex_caldav` (E04-R02). That role has DML on all of `sabredav` and its sequences, DML on `caldav_changes` and `delegation_nonces`, `SELECT` on `public.users`, `calendars` and `calendar_members`, and `UPDATE (last_used_at)` on `device_credentials`; nothing else, `pgmigrations` included. A grant the service needs beyond that goes into its own migration.
+- **Migrations (E04-R01 review 3, E04-R02):**
+  - whoever adds the first `down = false` migration: the "down to zero" cases in `migrate.test.mjs` and `schema.test.mjs` must stop at it;
+  - `server/api/migrate.config.json` holds dashed keys only: node-pg-migrate 9.0.0 reads those from the file, lets the file override the command line, and takes `single-transaction` and `lock` from its CLI defaults (`true`), which the rollback cases guard;
+  - the role-exists guard at the top of `1791496692783_core-tables-and-roles.mjs` has no test; a regression there only costs a worse error message.
+- **E04-R03:** E04-R02 left `calendars.mode` as `text NOT NULL` with `CONSTRAINT calendars_meta_envelope_check CHECK ((mode = 'private') = (meta_envelope IS NOT NULL))`. The enum conversion and the private-only check are yours; keep the envelope check working through the conversion.
+- **E06:** `invitations` has only `token_hash`, `expires_at` and `revoked_at`. The invite role, invitee email, creator and a consumption marker (E06-R01/R09: "a reused token is rejected") come with E06's own migration, and so does a pending state for `calendar_members`.
+- **E07:** `calflex_api` has `SELECT` only on `caldav_changes` (the CalDAV service writes the outbox). The grants its worker needs go into E07's own migration.
+- **E04-R06:** SabreDAV's tables in the schema `sabredav` use `SERIAL` integer keys, and the upstream scripts are not ours to change. "Every generated ID column defaults to `gen_random_uuid()`" must exempt that schema by name, and `public.pgmigrations` (node-pg-migrate's own `SERIAL` id). The integers never reach an href: a calendar's collection URI is `calendarinstances.uri`, which holds the API's UUID (E03 § Layout).
 - **E05-R01:**
   - replaces the API skeleton (`server/api/src/app.mjs`, started by `server.mjs`) and drops the `GET /` allow-list entry in `server/api/test/contract.test.mjs` with it;
+  - the compose `api` service has `CALFLEX_DATABASE_URL` as `calflex_api` (E04-R02): DML on its own tables, `SELECT` only on `caldav_changes`, `INSERT` and `SELECT` only on `audit_log`, nothing on `delegation_nonces`, `sabredav` or `pgmigrations`;
   - extends that contract test (E02-R07 review 1): it compares the `application/json` response schemas only. Add parameters, query, body and headers, flag response codes a route defines and the spec lacks, and decide how annotation keys (`description`, `example`) compare when the first schema with one arrives;
   - tags every operation in `spec/openapi.yaml`, because swagger_parser makes one Dart client per tag;
   - a JWT library such as `jose` is crypto-looking for INV-07 (E02-R05), so it needs an entry in `infra/scripts/invariant-dependencies.json` with its own reason (JWT signature verification against Zitadel's JWKS, no content decryption).
@@ -62,4 +67,4 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-Nothing.
+- **Zitadel's database role.** E04-R02's text says "Zitadel keeps its own database and role in the same cluster (ADR 0004)". Locally Zitadel and the `zitadel-config` runner use the bootstrap login `caldav`, the cluster superuser, on the database `zitadel`, and no requirement gives Zitadel a role of its own (E08 doesn't mention it). Which requirement owns it: E08-R02 for production, or a local-stack change before then?
