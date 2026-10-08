@@ -34,10 +34,9 @@ and hit CalDAV directly (CLAUDE.md).
   `migrations/`, using `migrate.config.json`. Upstream SQL and its tag, commit
   and SHA-256 record live in `sabredav/`. `corepack pnpm test` in this package
   now requires working rootless Podman for `test/migrate.test.mjs`;
-  `test/migrate-record.test.mjs` needs no containers. The pinned CLI reads
-  `migrations-dir` and `check-order` (not camelCase) from JSON, and the file
-  takes precedence over CLI directory overrides. Fixtures therefore copy the
-  config and change only the directory. `singleTransaction` and `lock` record
-  the required `true` policy, but this CLI uses its built-in `true` defaults
-  for these two options rather than reading them from JSON.
+  `test/migrate-record.test.mjs` needs no containers. Migration options live in
+  `migrate.config.json`: the pinned CLI reads dashed keys there, and the file
+  overrides the command line. Fixtures therefore copy the config and change only
+  the directory. `single-transaction` and `lock` are CLI defaults (`true`), not
+  options read from this file; the rollback tests depend on these defaults.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.

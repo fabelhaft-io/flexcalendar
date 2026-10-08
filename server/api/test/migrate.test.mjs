@@ -117,11 +117,11 @@ async function fresh() {
   await client.connect();
   return { name, client };
 }
-/** @param {string} database @param {string[]} [direction] @param {string} [directory] */
+/** @param {string} database @param {string[]} [direction] @param {string} [configPath] */
 function migrate(
   database,
   direction = ['up'],
-  directory = path.join(api, 'migrations'),
+  configPath = path.join(api, 'migrate.config.json'),
 ) {
   return spawnSync(
     process.execPath,
@@ -131,14 +131,7 @@ function migrate(
       '--database-url-var',
       'CALFLEX_MIGRATE_DATABASE_URL',
       '-f',
-      directory === path.join(api, 'migrations')
-        ? path.join(api, 'migrate.config.json')
-        : path.join(
-            directory.endsWith('/migrations')
-              ? path.dirname(directory)
-              : directory,
-            'migrate.config.json',
-          ),
+      configPath,
     ],
     {
       cwd: api,
@@ -189,7 +182,7 @@ async function empty(client) {
     0,
   );
 }
-async function fixture(migrationsDir = 'migrations') {
+async function fixture() {
   const dir = await mkdtemp(path.join(tmpdir(), 'calflex-migration-'));
   temporary.push(dir);
   const settings = JSON.parse(
@@ -197,7 +190,7 @@ async function fixture(migrationsDir = 'migrations') {
   );
   // node-pg-migrate 9.0.0 gives the config directory precedence over CLI
   // --migrations-dir, so each fixture gets a copy with only its path changed.
-  settings['migrations-dir'] = path.join(dir, migrationsDir);
+  settings['migrations-dir'] = path.join(dir, 'migrations');
   await writeFile(
     path.join(dir, 'migrate.config.json'),
     JSON.stringify(settings),
@@ -257,7 +250,10 @@ test('search_path is reset before a later unqualified table is created', async (
       path.join(dir, 'migrations', '9999999999999_search-path-probe.mjs'),
       "export const up = pgm => pgm.sql('CREATE TABLE search_path_probe (id integer)');\nexport const down = pgm => pgm.sql('DROP TABLE public.search_path_probe');\n",
     );
-    assert.equal(migrate(name, ['up'], path.join(dir, 'migrations')).status, 0);
+    assert.equal(
+      migrate(name, ['up'], path.join(dir, 'migrate.config.json')).status,
+      0,
+    );
     assert.deepEqual(await tables(client, true), expected);
     assert.deepEqual(
       (
@@ -282,9 +278,9 @@ test('propertystorage down alone leaves six tables; up restores seven', async ()
       if (!/^[0-9]+_sabredav-(calendars|propertystorage)\.mjs$/.test(file))
         await rm(path.join(dir, 'migrations', file));
     }
-    const directory = path.join(dir, 'migrations');
-    assert.equal(migrate(name, ['up'], directory).status, 0);
-    assert.equal(migrate(name, ['down', '1'], directory).status, 0);
+    const configPath = path.join(dir, 'migrate.config.json');
+    assert.equal(migrate(name, ['up'], configPath).status, 0);
+    assert.equal(migrate(name, ['down', '1'], configPath).status, 0);
     assert.deepEqual(
       await tables(client, true),
       expected.filter((table) => table !== 'sabredav.propertystorage'),
@@ -294,7 +290,7 @@ test('propertystorage down alone leaves six tables; up restores seven', async ()
         .rows[0].n,
       1,
     );
-    assert.equal(migrate(name, ['up'], directory).status, 0);
+    assert.equal(migrate(name, ['up'], configPath).status, 0);
     assert.deepEqual(await tables(client, true), expected);
     assert.equal(
       (await client.query('SELECT count(*)::int AS n FROM public.pgmigrations'))
@@ -318,7 +314,11 @@ for (const file of ['pgsql.calendars.sql', 'pgsql.propertystorage.sql']) {
         recursive: true,
       });
       await appendFile(path.join(dir, 'sabredav', file), ' ');
-      const result = migrate(name, ['up'], path.join(dir, 'migrations'));
+      const result = migrate(
+        name,
+        ['up'],
+        path.join(dir, 'migrate.config.json'),
+      );
       assert.equal(result.status, 1);
       assert.match(result.stderr, /checksum mismatch/);
       await empty(client);
@@ -331,15 +331,23 @@ for (const file of ['pgsql.calendars.sql', 'pgsql.propertystorage.sql']) {
 test('irreversible migration refuses down and retains its row and table', async () => {
   const { name, client } = await fresh();
   try {
-    const dir = await fixture('.');
+    const dir = await fixture();
+    await mkdir(path.join(dir, 'migrations'));
     await writeFile(
-      path.join(dir, `${Date.now()}_irreversible.mjs`),
+      path.join(dir, 'migrations', `${Date.now()}_irreversible.mjs`),
       "export const up = pgm => pgm.sql('CREATE TABLE public.irreversible (id integer)');\n// No down: test of intentional irreversibility.\nexport const down = false;\n",
     );
-    assert.equal(migrate(name, ['up'], dir).status, 0);
+    assert.equal(
+      migrate(name, ['up'], path.join(dir, 'migrate.config.json')).status,
+      0,
+    );
     const first = (await client.query('SELECT * FROM public.pgmigrations'))
       .rows;
-    const result = migrate(name, ['down', '1'], dir);
+    const result = migrate(
+      name,
+      ['down', '1'],
+      path.join(dir, 'migrate.config.json'),
+    );
     assert.equal(result.status, 1);
     assert.match(result.stderr, /User has disabled down migration/);
     assert.deepEqual(
@@ -358,7 +366,8 @@ test('irreversible migration refuses down and retains its row and table', async 
 test('a broken second migration rolls back the earlier successful DDL', async () => {
   const { name, client } = await fresh();
   try {
-    const dir = path.join(await fixture(), 'migrations');
+    const root = await fixture();
+    const dir = path.join(root, 'migrations');
     await mkdir(dir);
     const stamp = Date.now();
     await writeFile(
@@ -369,7 +378,11 @@ test('a broken second migration rolls back the earlier successful DDL', async ()
       path.join(dir, `${stamp + 1}_broken.mjs`),
       "export const up = pgm => pgm.sql('SELECT * FROM deliberately_missing_table');\nexport const down = false; // No state is created.\n",
     );
-    const result = migrate(name, ['up'], dir);
+    const result = migrate(
+      name,
+      ['up'],
+      path.join(root, 'migrate.config.json'),
+    );
     assert.equal(result.status, 1);
     assert.match(result.stderr, /deliberately_missing_table/);
     await empty(client);
