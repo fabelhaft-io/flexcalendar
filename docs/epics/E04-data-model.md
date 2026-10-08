@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | Ready: R01. Then R02, then R03–R06 |
+| Status | In progress: R01 passed review ([`reviews/E04-R01.md`](../reviews/E04-R01.md)), Done once merged. Then R02, then R03–R06 |
 | Executor | `agent` |
 | Depends on | E02-R03; D-02, D-06, D-17, D-18, D-19 |
 | Spec | `04` Phase 1, ADR 0001, ADR 0003 |
