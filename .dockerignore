@@ -1,0 +1,24 @@
+# Build context for the images built from the repository root (infra/dev/compose.yaml
+# uses `context: ../..`). An allowlist: everything is excluded, then each path a
+# Dockerfile COPYs is let back in. Without it the context carried .git, every
+# installed node_modules and vendor/ (43 MB in CI against 2.5 MB of tracked files),
+# uploaded once per image on every `make dev`, `make dev-build` and CI stack start.
+#
+# A new COPY that is missing here fails the build with "no such file", so add the
+# path below, next to its Dockerfile's entry.
+
+*
+
+# server/api/Dockerfile: the workspace manifests, then the service source.
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!server/api/package.json
+!server/api/src
+
+# server/caldav/Dockerfile: the whole service directory, minus what a host
+# `composer install` leaves behind.
+!server/caldav
+server/caldav/vendor
+
+# infra/zitadel/Dockerfile copies nothing from the context.
