@@ -4,9 +4,9 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 ## Queue
 
-As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it builds on are merged.
+As of 2026-10-08. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10. E04-R01 is Ready (E02 is Done) but waits for the owner's pick of the migration tool, see "Open with the owner".
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01, E04-R02, E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10. E04-R01 is Ready (E02 is Done) once the PR that pins `node-pg-migrate` is merged.
 2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 3. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
 4. **E15**: R01–R03.
@@ -17,8 +17,10 @@ As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it b
 
 - **E03-R01:**
   - the CalDAV image installs `pdo_pgsql`;
-  - add `sabre/dav ^4.7` to `composer.json` and `composer.lock` (the lock exists since E02-R04, with the dev tools only);
+  - add `sabre/dav` to `composer.json` and `composer.lock` (the lock exists since E02-R04, with the dev tools only), at 4.7.1, the tag whose scripts E04-R01 imports. The Composer package has no `examples/` directory, so the lock can't be compared with the scripts directly: the Accept line checks `composer.lock`'s version and source reference against the record E04-R01 commits. `composer require sabre/dav:4.7.1` takes the commit `f36f002dce082e1d425c4a0dc8c71a6b176c3b07`;
+  - point the SabreDAV PDO backends at the schema `sabredav` (E04-R01) and qualify the service's own reads as `public.users` and so on;
   - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`).
+- **E04-R06:** SabreDAV's tables in the schema `sabredav` use `SERIAL` integer keys, and the upstream scripts are not ours to change. "Every generated ID column defaults to `gen_random_uuid()`" must exempt that schema by name. The integers never reach an href: a calendar's collection URI is `calendarinstances.uri`, which holds the API's UUID (E03 § Layout).
 - **E05-R01:**
   - replaces the API skeleton (`server/api/src/app.mjs`, started by `server.mjs`) and drops the `GET /` allow-list entry in `server/api/test/contract.test.mjs` with it;
   - extends that contract test (E02-R07 review 1): it compares the `application/json` response schemas only. Add parameters, query, body and headers, flag response codes a route defines and the spec lacks, and decide how annotation keys (`description`, `example`) compare when the first schema with one arrives;
@@ -52,5 +54,4 @@ As of 2026-10-07. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-- **Merged branches and worktrees** are still there locally as of 2026-10-07 (the removal command was given); the remote branches are already gone. The review-only branches `review/E02-R06-*` and `review/E02-R07-*` go with them.
-- **E04-R01 migration tool:** the epic says "for example `node-pg-migrate` or Drizzle migrations", and no `D-*` picks one, so the run waits for the owner, as E02-R07's generators did. The requirement also moves the stack to PostgreSQL 18 and adds `make migrate` (root `Makefile`, `package.json`, `pnpm-lock.yaml`).
+Nothing.
