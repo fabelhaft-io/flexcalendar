@@ -36,6 +36,9 @@ services:
       POSTGRES_USER: ${CALFLEX_POSTGRES_USER:-caldav}
       POSTGRES_PASSWORD: ${CALFLEX_POSTGRES_PASSWORD:-caldav}
       POSTGRES_DB: ${CALFLEX_POSTGRES_DB:-caldav}
+      CALFLEX_MIGRATE_PASSWORD: ${CALFLEX_MIGRATE_PASSWORD:-calflex_migrate_dev}
+      CALFLEX_API_PASSWORD: ${CALFLEX_API_PASSWORD:-calflex_api_dev}
+      CALFLEX_CALDAV_PASSWORD: ${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}
     volumes:
       # Creates Zitadel's database on the first start. Postgres runs every file
       # in here only when the data volume is empty, and the script guards its
@@ -184,6 +187,8 @@ services:
       context: ../..
       dockerfile: server/caldav/Dockerfile
     restart: unless-stopped
+    environment:
+      CALFLEX_DATABASE_URL: "postgresql://calflex_caldav:${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -216,7 +221,7 @@ services:
       # Wiring for E05-R01. The API never decrypts and stores no event content
       # (INV-01, INV-07), and the login password never feeds a key derivation
       # (INV-12).
-      CALFLEX_DATABASE_URL: "postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
+      CALFLEX_DATABASE_URL: "postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
       CALFLEX_OIDC_ISSUER: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
       CALFLEX_CALDAV_ORIGIN: "https://caldav.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
       CALFLEX_SMTP_URL: "smtp://mailpit:1025"
@@ -259,7 +264,7 @@ services:
         migrate.config.json,
       ]
     environment:
-      CALFLEX_MIGRATE_DATABASE_URL: '${CALFLEX_MIGRATE_DATABASE_URL:-postgresql://${CALFLEX_POSTGRES_USER:-caldav}:${CALFLEX_POSTGRES_PASSWORD:-caldav}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}}'
+      CALFLEX_MIGRATE_DATABASE_URL: '${CALFLEX_MIGRATE_DATABASE_URL:-postgresql://calflex_migrate:${CALFLEX_MIGRATE_PASSWORD:-calflex_migrate_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}}'
     mem_limit: 256m
     networks: [stack]
 

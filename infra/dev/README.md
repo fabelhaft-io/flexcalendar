@@ -164,6 +164,28 @@ for development only. Production rollback is a backup restore (E08-R04).
 PostgreSQL 18 stores data under `/var/lib/postgresql/18/docker`; the volume
 mount is `/var/lib/postgresql`. A volume created by 17 needs `make dev-reset`
 (**deletes all local data**) before starting 18; this is not an upgrade tool.
+Existing PostgreSQL 18 volumes from before E04-R02 also need `make dev-reset`
+to run `postgres/initdb/20-roles.sql`. Changing a password variable does not
+change an existing role: the bootstrap runs only on an empty volume.
+
+The bootstrap creates three plain LOGIN roles (no superuser, CREATEDB or
+CREATEROLE). `calflex_migrate` owns the database and the `public` and `sabredav`
+schemas and runs migrations without CREATEROLE. The API uses `calflex_api`
+(public-table DML, audit INSERT/SELECT only, no SabreDAV access); CalDAV uses
+`calflex_caldav` (SabreDAV DML, outbox/replay-store DML, membership reads and
+only `device_credentials.last_used_at` updates). Their dev-only passwords are
+`CALFLEX_MIGRATE_PASSWORD`, `CALFLEX_API_PASSWORD`, and
+`CALFLEX_CALDAV_PASSWORD`; defaults are in `.env.example`. URI-encode passwords
+in connection URLs. Roles are provisioned by bootstrap, never migrations.
+Zitadel and its configuration runner still use the separate `zitadel` database
+and the bootstrap login locally; E08 will give Zitadel its own role.
+
+E04-R02 stores calendar metadata opaquely and creates no name/colour columns.
+The metadata-envelope check requires it exactly for Private calendars. The
+text mode column deliberately waits for E04-R03's enum/private-only check;
+these database tables are not a mode-creating API. Reserved credentials and
+feed/push tables have no Phase 1 writer. Audit details must contain operational
+metadata only, never event content or envelope bytes.
 
 Schema changes belong only in `server/api/migrations/<unix-ms>_<slug>.mjs`
 (or `.sql` with Up/Down Migration sections). Every migration must have a down,
