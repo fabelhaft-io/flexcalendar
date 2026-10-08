@@ -21,8 +21,8 @@ Push (E07), the REST facade (E05), `VTODO` and `VFREEBUSY` (deferred in `04`).
 - **Two listeners in one service.** The *public* listener is the one Caddy routes (`caldav.localhost:8443` locally; `caldav.flexcalendar.de` from Phase 4, `02` § Hosting). The *internal* listener is reachable only on a dedicated Compose network that just the API and the CalDAV service join. Today `infra/dev/compose.yaml` puts every service on one `stack` network, so R01 adds that network. The internal listener has no published host port and no Caddy route.
 - **Who authenticates where.** In Phase 1 the public listener has no auth backend, so every request there gets 401. The one exception is the `/.well-known/caldav` redirect. Device app passwords arrive in Phase 4 (R03). The internal listener accepts only D-05 delegation (R01).
 - **Identity.** A principal is a `users` row (E04-R02): its URI is `principals/<users.id>`, and its calendar home is `/calendars/<users.id>/`. A calendar's collection URI is its `calendars.id`. All of these are UUIDv4 (INV-03), so no href contains a name.
-- **Tables.** SabreDAV's tables come from the E04-R01 migration chain, not from the service. The service connects with the `calflex_caldav` role (E04-R02), which reads `users`, `calendars` and `calendar_members` and never writes them.
-- **Runtime.** FrankenPHP in classic mode, or nginx + php-fpm. Never FrankenPHP worker mode (`02` § Runtime layout). R01 replaces the `php -S` built-in server of the E02-R03 skeleton image. The image installs `pdo_pgsql`, which `php:8.4-cli-alpine` lacks. `sabre/dav` 4.7.x is locked in `composer.lock`. All our code lives in plugins and backends; vendor code is never patched.
+- **Tables.** SabreDAV's tables come from the E04-R01 migration chain, not from the service. They live in the schema `sabredav`, because SabreDAV's `calendars` table has the name of the API's `public.calendars`. The service points the SabreDAV PDO backends at that schema (their table-name properties, such as `$calendarTableName`, or the connection's `search_path`) and qualifies its own reads as `public.…`. It connects with the `calflex_caldav` role (E04-R02), which reads `public.users`, `public.calendars` and `public.calendar_members` and never writes them.
+- **Runtime.** FrankenPHP in classic mode, or nginx + php-fpm. Never FrankenPHP worker mode (`02` § Runtime layout). R01 replaces the `php -S` built-in server of the E02-R03 skeleton image. The image installs `pdo_pgsql`, which `php:8.4-cli-alpine` lacks. `sabre/dav` 4.7.1 is locked in `composer.lock`, the tag whose scripts E04-R01 imports. All our code lives in plugins and backends; vendor code is never patched.
 
 ## Requirements
 
@@ -62,6 +62,7 @@ The public listener MUST NOT parse the header at all.
   - a replayed nonce;
   - a `p` with no `users` row.
 - Accept: the same valid header sent to the public listener → 401, and a malformed one there changes neither the response nor the logs. The Compose file publishes no host port for the internal listener.
+- Accept: the `sabre/dav` entry in `composer.lock` has the version and the source reference (commit) that E04-R01 records for the scripts it imports, and a test fails when they differ.
 - Deps: E02-R03, E04-R01, E04-R02.
 - Notes: no other auth backend exists in Phase 1, for development included, so there is never a second path to remove later. List every security-relevant choice in the PR for the human approval.
 

@@ -17,7 +17,11 @@ PostgreSQL 18 (D-19). Every table, SabreDAV's included, is created by one migrat
 ## Requirements
 
 ### E04-R01 · Migration tooling   `agent`
-Schema changes MUST go through one migration tool, owned by the API (for example `node-pg-migrate` or Drizzle migrations). SabreDAV's tables are created from the PostgreSQL scripts of the `sabre/dav` 4.7.x release that E03-R01 locks, imported into the same chain.
+Schema changes MUST go through one migration tool, owned by the API: **`node-pg-migrate` 9.0.0** on `pg` (owner's decision of 2026-10-08, `02` § Backend API Layer). A migration is an `.mjs` or `.sql` file in `server/api`. Each has a down, or exports `down = false` and says why in a comment.
+- SabreDAV's tables are created in the same chain, from the PostgreSQL scripts of the `sabre/dav` **4.7.1** tag (commit `f36f002dce082e1d425c4a0dc8c71a6b176c3b07`):
+  - Only `pgsql.calendars.sql` and `pgsql.propertystorage.sql` are imported. `pgsql.principals.sql` and `pgsql.users.sql` are not: each inserts a default `admin` account, `users` collides with E04-R02's table, and E03-R01's principal backend reads ours. `addressbooks` (no CardDAV) and `locks` (no Locks plugin) are not needed.
+  - The scripts are copied into the repository byte for byte, with the tag, the commit and the SHA-256 of each file recorded beside them. The migration refuses to run when a file differs from its recorded hash. Composer's package leaves out SabreDAV's `examples/` directory, so `vendor/` has no copy to compare with. E03-R01 checks the locked version against the record instead.
+  - The tables are created in the schema `sabredav`, so SabreDAV's `calendars` doesn't collide with the API's `calendars` (E04-R02). The scripts run unmodified: the migration sets the `search_path` for the script and resets it afterwards, because the run is one transaction.
 - Moves the local stack from `postgres:17-alpine`, which E02-R03 shipped, to PostgreSQL 18 (D-19). The postgres:18 image keeps its data under a versioned directory, so the volume mounts `/var/lib/postgresql` rather than `…/data`. A volume created by 17 needs `make dev-reset`.
 - Accept: `make migrate` creates the schema on a fresh database and is idempotent; every migration has a down or is documented as irreversible; it runs in `make verify` against a fresh database.
 - Accept: from the first production deploy on, CI also migrates a copy of the last released schema.
@@ -40,9 +44,9 @@ The schema MUST contain:
 - `delegation_nonces`: the D-05 replay store E03-R01 uses (nonce, primary key; `expires_at`).
 
 Three database roles:
-- `calflex_migrate` owns the schema and runs migrations.
-- `calflex_api` gets DML on the API's tables, but only `INSERT` and `SELECT` on `audit_log`, and nothing on SabreDAV's tables. The API reaches CalDAV data only through the CalDAV service.
-- `calflex_caldav` gets DML on SabreDAV's tables, `caldav_changes` and `delegation_nonces`. It gets `SELECT` on `users`, `calendars` and `calendar_members`, plus `UPDATE (last_used_at)` on `device_credentials` from Phase 4.
+- `calflex_migrate` owns the schemas (`public` and E04-R01's `sabredav`) and runs migrations.
+- `calflex_api` gets DML on the API's tables, but only `INSERT` and `SELECT` on `audit_log`, and nothing in the schema `sabredav`. The API reaches CalDAV data only through the CalDAV service.
+- `calflex_caldav` gets DML on the tables of the schema `sabredav`, and on `caldav_changes` and `delegation_nonces`. It gets `SELECT` on `public.users`, `public.calendars` and `public.calendar_members`, plus `UPDATE (last_used_at)` on `device_credentials` from Phase 4. SabreDAV's own `calendars` table has the same name in schema `sabredav`.
 
 Zitadel keeps its own database and role in the same cluster (ADR 0004). The local stack's services stop using the shared `caldav` bootstrap login that E02-R03 configured: the API connects as `calflex_api` and the CalDAV service as `calflex_caldav`, with dev-only defaults in `infra/dev/.env.example`.
 - Accept: FKs and unique constraints are in place; a test connects as each role and checks the grants above, including that `calflex_api` can't `UPDATE` or `DELETE` `audit_log` rows; inserting a Private calendar without `meta_envelope` fails.
