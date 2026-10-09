@@ -6,11 +6,10 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 (Done, PR #38 merged 2026-10-09), E04-R02 (passed review 2, PR open), E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
-   - E04-R02 ran stacked on E04-R01's branch by the owner's decision of 2026-10-09. #38 was squashed to a commit with the same tree as the reviewed tip, so the branch was rebased with `git rebase --onto main 19e0bbb` before its first push (nothing force-pushed).
-   - E03-R01 waits for E04-R02's merge.
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 and E04-R02 (Done, PRs #38 and #41, 2026-10-09), E03-R01 (`agent+review`, Ready), then E04-R03…R06 (Ready) and E03-R02, R08 (`agent+review`), R09, R10.
+   - E04-R03…R06 each add migrations and extend `schema.test.mjs`, so they run one after another. E03-R01 can run beside one of them only if their `--paths` don't overlap (`infra/dev/compose.yaml`, `Makefile`, `CONTRIBUTING.md`).
 2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
-3. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
+3. **E08**: R02, R03, R04, R05, R07, R08, and R10 (Zitadel's database role: not urgent, but its step 1, an ADR the owner accepts, comes before R02). Staging checks by the coordinator (D-20).
 4. **E15**: R01–R03.
 
 ## Follow-ups waiting for their requirement
