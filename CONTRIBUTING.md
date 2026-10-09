@@ -186,7 +186,8 @@ Install the workspace dependencies with `corepack pnpm install --frozen-lockfile
 and the CalDAV development tools with `cd server/caldav && composer install`.
 The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
 (the E02-R02 pins). `make verify` also requires the pinned Flutter and Dart
-on `PATH` for the mobile component and client generation.
+on `PATH` for the mobile component and client generation, plus working rootless
+Podman on `PATH` for the API migration component tests.
 Start the rootless local stack with `make dev`, then run `make verify`.
 Verification does not start, reset, or seed the stack for you. Stack-dependent
 checks inherit the environment documented in `infra/dev/.env.example`.
@@ -233,3 +234,16 @@ root in filename order, without a shell. Each check owns its fixtures and its
 stack connectivity assertions. Empty suites explicitly print “no registered
 checks yet; pass”. Malformed registrations and failed checks fail closed. Never
 log event content or secrets, including from corpus fixtures.
+
+## Migration checks (E04-R01)
+
+`make verify` now requires working **rootless Podman** on PATH, including the
+ability to pull `docker.io/library/postgres:18-alpine` and publish an ephemeral
+loopback port. The API component suite creates its own disposable PostgreSQL
+container and fresh databases; it fails, rather than skips, without Podman.
+The full dev stack additionally requires the `podman compose` provider.
+
+Use `make migrate` to apply the API-owned migration chain (idempotent);
+`make migrate-down` rolls back one step and destroys data, for dev/test only.
+A local volume created by PostgreSQL 17 needs `make dev-reset` before 18 starts
+(the reset deletes all local data). Production rollback restores backups.

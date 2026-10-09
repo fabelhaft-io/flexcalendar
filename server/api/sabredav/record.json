@@ -1,0 +1,15 @@
+{
+  "package": "sabre/dav",
+  "tag": "4.7.1",
+  "commit": "f36f002dce082e1d425c4a0dc8c71a6b176c3b07",
+  "files": {
+    "pgsql.calendars.sql": {
+      "sourceUrl": "https://raw.githubusercontent.com/sabre-io/dav/4.7.1/examples/sql/pgsql.calendars.sql",
+      "sha256": "871609815dd8f642cb7909f736a70efa396b8b2144b10f8d458a3624048c2496"
+    },
+    "pgsql.propertystorage.sql": {
+      "sourceUrl": "https://raw.githubusercontent.com/sabre-io/dav/4.7.1/examples/sql/pgsql.propertystorage.sql",
+      "sha256": "bf0f3445f47c1ae0d647ad29d4c8edb41366687a55dfb3ad92ed2fd8bf96db3c"
+    }
+  }
+}

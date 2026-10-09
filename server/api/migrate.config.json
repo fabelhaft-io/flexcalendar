@@ -1,0 +1,6 @@
+{
+  "migrations-dir": "migrations",
+  "schema": "public",
+  "check-order": true,
+  "verbose": false
+}

@@ -3,9 +3,10 @@
 # `make dev` builds this; production images are built in CI, pinned by digest
 # and owned by E08.
 #
-# The service body is the skeleton in src/ until E05-R01. The image only has to
-# boot and answer, so it is a production install of this workspace package and
-# nothing else — the workspace lockfile stays the single source of resolved
+# The service body is the skeleton in src/ until E05-R01: it boots and answers.
+# The image also carries migrations/, sabredav/ and migrate.config.json for the
+# migrate service. It is a production install of this workspace package;
+# the workspace lockfile stays the single source of resolved
 # versions, which is why the build context is the repository root.
 #
 #   dockerfile: server/api/Dockerfile
@@ -28,6 +29,9 @@ COPY --from=dependencies /repo/node_modules ./node_modules
 COPY --from=dependencies /repo/server/api/node_modules ./server/api/node_modules
 COPY --from=dependencies /repo/server/api/package.json ./server/api/package.json
 COPY server/api/src ./server/api/src
+COPY server/api/migrate.config.json ./server/api/migrate.config.json
+COPY server/api/migrations ./server/api/migrations
+COPY server/api/sabredav ./server/api/sabredav
 USER node
 EXPOSE 3000
 # The readiness probe lives in infra/dev/compose.yaml, where the rest of the

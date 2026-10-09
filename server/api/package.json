@@ -9,16 +9,19 @@
   "main": "src/server.mjs",
   "scripts": {
     "start": "node src/server.mjs",
-    "format:check": "prettier --check package.json src test",
-    "lint": "eslint src test",
-    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 src/*.mjs test/*.test.mjs",
+    "format:check": "prettier --check package.json migrate.config.json src test migrations \"sabredav/*.mjs\" \"sabredav/*.json\"",
+    "lint": "eslint src test migrations sabredav/*.mjs",
+    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 src/*.mjs test/*.test.mjs migrations/*.mjs sabredav/*.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "fastify": "5.12.5"
+    "fastify": "5.12.5",
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",
+    "@types/pg": "8.23.1",
     "yaml": "2.9.1"
   }
 }

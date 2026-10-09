@@ -30,4 +30,13 @@ and hit CalDAV directly (CLAUDE.md).
   (`packageManager`, via corepack). Add dependencies with
   `corepack pnpm add --filter @calendar-flex/api …` so `pnpm-lock.yaml` stays the
   single source of resolved versions.
+- **Migrations (E04-R01):** `make migrate` applies the API-owned files in
+  `migrations/`, using `migrate.config.json`. Upstream SQL and its tag, commit
+  and SHA-256 record live in `sabredav/`. `corepack pnpm test` in this package
+  now requires working rootless Podman for `test/migrate.test.mjs`;
+  `test/migrate-record.test.mjs` needs no containers. Migration options live in
+  `migrate.config.json`: the pinned CLI reads dashed keys there, and the file
+  overrides the command line. Fixtures therefore copy the config and change only
+  the directory. `single-transaction` and `lock` are CLI defaults (`true`), not
+  options read from this file; the rollback tests depend on these defaults.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.
