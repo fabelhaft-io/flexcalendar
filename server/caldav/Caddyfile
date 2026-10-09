@@ -6,12 +6,14 @@
 	}
 }
 :8080 {
+	header -Server
 	root * /app/public
 	rewrite * /index.php
 	php
 }
 :8081 {
 	bind 172.30.91.2
+	header -Server
 	root * /app/internal
 	rewrite * /index.php
 	php

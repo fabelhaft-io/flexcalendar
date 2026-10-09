@@ -12,17 +12,32 @@ final class Service
             $server->httpRequest->setBaseUrl('/');
             $server->invokeMethod($server->httpRequest, $server->httpResponse);
         } catch (\Throwable $exception) {
-            $status = $exception instanceof \Sabre\DAV\Exception ? $exception->getHTTPCode() : 500;
-            $server->httpResponse->setStatus($status);
-            $server->httpResponse->setHeader('Content-Type', 'text/plain; charset=utf-8');
-            $server->httpResponse->setBody("DAV request failed\n");
+            self::errorResponse($server, $exception);
             error_log('caldav dav_failure');
             $server->sapi->sendResponse($server->httpResponse);
         }
     }
 
+    public static function errorResponse(\Sabre\DAV\Server $server, \Throwable $exception): void
+    {
+        $davException = $exception instanceof \Sabre\DAV\Exception;
+        $server->httpResponse->setStatus($davException ? $exception->getHTTPCode() : 500);
+        $server->httpResponse->setHeader('Content-Type', 'application/xml; charset=utf-8');
+        $document = new \DOMDocument('1.0', 'utf-8');
+        $error = $document->createElementNS('DAV:', 'd:error');
+        $error->setAttribute('xmlns:s', 'http://sabredav.org/ns');
+        $document->appendChild($error);
+        if ($davException) {
+            $exception->serialize($server, $error);
+            $server->httpResponse->setHeaders($exception->getHTTPHeaders($server));
+        }
+        // Include preconditions only: never exception message, class or trace.
+        $server->httpResponse->setBody($document->saveXML());
+    }
+
     public static function create(\PDO $pdo, string $id): \Sabre\DAV\Server
     {
+        \Sabre\DAV\Server::$exposeVersion = false;
         $principals = new Principals($pdo, 'principals/' . $id);
         $calendars = new \Sabre\CalDAV\Backend\PDO($pdo);
         $calendars->calendarTableName = 'sabredav.calendars';

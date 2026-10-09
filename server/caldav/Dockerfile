@@ -1,7 +1,8 @@
 # Classic request lifecycle, never persistent PHP application state.
 FROM docker.io/library/composer:2.10 AS composer
-FROM dunglas/frankenphp:1.13.0-php8.4.26-alpine AS base
-RUN install-php-extensions pdo_pgsql \
+FROM docker.io/dunglas/frankenphp:1.13.0-php8.4.26-alpine AS base
+RUN printf "expose_php=Off\n" > /usr/local/etc/php/conf.d/calflex.ini \
+    && install-php-extensions pdo_pgsql \
     && addgroup -g 10001 calflex && adduser -D -u 10001 -G calflex calflex \
     && mkdir -p /app /tmp/calflex-data /tmp/calflex-config \
     && chown -R calflex:calflex /app /tmp/calflex-data /tmp/calflex-config
@@ -20,7 +21,6 @@ RUN composer dump-autoload --no-dev --classmap-authoritative
 FROM dependencies AS test
 RUN composer install --no-interaction --no-scripts
 COPY --chown=calflex:calflex server/caldav/tests ./tests
-COPY --chown=calflex:calflex server/api/sabredav/record.json /app/schema-record.json
 RUN composer dump-autoload
 ENTRYPOINT ["php", "vendor/bin/phpunit", "--no-configuration", "--do-not-cache-result", "tests/Integration"]
 FROM dependencies AS runtime

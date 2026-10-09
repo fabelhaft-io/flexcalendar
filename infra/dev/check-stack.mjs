@@ -35,9 +35,13 @@ function check(description, ok) {
   const result = typeof ok === 'function' ? ok() : ok;
   checks.push(description);
   if (result !== true) {
-    problems.push(`${description}${typeof result === 'string' ? ` — ${result}` : ''}`);
+    problems.push(
+      `${description}${typeof result === 'string' ? ` — ${result}` : ''}`,
+    );
   }
-  process.stdout.write(`${result === true ? 'ok  ' : 'FAIL'}  ${description}\n`);
+  process.stdout.write(
+    `${result === true ? 'ok  ' : 'FAIL'}  ${description}\n`,
+  );
 }
 
 const read = (file) => readFile(path.join(here, file), 'utf8');
@@ -49,8 +53,10 @@ const compose = parse(composeText);
 const services = compose?.services ?? {};
 
 for (const [name, service] of Object.entries(services)) {
-  check(`${name}: exec-form health-check arguments contain no whitespace (Podman 4.9)`,
-    portableExecHealthcheck(service?.healthcheck?.test));
+  check(
+    `${name}: exec-form health-check arguments contain no whitespace (Podman 4.9)`,
+    portableExecHealthcheck(service?.healthcheck?.test),
+  );
 }
 
 const requiredServices = {
@@ -67,18 +73,23 @@ for (const [name, description] of Object.entries(requiredServices)) {
   check(`compose.yaml starts ${description} as \`${name}\``, name in services);
 }
 
-check('compose.yaml parses as YAML with a services map', Object.keys(services).length > 0);
+check(
+  'compose.yaml parses as YAML with a services map',
+  Object.keys(services).length > 0,
+);
 
 check('the CalDAV image is built from server/caldav', () => {
   const build = services.caldav?.build;
-  return build?.dockerfile === 'server/caldav/Dockerfile' && build?.context === '../..'
+  return build?.dockerfile === 'server/caldav/Dockerfile' &&
+    build?.context === '../..'
     ? true
     : `got ${JSON.stringify(build)}`;
 });
 
 check('the API image is built from server/api', () => {
   const build = services.api?.build;
-  return build?.dockerfile === 'server/api/Dockerfile' && build?.context === '../..'
+  return build?.dockerfile === 'server/api/Dockerfile' &&
+    build?.context === '../..'
     ? true
     : `got ${JSON.stringify(build)}`;
 });
@@ -101,20 +112,36 @@ for (const [name, service] of Object.entries(services)) {
   for (const [, sources] of text.matchAll(/^COPY\s+(?!--from)(.+)$/gm)) {
     const tokens = sources.trim().split(/\s+/);
     if (tokens.some((token) => token.startsWith('--from='))) continue;
-    for (const source of tokens.filter((token) => !token.startsWith('--')).slice(0, -1)) {
-      check(`${name}: the Dockerfile copies ${source}, which exists`, await exists(path.join(repository, source)));
+    for (const source of tokens
+      .filter((token) => !token.startsWith('--'))
+      .slice(0, -1)) {
+      check(
+        `${name}: the Dockerfile copies ${source}, which exists`,
+        await exists(path.join(repository, source)),
+      );
     }
   }
 }
 
 // --- rootless Podman, no root, no sysctls ------------------------------------
 
-const privilegedKeys = ['privileged', 'sysctls', 'cap_add', 'userns_mode', 'pid', 'ipc', 'devices'];
+const privilegedKeys = [
+  'privileged',
+  'sysctls',
+  'cap_add',
+  'userns_mode',
+  'pid',
+  'ipc',
+  'devices',
+];
 for (const [name, service] of Object.entries(services)) {
   for (const key of privilegedKeys) {
     check(`${name} does not use \`${key}\``, service?.[key] === undefined);
   }
-  check(`${name} does not use the host network namespace`, service?.network_mode !== 'host');
+  check(
+    `${name} does not use the host network namespace`,
+    service?.network_mode !== 'host',
+  );
 }
 
 for (const [name, service] of Object.entries(services)) {
@@ -150,7 +177,10 @@ check('the published HTTPS port is the configurable one', () => {
 // --- memory limits (ADR 0004) ------------------------------------------------
 
 for (const [name, service] of Object.entries(services)) {
-  check(`${name} has a memory limit (ADR 0004)`, typeof service?.mem_limit === 'string');
+  check(
+    `${name} has a memory limit (ADR 0004)`,
+    typeof service?.mem_limit === 'string',
+  );
 }
 
 // --- the seed ----------------------------------------------------------------
@@ -158,8 +188,10 @@ for (const [name, service] of Object.entries(services)) {
 check('the seed runs as a one-shot service, under its own profile', () => {
   const seed = services.seed;
   if (!seed) return 'no seed service';
-  if (!(seed.profiles ?? []).includes('seed')) return 'not behind a profile, so `make dev` would start it';
-  if (seed.restart !== 'no') return 'a restart policy would loop a one-shot job';
+  if (!(seed.profiles ?? []).includes('seed'))
+    return 'not behind a profile, so `make dev` would start it';
+  if (seed.restart !== 'no')
+    return 'a restart policy would loop a one-shot job';
   return true;
 });
 
@@ -169,16 +201,22 @@ check('the seed runs as a one-shot service, under its own profile', () => {
 // from the request's Host, so the seed presents the authority a browser uses.
 const seedEnvironment = services.seed?.environment ?? {};
 
-check('the seed reaches Caddy on its container port, not the published one', () => {
-  const baseUrl = String(seedEnvironment.CALFLEX_SEED_BASE_URL ?? '');
-  if (!/:8443$/.test(baseUrl)) return `CALFLEX_SEED_BASE_URL is ${JSON.stringify(baseUrl)}, which must end in :8443`;
-  if (baseUrl.includes('${CALFLEX_HTTPS_PORT')) return 'the published port is the connection port again';
-  return true;
-});
+check(
+  'the seed reaches Caddy on its container port, not the published one',
+  () => {
+    const baseUrl = String(seedEnvironment.CALFLEX_SEED_BASE_URL ?? '');
+    if (!/:8443$/.test(baseUrl))
+      return `CALFLEX_SEED_BASE_URL is ${JSON.stringify(baseUrl)}, which must end in :8443`;
+    if (baseUrl.includes('${CALFLEX_HTTPS_PORT'))
+      return 'the published port is the connection port again';
+    return true;
+  },
+);
 
 check('the seed sends Zitadel the authority the developer uses', () => {
   const host = String(seedEnvironment.CALFLEX_SEED_HOST ?? '');
-  return host.startsWith('auth.') && host.includes('${CALFLEX_HTTPS_PORT:-8443}')
+  return host.startsWith('auth.') &&
+    host.includes('${CALFLEX_HTTPS_PORT:-8443}')
     ? true
     : `CALFLEX_SEED_HOST is ${JSON.stringify(host)}`;
 });
@@ -206,21 +244,34 @@ const logins = new Set();
 const emails = new Set();
 for (const user of seedUsers) {
   for (const field of ['userName', 'firstName', 'lastName', 'email']) {
-    check(`seeded user ${user?.userName ?? '?'} has a ${field}`, typeof user?.[field] === 'string' && user[field] !== '');
+    check(
+      `seeded user ${user?.userName ?? '?'} has a ${field}`,
+      typeof user?.[field] === 'string' && user[field] !== '',
+    );
   }
-  check(`seeded login ${user?.userName ?? '?'} is unique`, !logins.has(user?.userName));
+  check(
+    `seeded login ${user?.userName ?? '?'} is unique`,
+    !logins.has(user?.userName),
+  );
   logins.add(user?.userName);
-  check(`seeded email ${user?.email ?? '?'} is unique`, !emails.has(user?.email));
+  check(
+    `seeded email ${user?.email ?? '?'} is unique`,
+    !emails.has(user?.email),
+  );
   emails.add(user?.email);
 }
 
 // --- configuration drift -----------------------------------------------------
 
 const interpolated = new Set(
-  [...composeText.matchAll(/\$\{(CALFLEX_[A-Z0-9_]+)(?::-[^}]*)?\}/g)].map((match) => match[1]),
+  [...composeText.matchAll(/\$\{(CALFLEX_[A-Z0-9_]+)(?::-[^}]*)?\}/g)].map(
+    (match) => match[1],
+  ),
 );
 const envExample = await read('.env.example');
-const documented = new Set([...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((match) => match[1]));
+const documented = new Set(
+  [...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((match) => match[1]),
+);
 
 check('compose.yaml interpolates at least one variable', interpolated.size > 0);
 for (const name of [...interpolated].sort()) {
@@ -234,18 +285,36 @@ for (const [service, role, key] of [
   ['migrate', 'calflex_migrate', 'CALFLEX_MIGRATE_DATABASE_URL'],
 ]) {
   check(`${service} connects as ${role}`, () =>
-    String(services[service]?.environment?.[key] ?? '').includes(`postgresql://${role}:`)
-      ? true : 'missing dedicated database login',
+    String(services[service]?.environment?.[key] ?? '').includes(
+      `postgresql://${role}:`,
+    )
+      ? true
+      : 'missing dedicated database login',
   );
 }
-for (const name of ['CALFLEX_MIGRATE_PASSWORD', 'CALFLEX_API_PASSWORD', 'CALFLEX_CALDAV_PASSWORD']) {
-  check(`postgres supplies ${name} to role bootstrap`, name in (services.postgres?.environment ?? {}));
+for (const name of [
+  'CALFLEX_MIGRATE_PASSWORD',
+  'CALFLEX_API_PASSWORD',
+  'CALFLEX_CALDAV_PASSWORD',
+]) {
+  check(
+    `postgres supplies ${name} to role bootstrap`,
+    name in (services.postgres?.environment ?? {}),
+  );
 }
 check('Postgres mounts the real role bootstrap read-only', () =>
-  (services.postgres?.volumes ?? []).includes('./postgres/initdb:/docker-entrypoint-initdb.d:ro')
-    ? true : 'missing initdb mount',
+  (services.postgres?.volumes ?? []).includes(
+    './postgres/initdb:/docker-entrypoint-initdb.d:ro',
+  )
+    ? true
+    : 'missing initdb mount',
 );
-check('role bootstrap exists', (await read('postgres/initdb/20-roles.sql')).includes('CREATE ROLE calflex_migrate'));
+check(
+  'role bootstrap exists',
+  (await read('postgres/initdb/20-roles.sql')).includes(
+    'CREATE ROLE calflex_migrate',
+  ),
+);
 
 // --- the Caddyfile -----------------------------------------------------------
 
@@ -258,11 +327,19 @@ const withoutComments = (text) =>
     .map((line) => (line.trimStart().startsWith('#') ? '' : line))
     .join('\n');
 
-check('the Caddyfile issues certificates from the local CA', caddyfile.includes('local_certs'));
-check('the local Caddyfile never talks to an ACME server', () =>
-  /acme|letsencrypt|zerossl/i.test(withoutComments(caddyfile)) ? 'found an ACME reference' : true,
+check(
+  'the Caddyfile issues certificates from the local CA',
+  caddyfile.includes('local_certs'),
 );
-check('the Caddyfile serves HTTPS on 8443', /https_port\s+8443/.test(caddyfile));
+check('the local Caddyfile never talks to an ACME server', () =>
+  /acme|letsencrypt|zerossl/i.test(withoutComments(caddyfile))
+    ? 'found an ACME reference'
+    : true,
+);
+check(
+  'the Caddyfile serves HTTPS on 8443',
+  /https_port\s+8443/.test(caddyfile),
+);
 
 for (const host of ['caldav', 'api', 'auth', 'mailpit']) {
   check(
@@ -274,16 +351,27 @@ for (const host of ['caldav', 'api', 'auth', 'mailpit']) {
 // The login UI answers `/ui/v2/login` and everything under it; routing only the
 // wildcard form sends the bare path to the core, which answers 404 (review 1,
 // fix 1).
-check('the Caddyfile routes the login UI both its base path and everything under it', () =>
-  /@login\s+path\s+\/ui\/v2\/login\s+\/ui\/v2\/login\/\*/.test(withoutComments(caddyfile))
-    ? true
-    : 'the base path /ui/v2/login is not routed to zitadel-login',
+check(
+  'the Caddyfile routes the login UI both its base path and everything under it',
+  () =>
+    /@login\s+path\s+\/ui\/v2\/login\s+\/ui\/v2\/login\/\*/.test(
+      withoutComments(caddyfile),
+    )
+      ? true
+      : 'the base path /ui/v2/login is not routed to zitadel-login',
 );
 
-for (const [, upstream, port] of caddyfile.matchAll(/reverse_proxy\s+([a-z0-9._-]+):(\d+)/g)) {
-  check(`Caddy's upstream ${upstream}:${port} is a compose service`, upstream in services);
+for (const [, upstream, port] of caddyfile.matchAll(
+  /reverse_proxy\s+([a-z0-9._-]+):(\d+)/g,
+)) {
+  check(
+    `Caddy's upstream ${upstream}:${port} is a compose service`,
+    upstream in services,
+  );
   check(`${upstream} exposes ${port} to Caddy`, () =>
-    (services[upstream]?.expose ?? []).map(String).includes(port) ? true : 'not in `expose`',
+    (services[upstream]?.expose ?? []).map(String).includes(port)
+      ? true
+      : 'not in `expose`',
   );
 }
 
@@ -292,23 +380,34 @@ for (const [, upstream, port] of caddyfile.matchAll(/reverse_proxy\s+([a-z0-9._-
 const makefile = await readFile(path.join(repository, 'Makefile'), 'utf8');
 
 for (const target of ['dev', 'dev-down', 'seed', 'check-stack']) {
-  check(`the Makefile has a \`${target}\` target`, new RegExp(`^${target}:`, 'm').test(makefile));
+  check(
+    `the Makefile has a \`${target}\` target`,
+    new RegExp(`^${target}:`, 'm').test(makefile),
+  );
 }
 
-check('the Makefile runs the stack with `podman compose`, never a Docker daemon', () => {
-  const code = withoutComments(makefile);
-  if (!/^PODMAN \?= podman$/m.test(code)) return 'PODMAN is not `podman`';
-  if (!/^PODMAN_COMPOSE \?= \$\(PODMAN\) compose$/m.test(code)) return 'PODMAN_COMPOSE is not `$(PODMAN) compose`';
-  if (/\bdocker\b/i.test(code)) return 'a Docker command is referenced';
-  return true;
-});
+check(
+  'the Makefile runs the stack with `podman compose`, never a Docker daemon',
+  () => {
+    const code = withoutComments(makefile);
+    if (!/^PODMAN \?= podman$/m.test(code)) return 'PODMAN is not `podman`';
+    if (!/^PODMAN_COMPOSE \?= \$\(PODMAN\) compose$/m.test(code))
+      return 'PODMAN_COMPOSE is not `$(PODMAN) compose`';
+    if (/\bdocker\b/i.test(code)) return 'a Docker command is referenced';
+    return true;
+  },
+);
 
 check('`make dev` brings the stack up and waits for it', () =>
-  /^\t\$\(COMPOSE\) up --detach --wait$/m.test(makefile) ? true : 'no `up --detach --wait`',
+  /^\t\$\(COMPOSE\) up --detach --wait$/m.test(makefile)
+    ? true
+    : 'no `up --detach --wait`',
 );
 
 check('`make seed` runs the one-shot seed service', () =>
-  /^\t\$\(COMPOSE\) --profile seed run --rm seed$/m.test(makefile) ? true : 'no seed run',
+  /^\t\$\(COMPOSE\) --profile seed run --rm seed$/m.test(makefile)
+    ? true
+    : 'no seed run',
 );
 
 // E03-R01 trust-boundary structure (runtime isolation is tested on the stack).
@@ -361,11 +460,25 @@ check(
   ).length === 4,
 );
 
+check(
+  'delegation network is internal',
+  compose.networks?.delegation?.internal === true,
+);
+check(
+  'dynamic pool excludes the static listener address',
+  compose.networks?.delegation?.ipam?.config?.[0]?.ip_range ===
+    '172.30.91.128/25',
+);
+
 // --- verdict -----------------------------------------------------------------
 
-process.stdout.write(`\n${checks.length - problems.length}/${checks.length} checks passed\n`);
+process.stdout.write(
+  `\n${checks.length - problems.length}/${checks.length} checks passed\n`,
+);
 if (problems.length > 0) {
-  process.stdout.write(`\n${problems.map((problem) => `- ${problem}`).join('\n')}\n`);
+  process.stdout.write(
+    `\n${problems.map((problem) => `- ${problem}`).join('\n')}\n`,
+  );
   process.exit(1);
 }
 process.stdout.write('the local stack definition is consistent\n');

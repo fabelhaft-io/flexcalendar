@@ -186,7 +186,7 @@ services:
     restart: unless-stopped
     environment:
       CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
-      CALFLEX_DATABASE_URL: 'postgresql://calflex_caldav:${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
+      CALFLEX_DATABASE_URL: "postgresql://calflex_caldav:${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -202,7 +202,7 @@ services:
       retries: 12
       start_period: 5s
     expose:
-      - '8080'
+      - "8080"
     mem_limit: 256m
     networks:
       stack:
@@ -218,15 +218,15 @@ services:
       dockerfile: server/api/Dockerfile
     restart: unless-stopped
     environment:
-      PORT: '3000'
+      PORT: "3000"
       # Wiring for E05-R01. The API never decrypts and stores no event content
       # (INV-01, INV-07), and the login password never feeds a key derivation
       # (INV-12).
-      CALFLEX_DATABASE_URL: 'postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
-      CALFLEX_OIDC_ISSUER: 'https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}'
+      CALFLEX_DATABASE_URL: "postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
+      CALFLEX_OIDC_ISSUER: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
       CALFLEX_CALDAV_ORIGIN: 'http://caldav-internal:8081'
       CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
-      CALFLEX_SMTP_URL: 'smtp://mailpit:1025'
+      CALFLEX_SMTP_URL: "smtp://mailpit:1025"
     depends_on:
       postgres:
         condition: service_healthy
@@ -242,7 +242,7 @@ services:
       retries: 12
       start_period: 5s
     expose:
-      - '3000'
+      - "3000"
     mem_limit: 256m
     networks: [stack, delegation]
 
@@ -395,6 +395,8 @@ networks:
     ipam:
       config:
         - subnet: 172.30.91.0/24
+          # Dynamic addresses cannot claim the listener's static .2.
+          ip_range: 172.30.91.128/25
   stack:
 
 volumes:

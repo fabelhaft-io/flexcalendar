@@ -22,7 +22,10 @@ version or commit drift. Schema creation stays in the API migration chain.
   even if the authenticated DAV operation fails.
 - All delegation failures are `401`, `Unauthorized\n`, `Cache-Control: no-store`.
   Only coarse denial/DAV-failure codes are logged. The wrapper invokes Sabre's
-  method pipeline directly to avoid serializing exceptions containing event data.
+  method pipeline directly to serialize DAV preconditions and HTTP headers only, omitting exception
+  messages, classes and traces. Fixed denial reasons distinguish malformed headers,
+  unknown keys, signatures, skew, replay and unknown principals; exceptions log
+  `delegation_error` without their details.
 - Principal lookup/listing is restricted to the acting `public.users` row;
   principal data is read-only. ACL unauthenticated access is off and inaccessible
   nodes are hidden. Other users' homes/principals are 404. Ownership is Sabre's
@@ -66,4 +69,5 @@ ETag failures, home discovery, recurring-instance queries, sync-token changes,
 all delegation failures, public header indifference, isolation and nonce pruning.
 Its registry entry runs through `make verify-invariants` and `make verify`.
 The stack-dependent suite and image must be exercised outside the sandbox; its
-runtime and RSS budget have not yet been measured.
+warm `make test-caldav` run took 21 s in review 1, with CalDAV RSS 43 MB
+of its 256 MiB limit.

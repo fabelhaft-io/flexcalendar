@@ -113,6 +113,9 @@ final class ServiceTest extends TestCase
                 }
             }
         }
+        foreach (['server', 'x-powered-by', 'x-sabre-version'] as $name) {
+            self::assertArrayNotHasKey($name, $headers, 'Listener must not disclose versions');
+        }
         ksort($headers);
         return ['status' => (int) ($status[1] ?? 0), 'headers' => $headers, 'body' => (string) $response];
     }
@@ -156,10 +159,32 @@ final class ServiceTest extends TestCase
             self::assertSame('no-store', $denied['headers']['cache-control']);
             self::assertSame(1, $this->nonceCount(), 'Denied requests must leave no nonce rows');
         }
-        foreach (['/principals/' . $this->b . '/', '/calendars/' . $this->b . '/'] as $other) {
-            self::assertSame(404, $this->request('PROPFIND', $other, $prop, ['Depth' => '0'])['status']);
+        $missing = self::uuid();
+        foreach (['principals', 'calendars'] as $root) {
+            $denied = $this->request('PROPFIND', '/' . $root . '/' . $this->b . '/', $prop, ['Depth' => '0']);
+            $absent = $this->request('PROPFIND', '/' . $root . '/' . $missing . '/', $prop, ['Depth' => '0']);
+            self::assertSame($absent['status'], $denied['status']);
+            self::assertTrue($absent['body'] === $denied['body'], 'Other homes must be indistinguishable from absent homes');
         }
-        self::assertSame(404, $this->request('MKCALENDAR', '/calendars/' . $this->b . '/' . self::uuid() . '/')['status']);
+        $child = self::uuid();
+        $denied = $this->request('MKCALENDAR', '/calendars/' . $this->b . '/' . $child . '/');
+        $absent = $this->request('MKCALENDAR', '/calendars/' . $missing . '/' . $child . '/');
+        self::assertSame($absent['status'], $denied['status']);
+        self::assertTrue($absent['body'] === $denied['body'], 'Calendar creation must not disclose another home');
+        $calendarPath = $this->home() . $this->calendar . '/';
+        self::assertSame(201, $this->request('MKCALENDAR', $calendarPath)['status']);
+        $object = $calendarPath . self::uuid() . '.ics';
+        $event = $this->event();
+        self::assertSame(201, $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar'])['status']);
+        $absentObject = '/calendars/' . $missing . '/' . $this->calendar . '/' . basename($object);
+        foreach (['GET', 'PUT', 'DELETE', 'PROPFIND'] as $method) {
+            $body = $method === 'PUT' ? $event : ($method === 'PROPFIND' ? $prop : '');
+            $extra = $method === 'PUT' ? ['Content-Type' => 'text/calendar'] : ['Depth' => '0'];
+            $denied = $this->request($method, $object, $body, $extra, $this->sign($method, $object, $this->b));
+            $absent = $this->request($method, $absentObject, $body, $extra, $this->sign($method, $absentObject, $this->b));
+            self::assertSame($absent['status'], $denied['status']);
+            self::assertTrue($absent['body'] === $denied['body'], 'Other objects must be indistinguishable from absent objects');
+        }
         foreach (['/principals/', '/calendars/'] as $root) {
             foreach ([$this->a, $this->b] as $id) {
                 $r = $this->request('PROPFIND', $root, $prop, ['Depth' => '1'], $this->sign('PROPFIND', $root, $id));
@@ -178,6 +203,18 @@ final class ServiceTest extends TestCase
         $q = $this->dav->prepare('SELECT count(*) FROM public.delegation_nonces WHERE nonce = ?');
         $q->execute([$expired]);
         self::assertSame(0, (int) $q->fetchColumn());
+    }
+
+    public function testDatabaseDenialReasons(): void
+    {
+        $nonce = Delegation::encode(random_bytes(16));
+        $this->nonces[] = $nonce;
+        self::assertSame('accepted', Delegation::accept($this->dav, ['p' => $this->a, 'n' => $nonce]));
+        self::assertSame('replay', Delegation::accept($this->dav, ['p' => $this->a, 'n' => $nonce]));
+        $unknownNonce = Delegation::encode(random_bytes(16));
+        $this->nonces[] = $unknownNonce;
+        self::assertSame('unknown_principal', Delegation::accept($this->dav, ['p' => self::uuid(), 'n' => $unknownNonce]));
+        self::assertSame(1, $this->nonceCount());
     }
 
     public function testPublicHeaderIgnored(): void
@@ -226,7 +263,14 @@ final class ServiceTest extends TestCase
         $object = $path . self::uuid() . '.ics';
         $event = $this->event();
         self::assertSame(201, $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar', 'If-None-Match' => '*'])['status']);
-        self::assertSame(412, $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar', 'If-None-Match' => '*'])['status']);
+        $precondition = $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar', 'If-None-Match' => '*']);
+        self::assertSame(412, $precondition['status']);
+        self::assertSame('application/xml; charset=utf-8', $precondition['headers']['content-type']);
+        $error = new \DOMDocument();
+        self::assertTrue($error->loadXML($precondition['body']));
+        self::assertSame('If-None-Match', $error->getElementsByTagNameNS('http://sabredav.org/ns', 'header')->item(0)?->textContent);
+        self::assertSame(0, $error->getElementsByTagNameNS('http://sabredav.org/ns', 'message')->length);
+
         $get = $this->request('GET', $object);
         self::assertSame(200, $get['status']);
         self::assertTrue($get['body'] === $event, 'Calendar payload must round-trip');
