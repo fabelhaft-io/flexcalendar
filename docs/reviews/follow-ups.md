@@ -22,6 +22,11 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
   - point the SabreDAV PDO backends at the schema `sabredav` (E04-R01) and qualify the service's own reads as `public.users` and so on;
   - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`);
   - the compose `caldav` service already has `CALFLEX_DATABASE_URL` as `calflex_caldav` (E04-R02). That role has DML on all of `sabredav` and its sequences, DML on `caldav_changes` and `delegation_nonces`, `SELECT` on `public.users`, `calendars` and `calendar_members`, and `UPDATE (last_used_at)` on `device_credentials`; nothing else, `pgmigrations` included. A grant the service needs beyond that goes into its own migration.
+- **From E03-R01 review 1, for later requirements:**
+  - **E03-R09:** errors leave the service as SabreDAV's serialized `DAV:error` document (fix 3), so the guard's `<cf:private-skeleton-only/>` is an exception element. Its marker test puts the markers into rejected event bodies and scans responses and the CalDAV log: the `make test-caldav` log guard only sees canaries the service logs on purpose, and a mutation that logs exception messages survives it;
+  - **E05-R02:** reuse `server/caldav/tests/Fixtures/delegation-vectors.json`; sign the request-target exactly as sent; the API reaches `http://caldav-internal:8081`. A database outage or a missing schema answers 401 like a denial, so tell them apart in the log;
+  - **E03-R08:** until it lands, ownership is SabreDAV's `principaluri`. Another user's home answers 404 and `MKCALENDAR` into it 409, identical to an id that exists nowhere; keep that equivalence;
+  - **E08:** the `delegation` network's subnet `172.30.91.0/24` and the fixed address are dev-only; `CALFLEX_DELEGATION_KEYS` comes from the secret store in production.
 - **Migrations (E04-R01 review 3, E04-R02):**
   - whoever adds the first `down = false` migration: the "down to zero" cases in `migrate.test.mjs` and `schema.test.mjs` must stop at it;
   - `server/api/migrate.config.json` holds dashed keys only: node-pg-migrate 9.0.0 reads those from the file, lets the file override the command line, and takes `single-transaction` and `lock` from its CLI defaults (`true`), which the rollback cases guard;
