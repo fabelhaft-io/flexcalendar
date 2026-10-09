@@ -48,7 +48,7 @@ Three database roles:
 - `calflex_api` gets DML on the API's tables, but only `INSERT` and `SELECT` on `audit_log`, and nothing in the schema `sabredav`. The API reaches CalDAV data only through the CalDAV service.
 - `calflex_caldav` gets DML on the tables of the schema `sabredav`, and on `caldav_changes` and `delegation_nonces`. It gets `SELECT` on `public.users`, `public.calendars` and `public.calendar_members`, plus `UPDATE (last_used_at)` on `device_credentials` from Phase 4. SabreDAV's own `calendars` table has the same name in schema `sabredav`.
 
-Zitadel keeps its own database and role in the same cluster (ADR 0004). The local stack's services stop using the shared `caldav` bootstrap login that E02-R03 configured: the API connects as `calflex_api` and the CalDAV service as `calflex_caldav`, with dev-only defaults in `infra/dev/.env.example`.
+Zitadel keeps its own database in the same cluster (ADR 0004). Its database role is E08-R10; until that lands, the local stack runs Zitadel and the `zitadel-config` runner as the bootstrap login. The local stack's other services stop using the shared `caldav` bootstrap login that E02-R03 configured: the API connects as `calflex_api` and the CalDAV service as `calflex_caldav`, with dev-only defaults in `infra/dev/.env.example`.
 - Accept: FKs and unique constraints are in place; a test connects as each role and checks the grants above, including that `calflex_api` can't `UPDATE` or `DELETE` `audit_log` rows; inserting a Private calendar without `meta_envelope` fails.
 - Deps: E04-R01.
 

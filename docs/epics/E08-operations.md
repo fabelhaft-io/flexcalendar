@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1, then continuous. R06 (mail) in Phase 4; the KMS part of R01 and R09 in Phase 7; error reporting in Phase 8 (`04`) |
-| Status | R01 in progress (`human`). R02 waits for E02-R03, E02-R06 and E02-R09; R03 for R02; R04 for R02 and R01's buckets; R05 for R02; R07 for R02–R05 |
+| Status | R01 in progress (`human`). R02 waits for E02-R03, E02-R06 and E02-R09, and for the accepted evaluation of R10 (step 1); R03 for R02; R04 for R02 and R01's buckets; R05 for R02; R07 for R02–R05 |
 | Executor | `human` (accounts, DNS, money) + `agent` (config as code) |
 | Depends on | E02-R03, E02-R06, E02-R09; D-10, D-11, D-19, D-20 |
 | Spec | `02` § Hosting (sizing, runtime layout, backups), `05` risks 7, 8 and 11, CLAUDE.md risk 8 ("events lost = product dead") |
@@ -27,7 +27,7 @@ Create the VPS and DNS zone (Phase 1); the Firebase project, SMTP provider and A
 `infra/prod/` MUST deploy Caddy (automatic ACME TLS on 443), the CalDAV service, the API, workers, Zitadel with its login UI, and PostgreSQL 18 from one command, using the services that exist when it runs. The deployment is a Compose file run by rootless Podman as the `deploy` user, under a systemd user unit; no Docker daemon and no Kubernetes (`02` § Runtime layout).
 - **Images** are built in CI (E02-R06), pushed to GHCR and pinned by digest (D-19). The host pulls them with a read-only token.
 - **Secrets** come from the environment only. `make deploy` reads them through the password manager's CLI, so no secret file is written to the repo or left on the person's disk. `infra/prod/.env.example` lists every variable.
-- **Zitadel** is configured by applying the E02-R09 OpenTofu code.
+- **Zitadel** is configured by applying the E02-R09 OpenTofu code. How it connects to Postgres, and with which role, is whatever the ADR of E08-R10 decides; R02 deploys that, so R10's step 1 is accepted before R02 runs.
 - Accept, executed by the coordinator on staging (D-20): a clean VPS reaches a working deployment with `make deploy ENV=staging`; SSL Labs grade A; HSTS on.
 - Accept: the Caddyfile pins `acme_ca https://acme-v02.api.letsencrypt.org/directory` as a global option, so no other CA is ever tried (the CAA records for `flexcalendar.de` allow only Let's Encrypt, `02` § Hosting); a CI check fails on a deployable Caddyfile without the pin, or with a wildcard site address.
 - Accept, on staging: host setup is code and idempotent: it sets `net.ipv4.ip_unprivileged_port_start=80`, enables linger for `deploy`, and installs the systemd user unit; after a reboot the stack comes back without anyone logging in; `podman info` as `deploy` shows the memory controller, and a container's memory limit is enforced; Caddy logs the real client IP, not a gateway address.
@@ -89,3 +89,21 @@ Zitadel (D-03, ADR 0004) ships a major release about every quarter, each support
 The Tier 1 escrow key (D-10, E14-R01) MUST be protected against deletion and loss. An IAM policy denies `ScheduleKeyDeletion` and `DisableKey` to every principal except a break-glass role. The deletion waiting period is set to 30 days. A multi-Region replica key in a second EU region is created, or its absence is recorded as an accepted risk.
 - Accept: a test with the release service's role and the deploy role shows that both are denied deletion; a CloudTrail alert fires on any `ScheduleKeyDeletion` attempt.
 - Notes: losing this key loses every Tier 1 escrow copy, and no Postgres backup can restore them.
+
+### E08-R10 · Zitadel database role   `agent+review`
+Zitadel MUST NOT run as the cluster superuser. Since E04-R02 the API and the CalDAV service have their own roles, but the local stack still runs Zitadel and the `zitadel-config` runner (E02-R09) as the bootstrap login, a superuser. The IdP sees the login password (D-17) and parses the most untrusted input, so a compromise there would reach every database in the cluster, including the API's key and envelope tables.
+
+The requirement has two steps, in this order. **Nothing is implemented before step 1 is accepted.**
+
+1. **Evaluate the options.** Write the result as an ADR in `docs/adr/` with status `Proposed`; the owner accepts or amends it. The options, at least:
+   - **A separate startup sequence.** A one-off `zitadel init` with admin credentials (a job in the local stack, a step of `make deploy`), then `setup` and `start` as an app role without admin rights. This is the owner's leading hypothesis (2026-10-09), not a decision.
+   - **A pre-provisioned role and no admin at all.** The cluster bootstrap (`infra/dev/postgres/initdb/`, like E04-R02's roles) creates the database and a role that owns it, and `start-from-init` runs as that role only. Whether Zitadel's `init` passes without `CREATEROLE` is found out by running it.
+   - **The status quo** (`start-from-init` as superuser) with compensating controls only, as the baseline.
+
+   Criteria, measured on the pinned image where possible: the privileges at runtime; whether admin credentials stay in the Zitadel container; first-start reliability (at least 10 starts from an empty volume, the entrypoint race included); what a Zitadel upgrade needs from the role (`setup` on upgrade, E08-R08); which role writes the OpenTofu state schema `calflex_tofu` (D-11); secrets and their rotation (D-19); whether local, staging and production can share one shape; and the cost to developers (another `make dev-reset`).
+2. **Implement the accepted option.** The local stack and the E02-R09 runner first; E08-R02 deploys production the same way. `CONNECT` on both databases (`caldav`, `zitadel`) is revoked from `PUBLIC`, unless step 1 finds a reason not to.
+- Accept (step 1): the ADR lists the options with measured results (commands and outputs) and a recommendation, and the owner has accepted or amended it.
+- Accept (step 2): Zitadel and the runner connect as non-superusers; a test connects as Zitadel's role and shows it can't read objects of the `caldav` database and can't create roles or databases (or exactly what the ADR permits); `make dev` from an empty volume starts Zitadel 10 times in a row; `make seed` and `make token` still pass; `make verify` passes.
+- Accept, on staging, executed by the coordinator (D-20): Zitadel's first start and an upgrade rehearsal (R08) pass with the same sequence.
+- Deps: E04-R02 (the roles and the bootstrap), E02-R09.
+- Notes: not urgent (owner, 2026-10-09); until step 2 lands, `infra/dev/README.md` says that Zitadel uses the bootstrap login. As of v4.16.0, `start-from-init` runs init, setup and start on every start, and `zitadel init` needs a user that can create the database, see and create users and grant rights (its help text). Both are why the options differ.
