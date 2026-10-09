@@ -6,9 +6,9 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 (passed review 3, PR #38, Done once merged), E04-R02 (passed review 2, no PR yet), E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
-   - **Stacked by the owner's decision of 2026-10-09:** E04-R02 ran on top of `feat/E04-R01-migration-tooling`, assuming PR #38 is accepted. Its branch stays local until #38 is merged. #38 is squashed, so a plain `git merge main` would conflict on the hunks both requirements touch: after the merge the branch is rebased with `git rebase --onto main <E04-R01 tip>` (`19e0bbb`; never pushed before, so nothing is force-pushed), and only then pushed with its PR.
-   - E03-R01 waits for both merges. The owner's stacking decision covered E04-R02 only.
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 (Done, PR #38 merged 2026-10-09), E04-R02 (passed review 2, PR open), E03-R01 (`agent+review`), then E04-R03…R06 and E03-R02, R08 (`agent+review`), R09, R10.
+   - E04-R02 ran stacked on E04-R01's branch by the owner's decision of 2026-10-09. #38 was squashed to a commit with the same tree as the reviewed tip, so the branch was rebased with `git rebase --onto main 19e0bbb` before its first push (nothing force-pushed).
+   - E03-R01 waits for E04-R02's merge.
 2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 3. **E08**: R02, R03, R04, R05, R07, R08. Staging checks by the coordinator (D-20).
 4. **E15**: R01–R03.

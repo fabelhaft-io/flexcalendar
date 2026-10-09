@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | In progress: R01 ([`reviews/E04-R01.md`](../reviews/E04-R01.md)) and R02 ([`reviews/E04-R02.md`](../reviews/E04-R02.md)) passed review, Done once merged. Then R03–R06 |
+| Status | In progress: R01 Done ([PR #38](https://github.com/fabelhaft-io/flexcalendar/pull/38), 2026-10-09); R02 passed review ([`reviews/E04-R02.md`](../reviews/E04-R02.md)), Done once merged. Then R03–R06 |
 | Executor | `agent` |
 | Depends on | E02-R03; D-02, D-06, D-17, D-18, D-19 |
 | Spec | `04` Phase 1, ADR 0001, ADR 0003 |
