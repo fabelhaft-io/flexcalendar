@@ -42,6 +42,7 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
 - **E10-R02:** the app always sends PKCE S256 (`flutter_appauth` does by default). Zitadel v4.16 enforces the verifier when a challenge was sent, but it doesn't require PKCE from the public Android client (E02-R09 review 3).
 - **E08:**
   - production pins images by digest; the dev stack's image tags are no template for that;
+  - **R10 (Zitadel's database role, owner's decision of 2026-10-09, doc PR #42):** a separate requirement, not urgent. Evaluate the options first and write an ADR for the owner to accept; implement only then. A separate startup sequence (a one-off `zitadel init` with admin credentials, then `setup` and `start` as an app role) is the owner's leading hypothesis, not a decision. R02 waits for the accepted ADR. Until then Zitadel and the `zitadel-config` runner use the bootstrap login, a superuser, locally;
   - E04-R01's second Accept, "from the first production deploy on, CI also migrates a copy of the last released schema", has nothing to act on before the first release. Add the CI step with the first production deploy;
   - R02/R03 run `infra/zitadel` with `PG_CONN_STR` pointing at the instance's own Zitadel database (state in schema `calflex_tofu`, D-11) and `ZITADEL_ACCESS_TOKEN` from the password manager (E02-R09);
   - R03: staging's token-helper PAT expires 2030-01-01 and its account holds `IAM_LOGIN_CLIENT`, which is powerful; plan its rotation.
@@ -67,4 +68,4 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
 
 ## Open with the owner
 
-- **Zitadel's database role.** E04-R02's text says "Zitadel keeps its own database and role in the same cluster (ADR 0004)". Locally Zitadel and the `zitadel-config` runner use the bootstrap login `caldav`, the cluster superuser, on the database `zitadel`, and no requirement gives Zitadel a role of its own (E08 doesn't mention it). Which requirement owns it: E08-R02 for production, or a local-stack change before then?
+Nothing.
