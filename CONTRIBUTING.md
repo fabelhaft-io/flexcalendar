@@ -245,5 +245,9 @@ The full dev stack additionally requires the `podman compose` provider.
 
 Use `make migrate` to apply the API-owned migration chain (idempotent);
 `make migrate-down` rolls back one step and destroys data, for dev/test only.
-A local volume created by PostgreSQL 17 needs `make dev-reset` before 18 starts
-(the reset deletes all local data). Production rollback restores backups.
+A local volume created by PostgreSQL 17, or a PostgreSQL 18 volume from before
+E04-R02's role bootstrap, needs `make dev-reset` (deletes all local data).
+Only empty volumes run `infra/dev/postgres/initdb/20-roles.sql`; the API and
+CalDAV now use distinct service logins, and migrations use `calflex_migrate`.
+See `infra/dev/.env.example` for dev-only password variables. Production
+rollback restores backups.

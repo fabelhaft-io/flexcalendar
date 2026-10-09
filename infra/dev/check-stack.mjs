@@ -225,6 +225,26 @@ for (const name of [...interpolated].sort()) {
   check(`.env.example documents ${name}`, documented.has(name));
 }
 
+// Dedicated logins must not regress to the cluster bootstrap superuser.
+for (const [service, role, key] of [
+  ['api', 'calflex_api', 'CALFLEX_DATABASE_URL'],
+  ['caldav', 'calflex_caldav', 'CALFLEX_DATABASE_URL'],
+  ['migrate', 'calflex_migrate', 'CALFLEX_MIGRATE_DATABASE_URL'],
+]) {
+  check(`${service} connects as ${role}`, () =>
+    String(services[service]?.environment?.[key] ?? '').includes(`postgresql://${role}:`)
+      ? true : 'missing dedicated database login',
+  );
+}
+for (const name of ['CALFLEX_MIGRATE_PASSWORD', 'CALFLEX_API_PASSWORD', 'CALFLEX_CALDAV_PASSWORD']) {
+  check(`postgres supplies ${name} to role bootstrap`, name in (services.postgres?.environment ?? {}));
+}
+check('Postgres mounts the real role bootstrap read-only', () =>
+  (services.postgres?.volumes ?? []).includes('./postgres/initdb:/docker-entrypoint-initdb.d:ro')
+    ? true : 'missing initdb mount',
+);
+check('role bootstrap exists', (await read('postgres/initdb/20-roles.sql')).includes('CREATE ROLE calflex_migrate'));
+
 // --- the Caddyfile -----------------------------------------------------------
 
 const caddyfile = await read('Caddyfile');
