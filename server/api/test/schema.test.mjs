@@ -249,8 +249,188 @@ test('each login has exactly its table and schema grants; audit is append-only',
   });
 });
 
+test('calendar mode is an explicit ordered enum with a private-only Phase 1 gate', async () => {
+  await withSchema(async (client) => {
+    const column = (
+      await client.query(`SELECT udt_schema, udt_name, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'calendars' AND column_name = 'mode'`)
+    ).rows[0];
+    assert.deepEqual(column, {
+      udt_schema: 'public',
+      udt_name: 'calendar_mode',
+      is_nullable: 'NO',
+      column_default: null,
+    });
+    assert.deepEqual(
+      (
+        await client.query(`SELECT enumlabel FROM pg_enum
+          WHERE enumtypid = 'public.calendar_mode'::regtype ORDER BY enumsortorder`)
+      ).rows.map((row) => row.enumlabel),
+      ['private', 'shared', 'published'],
+    );
+    const { user } = await seed(client);
+    for (const mode of ['shared', 'published']) {
+      await assert.rejects(
+        client.query(
+          `INSERT INTO public.calendars (owner_id, mode, caldav_href, meta_epoch)
+          VALUES ($1, $2, $3, 1)`,
+          [user, mode, `/${mode}/`],
+        ),
+        { code: '23514', constraint: 'calendars_mode_private_only_check' },
+      );
+    }
+    await rejects(
+      client,
+      `INSERT INTO public.calendars (owner_id, mode, caldav_href, meta_epoch)
+      VALUES ('${user}', 'bogus', '/unknown/', 1)`,
+      '22P02',
+    );
+    await assert.rejects(
+      client.query(
+        `INSERT INTO public.calendars (owner_id, mode, caldav_href, meta_epoch)
+        VALUES ($1, 'private', '/missing-envelope/', 1)`,
+        [user],
+      ),
+      { code: '23514', constraint: 'calendars_meta_envelope_check' },
+    );
+    const check = (
+      await client.query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE conrelid = 'public.calendars'::regclass
+        AND conname = 'calendars_meta_envelope_check' AND contype = 'c'`)
+    ).rows[0].definition;
+    assert.equal(
+      check,
+      "CHECK (((mode = 'private'::calendar_mode) = (meta_envelope IS NOT NULL)))",
+    );
+  });
+});
+
+test('lifting only the Phase 1 gate preserves metadata envelope enforcement', async () => {
+  await withSchema(async (client) => {
+    const { user } = await seed(client);
+    await client.query(
+      'ALTER TABLE public.calendars DROP CONSTRAINT calendars_mode_private_only_check',
+    );
+    await client.query(
+      `INSERT INTO public.calendars (owner_id, mode, caldav_href, meta_epoch)
+      VALUES ($1, 'shared', '/shared/', 1)`,
+      [user],
+    );
+    for (const values of ["'shared', decode('01','hex')", "'private', NULL"]) {
+      await assert.rejects(
+        client.query(
+          `INSERT INTO public.calendars (owner_id, mode, meta_envelope, caldav_href, meta_epoch)
+          VALUES ($1, ${values}, '/invalid/', 1)`,
+          [user],
+        ),
+        { code: '23514', constraint: 'calendars_meta_envelope_check' },
+      );
+    }
+  });
+});
+
+test('API role can use the mode enum but cannot bypass the private-only gate', async () => {
+  await withSchema(async (owner, name) => {
+    const { user } = await seed(owner);
+    const client = new pg.Client(config(name, 'calflex_api'));
+    try {
+      await client.connect();
+      const inserted = await client.query(
+        `INSERT INTO public.calendars (owner_id, mode, meta_envelope, caldav_href, meta_epoch)
+        VALUES ($1, 'private', decode('01','hex'), '/api/', 1) RETURNING mode`,
+        [user],
+      );
+      assert.equal(inserted.rows[0].mode, 'private');
+      await assert.rejects(
+        client.query(
+          `INSERT INTO public.calendars (owner_id, mode, caldav_href, meta_epoch)
+          VALUES ($1, 'shared', '/api-shared/', 1)`,
+          [user],
+        ),
+        { code: '23514', constraint: 'calendars_mode_private_only_check' },
+      );
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+test('mode conversion preserves existing data and reverses to the original text check', async () => {
+  const { name, client } = await fresh();
+  try {
+    assert.equal(
+      migrate(name, ['up', '3']).status,
+      0,
+      'previous migrations failed',
+    );
+    const { calendar } = await seed(client);
+    assert.equal(migrate(name).status, 0, 'mode migration failed');
+    const readCalendar = async () =>
+      (
+        await client.query(
+          `SELECT mode, meta_epoch, meta_envelope = decode('01','hex') AS envelope_preserved
+          FROM public.calendars WHERE id = $1`,
+          [calendar],
+        )
+      ).rows[0];
+    const expected = {
+      mode: 'private',
+      meta_epoch: 1,
+      envelope_preserved: true,
+    };
+    assert.deepEqual(await readCalendar(), expected);
+    assert.equal(
+      migrate(name, ['down', '1']).status,
+      0,
+      'mode rollback failed',
+    );
+    assert.equal(
+      (
+        await client.query(`SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'calendars' AND column_name = 'mode'`)
+      ).rows[0].data_type,
+      'text',
+    );
+    assert.deepEqual(
+      (
+        await client.query(`SELECT conname, pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint WHERE conrelid = 'public.calendars'::regclass
+          AND contype = 'c' ORDER BY conname`)
+      ).rows,
+      [
+        {
+          conname: 'calendars_meta_envelope_check',
+          definition:
+            "CHECK (((mode = 'private'::text) = (meta_envelope IS NOT NULL)))",
+        },
+      ],
+    );
+    assert.equal(
+      (await client.query("SELECT to_regtype('public.calendar_mode') AS type"))
+        .rows[0].type,
+      null,
+    );
+    assert.deepEqual(await readCalendar(), expected);
+    assert.equal(migrate(name).status, 0, 'mode reapplication failed');
+    assert.equal(
+      (
+        await client.query(`SELECT udt_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'calendars' AND column_name = 'mode'`)
+      ).rows[0].udt_name,
+      'calendar_mode',
+    );
+    assert.deepEqual(await readCalendar(), expected);
+  } finally {
+    await client.end();
+  }
+});
+
 test('metadata envelope consistency, explicit mode, unique values and foreign keys', async () => {
   await withSchema(async (client) => {
+    await client.query(
+      'ALTER TABLE public.calendars DROP CONSTRAINT calendars_mode_private_only_check',
+    );
     const { user, calendar } = await seed(client);
     for (const values of [
       "'private', NULL",
