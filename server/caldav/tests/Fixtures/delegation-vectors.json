@@ -1,0 +1,32 @@
+[
+  {
+    "keyId": "vector",
+    "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "principal": "8b0e189c-43a5-4f1e-a810-5c4b5c021593",
+    "method": "GET",
+    "target": "/principals/",
+    "timestamp": 1791500000,
+    "nonce": "AAECAwQFBgcICQoLDA0ODw",
+    "header": "v=1; k=vector; p=8b0e189c-43a5-4f1e-a810-5c4b5c021593; t=1791500000; n=AAECAwQFBgcICQoLDA0ODw; s=pLWjjwYcwuSgf7PEhT5t0qaTHELoZAmOHpP0H7ze_e8"
+  },
+  {
+    "keyId": "vector",
+    "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "principal": "8b0e189c-43a5-4f1e-a810-5c4b5c021593",
+    "method": "PROPFIND",
+    "target": "/calendars/?a=1&b=%2F",
+    "timestamp": 1791500000,
+    "nonce": "AQIDBAUGBwgJCgsMDQ4PEA",
+    "header": "v=1; k=vector; p=8b0e189c-43a5-4f1e-a810-5c4b5c021593; t=1791500000; n=AQIDBAUGBwgJCgsMDQ4PEA; s=xSOJ7a4kuU6rJeDfZoyLfmJPr9LpJiz17bgsYXovFNg"
+  },
+  {
+    "keyId": "vector",
+    "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "principal": "8b0e189c-43a5-4f1e-a810-5c4b5c021593",
+    "method": "PUT",
+    "target": "/calendars/a/event%20one.ics",
+    "timestamp": 1791500000,
+    "nonce": "AgMEBQYHCAkKCwwNDg8QEQ",
+    "header": "v=1; k=vector; p=8b0e189c-43a5-4f1e-a810-5c4b5c021593; t=1791500000; n=AgMEBQYHCAkKCwwNDg8QEQ; s=u7T_7IaB1H5WaXIg8Wq1VE98sR06SJR1gcXiVti1Fig"
+  }
+]

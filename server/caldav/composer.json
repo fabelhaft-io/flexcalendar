@@ -1,13 +1,14 @@
 {
   "name": "calendar-flex/caldav",
-  "description": "calendar-flex CalDAV service: SabreDAV 4.7+ embedded in a small PHP 8.4 service with the Postgres PDO backend (D-02). The service itself arrives with E03-R01.",
+  "description": "CalDAV service with internal delegated authentication",
   "type": "project",
   "license": "Apache-2.0",
   "require": {
     "php": "8.4.*",
     "ext-json": "*",
     "ext-pdo": "*",
-    "ext-pdo_pgsql": "*"
+    "ext-pdo_pgsql": "*",
+    "sabre/dav": "4.7.1"
   },
   "config": {
     "platform": {
@@ -27,10 +28,20 @@
   "scripts": {
     "format:check": "php-cs-fixer fix --dry-run --using-cache=no --config=.php-cs-fixer.php",
     "lint": [
-      "@php -l public/index.php",
-      "@php -l .php-cs-fixer.php"
+      "@php -l .php-cs-fixer.php",
+      "find src public internal tests -name '*.php' -print0 | xargs -0 -n1 php -l"
     ],
-    "typecheck": "phpstan analyse --no-progress --level=6 public",
-    "test": "@php -r \"if (!is_dir('tests')) { echo 'caldav: no registered unit tests yet; pass', PHP_EOL; } else { passthru('vendor/bin/phpunit --no-configuration --do-not-cache-result tests', \\$code); exit(\\$code); }\""
+    "typecheck": "phpstan analyse --no-progress --level=6 src public internal tests",
+    "test": "phpunit --no-configuration --do-not-cache-result tests/Unit"
+  },
+  "autoload": {
+    "psr-4": {
+      "Calflex\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Calflex\\Tests\\": "tests/"
+    }
   }
 }

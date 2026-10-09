@@ -178,17 +178,15 @@ services:
     networks:
       - stack
 
-  # The CalDAV service (D-02). The container currently runs the PHP 8.4
-  # skeleton in server/caldav/, which answers liveness only; E03-R01 replaces
-  # its body with the SabreDAV service. The point of running it now is that the
-  # stack, the routing and the URL are real from day one.
+  # CalDAV: public denial/liveness and network-confined delegated listener.
   caldav:
     build:
       context: ../..
       dockerfile: server/caldav/Dockerfile
     restart: unless-stopped
     environment:
-      CALFLEX_DATABASE_URL: "postgresql://calflex_caldav:${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
+      CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
+      CALFLEX_DATABASE_URL: 'postgresql://calflex_caldav:${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
     depends_on:
       postgres:
         condition: service_healthy
@@ -204,10 +202,13 @@ services:
       retries: 12
       start_period: 5s
     expose:
-      - "8080"
+      - '8080'
     mem_limit: 256m
     networks:
-      - stack
+      stack:
+      delegation:
+        ipv4_address: 172.30.91.2
+        aliases: [caldav-internal]
 
   # The API service (D-01). Like CalDAV, the container runs the skeleton in
   # server/api/ until E05-R01 builds the Fastify facade on it.
@@ -217,14 +218,15 @@ services:
       dockerfile: server/api/Dockerfile
     restart: unless-stopped
     environment:
-      PORT: "3000"
+      PORT: '3000'
       # Wiring for E05-R01. The API never decrypts and stores no event content
       # (INV-01, INV-07), and the login password never feeds a key derivation
       # (INV-12).
-      CALFLEX_DATABASE_URL: "postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
-      CALFLEX_OIDC_ISSUER: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
-      CALFLEX_CALDAV_ORIGIN: "https://caldav.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
-      CALFLEX_SMTP_URL: "smtp://mailpit:1025"
+      CALFLEX_DATABASE_URL: 'postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
+      CALFLEX_OIDC_ISSUER: 'https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}'
+      CALFLEX_CALDAV_ORIGIN: 'http://caldav-internal:8081'
+      CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
+      CALFLEX_SMTP_URL: 'smtp://mailpit:1025'
     depends_on:
       postgres:
         condition: service_healthy
@@ -240,10 +242,9 @@ services:
       retries: 12
       start_period: 5s
     expose:
-      - "3000"
+      - '3000'
     mem_limit: 256m
-    networks:
-      - stack
+    networks: [stack, delegation]
 
   # One migration chain, owned by the API; only started by make migrate.
   migrate:
@@ -370,7 +371,30 @@ services:
     mem_limit: 256m
     networks: [stack]
 
+  caldav-test:
+    profiles: [test]
+    build:
+      context: ../..
+      dockerfile: server/caldav/Dockerfile
+      target: test
+    environment:
+      CALFLEX_CALDAV_TEST_ORIGIN: http://caldav-internal:8081
+      CALFLEX_PUBLIC_TEST_ORIGIN: http://caldav:8080
+      CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
+      CALFLEX_API_TEST_DATABASE_URL: 'postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
+      CALFLEX_DATABASE_URL: 'postgresql://calflex_caldav:${CALFLEX_CALDAV_PASSWORD:-calflex_caldav_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
+    depends_on:
+      caldav:
+        condition: service_healthy
+    mem_limit: 256m
+    networks: [stack, delegation]
+
 networks:
+  delegation:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.91.0/24
   stack:
 
 volumes:

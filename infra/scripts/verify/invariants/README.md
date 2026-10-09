@@ -4,7 +4,7 @@ Named `.json` files contain a nonempty array of command argument arrays. Checks
 run from the repository root, in filename order, inherit the local stack
 environment, and must exit nonzero on failure. Do not put secrets or event content
 in registrations or output. `make verify-invariants` executes this registry;
-`make verify` includes it after the package gates. These two checks need no stack.
+`make verify` includes it after the package gates. The INV-05 and INV-07 checks need no stack. E03-R01 needs the local stack.
 
 ## E02-R05 checks
 
@@ -70,3 +70,9 @@ make verify-invariants
 ```
 
 INV-06 remains deferred to E07-R04, where the push payload builder is added.
+
+## E03-R01
+
+`E03-R01.json` runs `make test-caldav`: migrates, builds the one-off PHPUnit
+test image, exercises the internal listener and rejects canaries in service logs.
+This requires rootless Podman outside the agent sandbox.

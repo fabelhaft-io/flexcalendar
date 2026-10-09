@@ -99,7 +99,9 @@ for (const [name, service] of Object.entries(services)) {
   if (dockerfile === undefined) continue;
   const text = await readFile(path.join(repository, dockerfile), 'utf8');
   for (const [, sources] of text.matchAll(/^COPY\s+(?!--from)(.+)$/gm)) {
-    for (const source of sources.trim().split(/\s+/).slice(0, -1)) {
+    const tokens = sources.trim().split(/\s+/);
+    if (tokens.some((token) => token.startsWith('--from='))) continue;
+    for (const source of tokens.filter((token) => !token.startsWith('--')).slice(0, -1)) {
       check(`${name}: the Dockerfile copies ${source}, which exists`, await exists(path.join(repository, source)));
     }
   }
@@ -307,6 +309,56 @@ check('`make dev` brings the stack up and waits for it', () =>
 
 check('`make seed` runs the one-shot seed service', () =>
   /^\t\$\(COMPOSE\) --profile seed run --rm seed$/m.test(makefile) ? true : 'no seed run',
+);
+
+// E03-R01 trust-boundary structure (runtime isolation is tested on the stack).
+const caldavConfig = await readFile(
+  path.join(repository, 'server/caldav/Caddyfile'),
+  'utf8',
+);
+check(
+  'FrankenPHP uses classic mode',
+  !/\bworker\b/i.test(withoutComments(caldavConfig)),
+);
+check('FrankenPHP caps PHP threads', /num_threads\s+4/.test(caldavConfig));
+check(
+  'internal listener binds its dedicated address',
+  /:8081\s*\{\s*bind\s+172\.30\.91\.2/.test(caldavConfig),
+);
+const networkNames = (service) =>
+  Array.isArray(service?.networks)
+    ? service.networks
+    : Object.keys(service?.networks ?? {});
+check(
+  'only API, CalDAV and test join delegation network',
+  Object.entries(services)
+    .filter(([, service]) => networkNames(service).includes('delegation'))
+    .map(([name]) => name)
+    .sort()
+    .join(',') === 'api,caldav,caldav-test',
+);
+check(
+  'CalDAV has the internal static address',
+  services.caldav?.networks?.delegation?.ipv4_address === '172.30.91.2',
+);
+check(
+  'dedicated network subnet matches bind',
+  compose.networks?.delegation?.ipam?.config?.[0]?.subnet === '172.30.91.0/24',
+);
+check(
+  'CalDAV publishes no host port',
+  (services.caldav?.ports ?? []).length === 0,
+);
+check(
+  'Caddy never routes internal listener',
+  !/8081|caldav-internal/.test(withoutComments(caddyfile)),
+);
+check(
+  'every public virtual host drops delegation headers',
+  (
+    withoutComments(caddyfile).match(/request_header -X-Calflex-Principal/g) ??
+    []
+  ).length === 4,
 );
 
 // --- verdict -----------------------------------------------------------------

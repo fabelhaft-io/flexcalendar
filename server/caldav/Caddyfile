@@ -1,0 +1,18 @@
+{
+	admin off
+	auto_https off
+	frankenphp {
+		num_threads 4
+	}
+}
+:8080 {
+	root * /app/public
+	rewrite * /index.php
+	php
+}
+:8081 {
+	bind 172.30.91.2
+	root * /app/internal
+	rewrite * /index.php
+	php
+}

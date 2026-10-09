@@ -200,3 +200,17 @@ admin account, users, principals, addressbooks or locks are imported.
 `make verify` runs API component tests against their own disposable Postgres 18
 container, independent of the local stack. From the first production release,
 CI must also migrate a copy of the last released schema (E08 follow-up).
+
+### Delegated CalDAV (E03-R01)
+
+`caldav:8080` is the public denial/liveness listener. The API uses
+`http://caldav-internal:8081` on the dedicated `delegation` network, bound to
+`172.30.91.2` (subnet `172.30.91.0/24`). If that subnet conflicts with your local
+networks, update both Compose IPAM/static address and `server/caldav/Caddyfile`
+and the structural checks together. Never publish 8081 or route it via Caddy.
+`CALFLEX_DELEGATION_KEYS` has a development-only default; production injects
+rotatable keys from the secret store, never reuses this value.
+
+`make test-caldav` applies migrations and runs the profile `test` service built
+from the PHPUnit image stage, then checks CalDAV logs for leakage. Run twice
+against the local stack; `composer test` intentionally runs host unit tests only.

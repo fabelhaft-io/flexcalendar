@@ -1,28 +1,28 @@
-# --- calendar-flex CalDAV service: local development image (E02-R03) ---------
-#
-# `make dev` builds this; production images are built in CI, pinned by digest
-# and owned by E08.
-#
-# PHP 8.4, per D-02. The body is the skeleton in public/ until E03-R01, which
-# also adds `composer install` for SabreDAV and replaces the built-in server
-# with a real SAPI (the runtime layout in `docs/02-technology-choices.md`
-# suggests FrankenPHP in classic mode — never worker mode, SabreDAV is written
-# for one request per process lifetime).
-#
-#   dockerfile: server/caldav/Dockerfile
-#   context:    ../..   (the repository root, see infra/dev/compose.yaml)
-
-FROM php:8.4-cli-alpine
-
+# Classic request lifecycle, never persistent PHP application state.
+FROM docker.io/library/composer:2.10 AS composer
+FROM dunglas/frankenphp:1.13.0-php8.4.26-alpine AS base
+RUN install-php-extensions pdo_pgsql \
+    && addgroup -g 10001 calflex && adduser -D -u 10001 -G calflex calflex \
+    && mkdir -p /app /tmp/calflex-data /tmp/calflex-config \
+    && chown -R calflex:calflex /app /tmp/calflex-data /tmp/calflex-config
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 WORKDIR /app
-# The service directory as it stands: composer.json, README.md and public/.
-COPY server/caldav/ ./
-
-# Nothing in the skeleton writes to disk, and the built-in server needs no
-# privileges, so it never runs as root inside the container either.
-USER nobody
-
-EXPOSE 8080
-# `php -S` serves every request through the router script, so CalDAV methods
-# reach PHP as well once E03-R01 implements them.
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "public", "public/index.php"]
+ENV XDG_DATA_HOME=/tmp/calflex-data XDG_CONFIG_HOME=/tmp/calflex-config
+USER calflex
+FROM base AS dependencies
+COPY --chown=calflex:calflex server/caldav/composer.json server/caldav/composer.lock ./
+RUN composer install --no-dev --no-interaction --no-scripts
+COPY --chown=calflex:calflex server/caldav/src ./src
+COPY --chown=calflex:calflex server/caldav/public ./public
+COPY --chown=calflex:calflex server/caldav/internal ./internal
+COPY --chown=calflex:calflex server/caldav/Caddyfile ./Caddyfile
+RUN composer dump-autoload --no-dev --classmap-authoritative
+FROM dependencies AS test
+RUN composer install --no-interaction --no-scripts
+COPY --chown=calflex:calflex server/caldav/tests ./tests
+COPY --chown=calflex:calflex server/api/sabredav/record.json /app/schema-record.json
+RUN composer dump-autoload
+ENTRYPOINT ["php", "vendor/bin/phpunit", "--no-configuration", "--do-not-cache-result", "tests/Integration"]
+FROM dependencies AS runtime
+EXPOSE 8080 8081
+ENTRYPOINT ["frankenphp", "run", "--config", "/app/Caddyfile", "--adapter", "caddyfile"]

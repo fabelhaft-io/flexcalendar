@@ -109,3 +109,13 @@ migrate: ## Apply pending migrations (starts only Postgres; idempotent)
 migrate-down: ## Destructive dev-only rollback of ONE migration
 	$(COMPOSE) up --detach --wait postgres
 	$(COMPOSE) --profile migrate run --build --rm -T migrate node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL -f migrate.config.json
+
+.PHONY: test-caldav
+
+test-caldav: migrate ## Test internal CalDAV protocol/auth and check redacted logs
+	@status=0; $(COMPOSE) --profile test run --build --rm -T caldav-test || status=$$?; \
+	logs=$$(mktemp); \
+	if ! $(COMPOSE) logs caldav >"$$logs" 2>&1; then rm -f "$$logs"; exit 1; fi; \
+	if grep -qE 'CALFLEX_(REJECTED_HEADER|REJECTED_BODY|EVENT_CONTENT)_CANARY' "$$logs"; then \
+		printf 'CalDAV logs leaked test canary data\n' >&2; status=1; \
+	fi; rm -f "$$logs"; exit $$status
