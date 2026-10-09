@@ -179,7 +179,8 @@ only `device_credentials.last_used_at` updates). Their dev-only passwords are
 `CALFLEX_CALDAV_PASSWORD`; defaults are in `.env.example`. URI-encode passwords
 in connection URLs. Roles are provisioned by bootstrap, never migrations.
 Zitadel and its configuration runner still use the separate `zitadel` database
-and the bootstrap login locally; no requirement gives Zitadel its own role yet.
+and the bootstrap login locally, a superuser. A role of its own is E08-R10 (an
+evaluation of the options first, then the implementation).
 
 E04-R02 stores calendar metadata opaquely and creates no name/colour columns.
 The metadata-envelope check requires it exactly for Private calendars. The
