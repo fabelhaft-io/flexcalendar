@@ -17,6 +17,14 @@
     "ext-pdo_pgsql": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
     "ext-phar": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
     "ext-tokenizer": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
-    "ext-xmlwriter": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography."
+    "ext-xmlwriter": "Standard PHP parsing, encoding, database or archive/runtime facility; not event-content cryptography.",
+    "ext-ctype": "SabreDAV character classification; not content crypto.",
+    "ext-curl": "sabre/http HTTP transport; no envelope decryption.",
+    "ext-date": "SabreDAV calendar timestamps and vobject recurrence; no content crypto.",
+    "ext-pcre": "SabreDAV protocol validation with regular expressions.",
+    "ext-simplexml": "SabreDAV XML protocol parsing.",
+    "ext-spl": "PHP collections and iterators used by SabreDAV.",
+    "ext-xmlreader": "sabre/xml streaming protocol parser.",
+    "lib-libxml": "Underlying XML protocol parsing library."
   }
 }

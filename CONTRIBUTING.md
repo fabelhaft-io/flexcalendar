@@ -241,7 +241,10 @@ log event content or secrets, including from corpus fixtures.
 ability to pull `docker.io/library/postgres:18-alpine` and publish an ephemeral
 loopback port. The API component suite creates its own disposable PostgreSQL
 container and fresh databases; it fails, rather than skips, without Podman.
-The full dev stack additionally requires the `podman compose` provider.
+`make verify` also requires the `podman compose` provider: `verify-invariants`
+runs `make test-caldav` against the local stack. That target migrates the database,
+builds and runs the one-off CalDAV integration suite (delegation, isolation, CRUD,
+recurrence and sync), then checks service logs for test canary leaks.
 
 Use `make migrate` to apply the API-owned migration chain (idempotent);
 `make migrate-down` rolls back one step and destroys data, for dev/test only.

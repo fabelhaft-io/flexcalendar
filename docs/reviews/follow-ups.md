@@ -6,7 +6,7 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 and E04-R02 (Done, PRs #38 and #41, 2026-10-09), E04-R03 (Done, PR #44, 2026-10-09), E03-R01 (`agent+review`, Ready), E04-R04 (passed review, PR #46, 2026-10-10), then E04-R05, R06 (Ready) and E03-R02, R08 (`agent+review`), R09, R10.
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 and E04-R02 (Done, PRs #38 and #41, 2026-10-09), E04-R03 (Done, PR #44, 2026-10-09), E04-R04 (Done, PR #46, 2026-10-10), E03-R01 (`agent+review`, passed review, PR #45, 2026-10-10), then E04-R05, R06 (Ready) and E03-R02, R08 (`agent+review`), R09, R10.
    - E04-R05 and R06 each add migrations and extend `schema.test.mjs`, so they run one after another, each after the previous merge. E03-R01 can run beside one of them only if their `--paths` don't overlap (`infra/dev/compose.yaml`, `Makefile`, `CONTRIBUTING.md`).
 2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 3. **E08**: R02, R03, R04, R05, R07, R08, and R10 (Zitadel's database role: not urgent, but its step 1, an ADR the owner accepts, comes before R02). Staging checks by the coordinator (D-20).
@@ -16,12 +16,11 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
 
 - **Done 2026-10-06:** **"Verify required"** (E02-R06) is a required status check on `main`, in the ruleset "my main my rules" (GitHub Actions app only). The ruleset's one-approval rule is unchanged.
 
-- **E03-R01:**
-  - the CalDAV image installs `pdo_pgsql`;
-  - add `sabre/dav` to `composer.json` and `composer.lock` (the lock exists since E02-R04, with the dev tools only), at 4.7.1, the tag whose scripts E04-R01 imports. The Composer package has no `examples/` directory, so the lock can't be compared with the scripts directly: the Accept line checks `composer.lock`'s version and source reference against the record E04-R01 commits (`server/api/sabredav/record.json`: `tag` and `commit`). `composer require sabre/dav:4.7.1` takes the commit `f36f002dce082e1d425c4a0dc8c71a6b176c3b07`;
-  - point the SabreDAV PDO backends at the schema `sabredav` (E04-R01) and qualify the service's own reads as `public.users` and so on;
-  - replace the `php -S` skeleton (FrankenPHP in classic mode, never worker mode, `02`);
-  - the compose `caldav` service already has `CALFLEX_DATABASE_URL` as `calflex_caldav` (E04-R02). That role has DML on all of `sabredav` and its sequences, DML on `caldav_changes` and `delegation_nonces`, `SELECT` on `public.users`, `calendars` and `calendar_members`, and `UPDATE (last_used_at)` on `device_credentials`; nothing else, `pgmigrations` included. A grant the service needs beyond that goes into its own migration.
+- **From the E03-R01 reviews, for later requirements** (R01 itself is in PR #45):
+  - **E03-R09:** errors leave the service as SabreDAV's serialized `DAV:error` document (`Service::errorResponse`, E03-R01), so the guard's `<cf:private-skeleton-only/>` is an exception element. Its marker test puts the markers into rejected event bodies and scans responses and the CalDAV log: the `make test-caldav` log guard only sees canaries the service logs on purpose, and a mutation that logs exception messages survives it;
+  - **E05-R02:** reuse `server/caldav/tests/Fixtures/delegation-vectors.json`; sign the request-target exactly as sent; the API reaches `http://caldav-internal:8081`. A database outage or a missing schema answers 401 like a denial on the wire; the service log tells them apart (`delegation_error` against `delegation_denied <reason>`);
+  - **E03-R08:** until it lands, ownership is SabreDAV's `principaluri`. Another user's home answers 404 and `MKCALENDAR` into it 409, identical to an id that exists nowhere; keep that equivalence;
+  - **E08:** the `delegation` network's subnet `172.30.91.0/24` and the fixed address are dev-only; `CALFLEX_DELEGATION_KEYS` comes from the secret store in production. The CalDAV service logs a `dav_failure` line for every DAV error, ordinary 404 and 412 included (66 lines in one test run); log only status 500 and above, or sample.
 - **Migrations (E04-R01 review 3, E04-R02):**
   - whoever adds the first `down = false` migration: the "down to zero" cases in `migrate.test.mjs` and `schema.test.mjs` must stop at it;
   - `server/api/migrate.config.json` holds dashed keys only: node-pg-migrate 9.0.0 reads those from the file, lets the file override the command line, and takes `single-transaction` and `lock` from its CLI defaults (`true`), which the rollback cases guard;

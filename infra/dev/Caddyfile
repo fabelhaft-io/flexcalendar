@@ -34,16 +34,19 @@
 # CalDAV — the source of truth every client talks to (CLAUDE.md). E03-R01 puts
 # the SabreDAV service behind this name.
 caldav.{$CALFLEX_DEV_DOMAIN:localhost} {
+	request_header -X-Calflex-Principal
 	reverse_proxy caldav:8080
 }
 
 # The REST facade for the project's own clients (E05-R01).
 api.{$CALFLEX_DEV_DOMAIN:localhost} {
+	request_header -X-Calflex-Principal
 	reverse_proxy api:3000
 }
 
 # Mailpit's web UI. Its SMTP port stays inside the stack.
 mailpit.{$CALFLEX_DEV_DOMAIN:localhost} {
+	request_header -X-Calflex-Principal
 	reverse_proxy mailpit:8025
 }
 
@@ -53,6 +56,7 @@ mailpit.{$CALFLEX_DEV_DOMAIN:localhost} {
 # is the core. Both live on the same host, so the login session cookie is
 # same-site.
 auth.{$CALFLEX_DEV_DOMAIN:localhost} {
+	request_header -X-Calflex-Principal
 	# The login UI answers its base path and everything under it. `/` sends a
 	# developer to `/ui/v2/login/`, and the login app's canonical path is the
 	# bare `/ui/v2/login` (it redirects the trailing slash away) — which the

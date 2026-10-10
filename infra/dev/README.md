@@ -20,7 +20,7 @@ make dev-reset  # stop it and delete the volumes (all local data)
 | `zitadel-api` | `ghcr.io/zitadel/zitadel:v4.16.0` | the identity provider: OIDC, JWT, the console (D-03, ADR 0004) | `https://auth.<domain>:<port>/` |
 | `zitadel-login` | `ghcr.io/zitadel/zitadel-login:v4.16.0` | Zitadel v4's login UI, its own container | `https://auth.<domain>:<port>/ui/v2/login/` |
 | `mailpit` | `axllent/mailpit:v1.31.4` | the SMTP sink invitations and mail land in (E03-R06, E05) | `https://mailpit.<domain>:<port>/`, SMTP on the internal `mailpit:1025` |
-| `caldav` | built from [`server/caldav/`](../../server/caldav/) | the CalDAV service (D-02) | `https://caldav.<domain>:<port>/` |
+| `caldav` | built from [`server/caldav/`](../../server/caldav/) | the CalDAV service (D-02); public host answers `401` except `/healthz` | `https://caldav.<domain>:<port>/` |
 | `api` | built from [`server/api/`](../../server/api/) | the REST facade for our own clients (D-01) | `https://api.<domain>:<port>/` |
 | `caddy` | `caddy:2.11-alpine` | the only published port; terminates TLS with its local CA | — |
 | `seed` | `node:24-alpine` | one-shot, profile `seed`: `make seed` | — |
@@ -111,17 +111,15 @@ E15 corpus.
 
 ## Placeholders until their epics land
 
-`caldav` and `api` run **skeletons**, so the stack, its URLs and its TLS are
-real from day one:
+`api` runs a **skeleton** until its REST facade lands:
 
 | Container | Today | Replaced by |
 |---|---|---|
-| `caldav` (PHP 8.4, `php -S` in the image) | `GET /healthz` and `GET /` answer; every other method is a deliberate `501` | E03-R01 (SabreDAV, a real SAPI, `composer install`) |
 | `api` (Node 24, Fastify) | `GET /healthz` and `GET /` answer; every other route is a `501` | E05-R01 (the REST facade over CalDAV) |
 
-Neither skeleton touches Postgres, Zitadel or event data, and neither is asked
-to: they exist so that Caddy's routing, the certificates and the URLs can be
-exercised before the services arrive.
+The API skeleton does not touch Postgres, Zitadel or event data. It exists so
+that Caddy's routing, the certificates and the URLs can be exercised before
+the REST facade arrives.
 
 ## Checking this directory
 
@@ -200,3 +198,17 @@ admin account, users, principals, addressbooks or locks are imported.
 `make verify` runs API component tests against their own disposable Postgres 18
 container, independent of the local stack. From the first production release,
 CI must also migrate a copy of the last released schema (E08 follow-up).
+
+### Delegated CalDAV (E03-R01)
+
+`caldav:8080` is the public denial/liveness listener. The API uses
+`http://caldav-internal:8081` on the dedicated `delegation` network, bound to
+`172.30.91.2` (subnet `172.30.91.0/24`). If that subnet conflicts with your local
+networks, update both Compose IPAM/static address and `server/caldav/Caddyfile`
+and the structural checks together. Never publish 8081 or route it via Caddy.
+`CALFLEX_DELEGATION_KEYS` has a development-only default; production injects
+rotatable keys from the secret store, never reuses this value.
+
+`make test-caldav` applies migrations and runs the profile `test` service built
+from the PHPUnit image stage, then checks CalDAV logs for leakage. Run twice
+against the local stack; `composer test` intentionally runs host unit tests only.
