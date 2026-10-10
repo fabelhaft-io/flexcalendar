@@ -34,6 +34,67 @@ const sources = new Set([
   '.svelte',
 ]);
 
+/** File types the UUIDv4 identifier tripwire reads (INV-03). */
+const identifierSources = new Set([
+  '.sql',
+  '.php',
+  '.mjs',
+  '.js',
+  '.ts',
+  '.dart',
+  '.kt',
+  '.java',
+  '.swift',
+  '.yaml',
+  '.yml',
+  '.json',
+]);
+
+/**
+ * Literal non-v4 UUID generator names (INV-03). A conservative tripwire, like
+ * INV-05: whole tokens only (letters, digits, underscores and hyphens delimit
+ * neither end of a token), so comments and string literals match and computed
+ * names do not.
+ * @type {[string, RegExp][]}
+ */
+const nonV4Generators = [
+  // Postgres 18's uuidv7() and the uuid-ossp extension's v1/v3/v5/v7 functions.
+  ['uuidv7()', /(?<![\w-])uuidv7(?![\w-])/i],
+  ['uuid_generate_v1()', /(?<![\w-])uuid_generate_v1(?![\w-])/i],
+  ['uuid_generate_v1mc()', /(?<![\w-])uuid_generate_v1mc(?![\w-])/i],
+  ['uuid_generate_v3()', /(?<![\w-])uuid_generate_v3(?![\w-])/i],
+  ['uuid_generate_v5()', /(?<![\w-])uuid_generate_v5(?![\w-])/i],
+  ['uuid_generate_v7()', /(?<![\w-])uuid_generate_v7(?![\w-])/i],
+  // The uuid package's non-v4 accessors: uuid.v7(), uuid/v7.
+  [
+    'uuid package v1/v3/v5/v6/v7 accessor',
+    /(?<![\w-])uuid[./]v[13567](?![\w-])/i,
+  ],
+  // The uuid package's non-v4 named imports, in ESM and CommonJS form.
+  [
+    'uuid package non-v4 named import',
+    /(?:import\s*\{[^}]*\bv[13567]\b[^}]*\}\s*from\s*['"]uuid['"])|(?:\{[^}]*\bv[13567]\b[^}]*\}\s*=\s*require\(\s*['"]uuid['"]\s*\))/i,
+  ],
+  // PHP ramsey/uuid static factories.
+  ['Uuid::uuid1', /(?<![\w-])Uuid::uuid1(?![\w-])/i],
+  ['Uuid::uuid3', /(?<![\w-])Uuid::uuid3(?![\w-])/i],
+  ['Uuid::uuid5', /(?<![\w-])Uuid::uuid5(?![\w-])/i],
+  ['Uuid::uuid6', /(?<![\w-])Uuid::uuid6(?![\w-])/i],
+  ['Uuid::uuid7', /(?<![\w-])Uuid::uuid7(?![\w-])/i],
+  // Dart uuid package factories.
+  ['Uuid().v1()', /(?<![\w-])Uuid\(\)\.v1(?![\w-])/i],
+  ['Uuid().v3()', /(?<![\w-])Uuid\(\)\.v3(?![\w-])/i],
+  ['Uuid().v5()', /(?<![\w-])Uuid\(\)\.v5(?![\w-])/i],
+  ['Uuid().v6()', /(?<![\w-])Uuid\(\)\.v6(?![\w-])/i],
+  ['Uuid().v7()', /(?<![\w-])Uuid\(\)\.v7(?![\w-])/i],
+  // Bare uuidv1/uuidv6/uuidv7/uuid1/uuid6/uuid7 identifiers in any language.
+  ['uuidv1', /(?<![\w-])uuidv1(?![\w-])/i],
+  ['uuidv6', /(?<![\w-])uuidv6(?![\w-])/i],
+  ['uuid1', /(?<![\w-])uuid1(?![\w-])/i],
+  ['uuid6', /(?<![\w-])uuid6(?![\w-])/i],
+  ['uuid7', /(?<![\w-])uuid7(?![\w-])/i],
+];
+
 /** @param {string} root @param {string} path */
 function inputError(root, path) {
   return new Error(
@@ -91,6 +152,25 @@ export function recurrence(root) {
       throw new Error(
         `INV-05: forbidden client recurrence property name in ${relative(root, path)}; send an intent instead.`,
       );
+    }
+  }
+}
+
+/** Conservative tripwire for literal non-v4 UUID generators. @param {string} root */
+export function uuidIdentifiers(root) {
+  const paths = [
+    ...files(resolve(root, 'server'), root),
+    ...files(resolve(root, 'apps'), root),
+  ];
+  for (const path of paths) {
+    if (!identifierSources.has(extname(path))) continue;
+    const content = input(root, path, () => readFileSync(path, 'utf8'));
+    for (const [label, pattern] of nonV4Generators) {
+      if (pattern.test(content)) {
+        throw new Error(
+          `INV-03: non-v4 UUID generator ${label} in ${relative(root, path)}; generated IDs must be a random UUIDv4.`,
+        );
+      }
     }
   }
 }
@@ -281,6 +361,7 @@ if (
     const root = resolve(process.argv[3] ?? repo);
     if (check === 'INV-05') recurrence(root);
     else if (check === 'INV-07') serverDependencies(root);
+    else if (check === 'INV-03') uuidIdentifiers(root);
     else throw new Error('Unknown invariant check.');
     console.log(`${check}: pass`);
   } catch (error) {

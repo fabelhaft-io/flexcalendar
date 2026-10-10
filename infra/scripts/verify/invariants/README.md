@@ -4,10 +4,31 @@ Named `.json` files contain a nonempty array of command argument arrays. Checks
 run from the repository root, in filename order, inherit the local stack
 environment, and must exit nonzero on failure. Do not put secrets or event content
 in registrations or output. `make verify-invariants` executes this registry;
-`make verify` includes it after the package gates. The INV-05 and INV-07 checks need no stack. E03-R01 needs the local stack.
+`make verify` includes it after the package gates. The INV-03, INV-05 and INV-07
+checks need no stack. E03-R01 needs the local stack.
 
 ## E02-R05 checks
 
+- `INV-03.json`: conservative non-v4 UUID generator search across `server/` and
+  `apps/`. Reads a fixed file-type set — `.sql`, `.php`, `.mjs`, `.js`, `.ts`,
+  `.dart`, `.kt`, `.java`, `.swift`, `.yaml`, `.yml` and `.json` — so a Postgres
+  init script or a Compose file counts. Rejected literal names are the SQL
+  `uuidv7`, `uuid_generate_v1`, `uuid_generate_v1mc`, `uuid_generate_v3`,
+  `uuid_generate_v5` and `uuid_generate_v7`; the `uuid` package's non-v4 `v1`,
+  `v3`, `v5`, `v6` and `v7` accessors (`uuid.v7`, `uuid/v7`) and named imports
+  (ESM and CommonJS `require`); bare `uuidv1`/`uuidv6`/`uuidv7`/`uuid1`/`uuid6`/
+  `uuid7` identifiers; PHP `Uuid::uuid1`/`uuid3`/`uuid5`/`uuid6`/`uuid7`; and Dart
+  `Uuid().v1()`/`v3()`/`v5()`/`v6()`/`v7()`. Matches are whole tokens: letters,
+  digits, underscores and hyphens delimit neither end of a token, so
+  `my_uuidv7_free` is allowed while a real `uuidv7()` still fails. The v4 forms
+  `gen_random_uuid()`, `uuid_generate_v4()`, `crypto.randomUUID()`, `uuid.v4()`
+  and `Uuid().v4()` pass. Like INV-05 this is a code-search tripwire for literal
+  names, not a semantic detector: comments and string literals also match, there
+  are no suppression markers, and computed/obfuscated generator names still need
+  review. Installed dependencies and generated build/cache directories are
+  excluded, and symlinks are skipped, never followed. Diagnostics name the
+  repo-relative path and the matched rule, never a source line; an unreadable
+  file fails closed.
 - `INV-05.json`: conservative property-name search in `apps/*`,
   `packages/crypto_*` **and** `packages/crypto-*` (the web library uses the
   hyphenated layout). JavaScript/TypeScript, Dart, Kotlin, Java, Swift, Vue and

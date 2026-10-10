@@ -64,6 +64,41 @@ async function seed(client) {
   return { user, calendar };
 }
 
+/**
+ * Columns whose database-generated identity is not a random UUIDv4 (INV-03).
+ * SabreDAV's tables use upstream `SERIAL` keys and node-pg-migrate owns
+ * `pgmigrations`; both are exempt by name. Tables with a composite natural key
+ * (event_envelopes, user_keys, user_key_wraps, calendar_keys) have no generated
+ * column at all, so they are never asked for one.
+ * @param {pg.Client} client
+ */
+async function generatedIdOffenders(client) {
+  const { rows } = await client.query(
+    `SELECT table_schema, table_name, column_name, data_type, is_identity, column_default
+    FROM information_schema.columns
+    WHERE table_schema IN ('public', 'sabredav') ORDER BY table_schema, table_name, ordinal_position`,
+  );
+  return rows
+    .filter(
+      (column) =>
+        column.table_schema !== 'sabredav' &&
+        column.table_name !== 'pgmigrations',
+    )
+    .filter(
+      (column) =>
+        // GENERATED ... AS IDENTITY has a NULL column_default.
+        column.is_identity === 'YES' ||
+        /^nextval\(/.test(column.column_default ?? '') ||
+        (column.data_type === 'uuid' &&
+          column.column_default !== null &&
+          column.column_default !== 'gen_random_uuid()'),
+    )
+    .map((column) => ({
+      table: `${column.table_schema}.${column.table_name}`,
+      column: column.column_name,
+    }));
+}
+
 test('each login has exactly its table and schema grants; audit is append-only', async () => {
   await withSchema(async (owner, name) => {
     const { user } = await seed(owner);
@@ -556,6 +591,8 @@ test('metadata envelope consistency, explicit mode, unique values and foreign ke
       assert.equal(id.data_type, 'uuid');
       assert.equal(id.column_default, 'gen_random_uuid()');
     }
+    // Every generated column in the whole schema, not just the `id` columns.
+    assert.deepEqual(await generatedIdOffenders(client), []);
     assert.match(
       user,
       /^[0-9a-f-]{14}4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -565,6 +602,33 @@ test('metadata envelope consistency, explicit mode, unique values and foreign ke
       WHERE table_schema = 'public' AND table_name = 'calendars'`)
     ).rows.map((row) => row.column_name);
     assert.ok(!columns.some((column) => /name|colou?r/.test(column)));
+  });
+});
+
+test('non-v4 uuid defaults, SERIAL and IDENTITY offenders are caught; sabredav and pgmigrations are exempt', async () => {
+  await withSchema(async (client) => {
+    assert.deepEqual(await generatedIdOffenders(client), []);
+    // Built from parts so this fixture's literal generator name cannot trip the
+    // INV-03 source tripwire, which scans server/.
+    const nonV4 = ['uuid', 'v7()'].join('');
+    await client.query(
+      `ALTER TABLE public.users ADD COLUMN offender_uuid uuid DEFAULT ${nonV4}`,
+    );
+    await client.query(
+      'ALTER TABLE public.users ADD COLUMN offender_serial serial',
+    );
+    await client.query(
+      'ALTER TABLE public.users ADD COLUMN offender_identity bigint GENERATED ALWAYS AS IDENTITY',
+    );
+    // SabreDAV keeps its upstream SERIAL keys, and node-pg-migrate its own table.
+    await client.query(
+      `ALTER TABLE sabredav.calendars ADD COLUMN exempt_uuid uuid DEFAULT ${nonV4}`,
+    );
+    assert.deepEqual(await generatedIdOffenders(client), [
+      { table: 'public.users', column: 'offender_uuid' },
+      { table: 'public.users', column: 'offender_serial' },
+      { table: 'public.users', column: 'offender_identity' },
+    ]);
   });
 });
 

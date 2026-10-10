@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  chmodSync,
 } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -56,7 +57,7 @@ for (const fixture of fixtures) {
   });
 }
 
-for (const invariant of ['INV-05', 'INV-07']) {
+for (const invariant of ['INV-03', 'INV-05', 'INV-07']) {
   test(`${invariant} passes the current tree through its CLI`, () => {
     const result = run(invariant, resolve(directory, '../..'));
     assert.equal(result.status, 0);
@@ -311,3 +312,94 @@ for (const [path, content] of [
     );
   });
 }
+
+/** @param {string} label @param {string} path */
+const uuidDiagnostic = (label, path) =>
+  `INV-03: non-v4 UUID generator ${label} in ${path}; generated IDs must be a random UUIDv4.\n`;
+
+test('INV-03 decides on whole tokens and cannot let a longer identifier hide a real generator', () => {
+  tree(
+    { 'server/api/src/tokens.ts': 'export const my_uuidv7_free = 1;' },
+    (root) => {
+      const result = run('INV-03', root);
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, 'INV-03: pass\n');
+    },
+  );
+  tree(
+    {
+      'server/api/src/tokens.ts':
+        'export const my_uuidv7_free = 1; const id = uuidv7();',
+    },
+    (root) => {
+      const result = run('INV-03', root);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(
+        result.stderr,
+        uuidDiagnostic('uuidv7()', 'server/api/src/tokens.ts'),
+      );
+    },
+  );
+});
+
+test('INV-03 allows the v4 uuid-ossp function and flags a non-v4 sibling', () => {
+  tree({ 'server/api/db/x.sql': 'SELECT uuid_generate_v4();' }, (root) =>
+    assert.equal(run('INV-03', root).status, 0),
+  );
+  tree({ 'server/api/db/x.sql': 'SELECT uuid_generate_v1mc();' }, (root) => {
+    const result = run('INV-03', root);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(
+      result.stderr,
+      uuidDiagnostic('uuid_generate_v1mc()', 'server/api/db/x.sql'),
+    );
+  });
+});
+
+test('INV-03 flags a generator name in a comment, as a literal-name tripwire', () => {
+  tree({ 'server/api/src/legacy.ts': '// uuidv7() is forbidden' }, (root) => {
+    const result = run('INV-03', root);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(
+      result.stderr,
+      uuidDiagnostic('uuidv7()', 'server/api/src/legacy.ts'),
+    );
+  });
+});
+
+test('INV-03 ignores installed dependencies and skips symlinks', () => {
+  tree(
+    {
+      'server/api/node_modules/pkg/ids.ts': 'export const id = uuidv7();',
+      'apps/web/node_modules/pkg/ids.dart': 'final id = uuid1();',
+      'outside/leak.ts': 'export const id = uuid7();',
+    },
+    (root) => {
+      symlinkSync('../../outside/leak.ts', resolve(root, 'server/api/leak.ts'));
+      const result = run('INV-03', root);
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, 'INV-03: pass\n');
+      assert.equal(result.stderr, '');
+    },
+  );
+});
+
+test(
+  'INV-03 fails closed on an unreadable file',
+  { skip: typeof process.getuid === 'function' && process.getuid() === 0 },
+  () => {
+    tree({ 'server/api/locked.ts': 'export const id = 1;' }, (root) => {
+      chmodSync(resolve(root, 'server/api/locked.ts'), 0o000);
+      const result = run('INV-03', root);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(
+        result.stderr,
+        'Invariant check input error: server/api/locked.ts (no source data logged).\n',
+      );
+    });
+  },
+);
