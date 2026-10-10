@@ -29,7 +29,7 @@ version or commit drift. Schema creation stays in the API migration chain.
 - Principal lookup/listing is restricted to the acting `public.users` row;
   principal data is read-only. ACL unauthenticated access is off and inaccessible
   nodes are hidden. Other users' homes/principals are 404. Ownership is Sabre's
-  `principaluri`; membership integration and outbox remain R08 and R10.
+  `principaluri`; membership integration remains R08.
 - CalDAV, ACL, Sync, PropertyStorage and the already-authenticated identity plugin
   are installed. No Browser, Locks, Scheduling, Sharing, export or CardDAV plugin.
   Every PDO table and sequence is schema-qualified; CRUD integration exercises
@@ -99,3 +99,33 @@ Unit tests exercise the allow-list and injected modes. Integration GuardTest
 exercises delegated requests, persistence after denials, copy/move, collection
 and object properties, malformed-body redaction and marker responses/headers.
 `make test-caldav` also scans service logs for guard markers; run it twice.
+
+## Change outbox (E03-R10)
+
+Every successful `createCalendarObject`, `updateCalendarObject` and
+`deleteCalendarObject` appends one `public.caldav_changes` row holding the
+collection's UUID (the API's `public.calendars.id`, taken from the instance URI),
+`sync_token`, the object's `UID` and `created`/`updated`/`deleted`. Nothing else
+from the object is copied: the outbox carries no event content (INV-01).
+
+The row is written in **one transaction** with the object, SabreDAV's own
+`calendarchanges` row and the `calendars.synctoken` bump, on one connection. The
+E03-R09 guard checks the body first, and the collection must map to a
+`public.calendars` row; then `BEGIN`, `SELECT synctoken … FOR UPDATE` on the
+calendar row (serializing writers so two concurrent changes cannot record the
+same token), the parent write, the outbox insert, `COMMIT`; any throwable rolls
+back and is rethrown.
+
+`sync_token` is the number `sync-collection` reports for the change, i.e. the
+incremented `calendars.synctoken`, which is `calendarchanges.synctoken + 1` (that
+column keeps the pre-increment value N). E05-R08 and E07 hand this number to
+clients as "changed up to".
+
+A collection without a `public.calendars` row (or without a UUID URI) is refused
+before any write with `403` and a `cf:unmapped-collection` precondition, because
+the outbox row's foreign key could not be satisfied; the object write and the
+outbox row are never split. `deleteCalendarObject` reads the `UID` before the
+delete. The protected no-op `afterObjectWrite()` seam runs between the parent
+write and the outbox insert and is overridden only by `tests/KillingCalendars.php`
+so `tests/Integration/OutboxTest.php` can prove the all-or-nothing behaviour.
+`tests/OutboxWriter.php` is a test-only script, not part of the runtime image.
