@@ -55,4 +55,6 @@ and hit CalDAV directly (CLAUDE.md).
   dates, NULL for masters). TZIDs must resolve through a supplied `VTIMEZONE`
   or the caller's `ICAL.TimezoneService`; floating or unresolved times are
   rejected rather than assigned an incorrect envelope key.
+  The typecheck skips library declarations because `ical.js` 2.2.1's declarations
+  do not satisfy NodeNext; our own code remains checked.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.

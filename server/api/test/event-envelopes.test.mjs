@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import ICAL from 'ical.js';
 import { fresh, migrate } from './support/postgres.mjs';
 import { recurrenceKey } from '../src/recurrence-key.mjs';
 
-/** @param {(client: import('pg').Client, calendar: string, name: string) => Promise<void>} run */
-async function withEnvelopes(run) {
+/**
+ * @param {(client: import('pg').Client, calendar: string, name: string) => Promise<void>} run
+ * @param {string[]} [direction]
+ */
+async function withEnvelopes(run, direction) {
   const { name, client } = await fresh();
   try {
-    assert.equal(migrate(name).status, 0, 'migration failed');
+    assert.equal(migrate(name, direction).status, 0, 'migration failed');
     const user = (
       await client.query(`INSERT INTO public.users (idp_subject, handle, email)
         VALUES ('subject', 'Handle', 'test@example.invalid') RETURNING id`)
@@ -35,14 +39,15 @@ const envelope = Buffer.alloc(48, 7);
  * @param {string} calendar
  * @param {string | null} recurrence
  * @param {Buffer} [digest]
+ * @param {string} [eventUid]
  */
-function insert(client, calendar, recurrence, digest = hash) {
+function insert(client, calendar, recurrence, digest = hash, eventUid = uid) {
   return client
     .query(
       `INSERT INTO public.event_envelopes
       (calendar_id, uid, recurrence_id, envelope_sha256, epoch, envelope)
       VALUES ($1, $2, $3, $4, 1, $5)`,
-      [calendar, uid, recurrence, digest, envelope],
+      [calendar, eventUid, recurrence, digest, envelope],
     )
     .catch((error) => {
       // Postgres check failures include the entire row in error.detail. Keep
@@ -150,6 +155,63 @@ test('UTC and TZID representations collide on the same override key', async () =
   });
 });
 
+test('override keys distinguish UIDs and calendars but reject an identical key', async () => {
+  await withEnvelopes(async (client, calendar) => {
+    const recurrence = '20261012T080000Z';
+    const otherCalendar = (
+      await client.query(
+        `INSERT INTO public.calendars (owner_id, mode, caldav_href, meta_envelope, meta_epoch)
+        SELECT owner_id, mode, '/other/', meta_envelope, meta_epoch
+        FROM public.calendars WHERE id = $1 RETURNING id`,
+        [calendar],
+      )
+    ).rows[0].id;
+    await insert(client, calendar, recurrence);
+    await insert(client, calendar, recurrence, hash, 'other-stock-app-uid');
+    await insert(client, otherCalendar, recurrence);
+    await assert.rejects(insert(client, calendar, recurrence), {
+      code: '23505',
+      constraint: 'event_envelopes_key',
+    });
+    assert.equal(
+      (
+        await client.query(
+          'SELECT count(*)::int AS n FROM public.event_envelopes',
+        )
+      ).rows[0].n,
+      3,
+    );
+  });
+});
+
+test('sidecar columns have the pinned types, nullability and creation default', async () => {
+  await withEnvelopes(async (client) => {
+    const { rows } = await client.query(
+      `SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'event_envelopes'
+      ORDER BY ordinal_position`,
+    );
+    assert.deepEqual(
+      rows,
+      [
+        ['calendar_id', 'uuid', 'NO', null],
+        ['uid', 'text', 'NO', null],
+        ['recurrence_id', 'text', 'YES', null],
+        ['envelope_sha256', 'bytea', 'NO', null],
+        ['epoch', 'integer', 'NO', null],
+        ['envelope', 'bytea', 'NO', null],
+        ['created_at', 'timestamp with time zone', 'NO', 'now()'],
+      ].map(([column_name, data_type, is_nullable, column_default]) => ({
+        column_name,
+        data_type,
+        is_nullable,
+        column_default,
+      })),
+    );
+  });
+});
+
 test('hash length and recurrence encodings are enforced by named checks', async () => {
   await withEnvelopes(async (client, calendar) => {
     for (const length of [31, 33]) {
@@ -195,30 +257,38 @@ test('calendar deletion cascades to all envelope versions and overrides', async 
 });
 
 test('down removes only the sidecar table and up restores a usable table', async () => {
-  await withEnvelopes(async (client, calendar, name) => {
-    await insert(client, calendar, null);
-    assert.equal(
-      migrate(name, ['down', '1']).status,
-      0,
-      'down migration failed',
-    );
-    assert.equal(
-      (
-        await client.query(
-          "SELECT to_regclass('public.event_envelopes') AS table_name",
-        )
-      ).rows[0].table_name,
-      null,
-    );
-    assert.equal(migrate(name).status, 0, 'up migration failed');
-    await insert(client, calendar, null);
-    assert.equal(
-      (
-        await client.query(
-          'SELECT count(*)::int AS n FROM public.event_envelopes',
-        )
-      ).rows[0].n,
-      1,
-    );
-  });
+  const migrations = readdirSync(new URL('../migrations/', import.meta.url))
+    .filter((file) => file.endsWith('.mjs'))
+    .sort();
+  const position = migrations.indexOf('1791643469785_event-envelopes.mjs');
+  assert.ok(position >= 0, 'sidecar migration exists');
+  await withEnvelopes(
+    async (client, calendar, name) => {
+      await insert(client, calendar, null);
+      assert.equal(
+        migrate(name, ['down', '1']).status,
+        0,
+        'down migration failed',
+      );
+      assert.equal(
+        (
+          await client.query(
+            "SELECT to_regclass('public.event_envelopes') AS table_name",
+          )
+        ).rows[0].table_name,
+        null,
+      );
+      assert.equal(migrate(name).status, 0, 'up migration failed');
+      await insert(client, calendar, null);
+      assert.equal(
+        (
+          await client.query(
+            'SELECT count(*)::int AS n FROM public.event_envelopes',
+          )
+        ).rows[0].n,
+        1,
+      );
+    },
+    ['up', String(position + 1)],
+  );
 });

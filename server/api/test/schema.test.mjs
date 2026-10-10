@@ -366,7 +366,7 @@ test('mode conversion preserves existing data and reverses to the original text 
       'previous migrations failed',
     );
     const { calendar } = await seed(client);
-    assert.equal(migrate(name).status, 0, 'mode migration failed');
+    assert.equal(migrate(name, ['up', '1']).status, 0, 'mode migration failed');
     const readCalendar = async () =>
       (
         await client.query(
@@ -521,10 +521,14 @@ test('metadata envelope consistency, explicit mode, unique values and foreign ke
           [`public.${table}`],
         )
       ).rows;
-      assert.ok(
-        constraints.some((row) => row.contype === 'p'),
-        `${table} has a primary key`,
-      );
+      // event_envelopes uses its NULLS NOT DISTINCT key as identity; a primary
+      // key cannot cover its nullable recurrence_id column.
+      if (table !== 'event_envelopes') {
+        assert.ok(
+          constraints.some((row) => row.contype === 'p'),
+          `${table} has a primary key`,
+        );
+      }
       if (
         [
           'invitations',
