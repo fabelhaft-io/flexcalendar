@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 (R01, R02, R08, R09, R10; R04 is merged into R01); 4 (R03, R05, R06, R07), per ADR 0003 |
-| Status | In progress: R01 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E03-R01-sabredav-service-with-delegated-auth/docs/reviews/E03-R01.md), [PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), Done once merged; the other Phase 1 reqs follow R01 (R09 also needs E04-R03, Done). Phase 4 reqs wait for M1 |
+| Status | In progress: R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)) Done, 2026-10-10; R09 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E03-R09-mode-aware-write-guard/docs/reviews/E03-R09.md), [PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)), Done once merged; R02, R08 and R10 Ready, one at a time (they edit `server/caldav`). Phase 4 reqs wait for M1 |
 | Executor | `agent+review` (auth and ACL work: R01, R03, R07, R08), `agent` otherwise |
 | Depends on | E02-R03, E04-R01, E04-R02; D-02, D-05, D-18; D-04 for Phase 4 |
 | Spec | `01-architecture.md` § Storage, `02` § CalDAV Server and § Runtime layout, `03`, ADR 0001 § Private calendars — cryptography |
