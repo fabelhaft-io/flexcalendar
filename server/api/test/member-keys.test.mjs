@@ -52,10 +52,11 @@ const record = (client, calendar, user, epoch = 1, bytes = blob) =>
 
 /** @param {pg.Client} client */
 async function user(client) {
+  const subject = randomUUID();
   return (
     await client.query(
-      `INSERT INTO public.users (idp_subject, handle, email) VALUES ($1, 'Handle', 'test@example.invalid') RETURNING id`,
-      [randomUUID()],
+      `INSERT INTO public.users (idp_subject, handle, email) VALUES ($1, $2, $3) RETURNING id`,
+      [subject, `handle-${subject}`, `${subject}@example.invalid`],
     )
   ).rows[0].id;
 }
@@ -145,6 +146,10 @@ test('user keys are one 32-byte public pair per existing user', async () => {
       });
     }
     await keys(client, id);
+    await assert.rejects(
+      query(client, 'DELETE FROM public.users WHERE id = $1', [id]),
+      { code: '23503', constraint: 'user_keys_user_id_fkey' },
+    );
     const row = (
       await client.query('SELECT * FROM public.user_keys WHERE user_id = $1', [
         id,
@@ -169,6 +174,10 @@ test('wrap kinds exclude passwords and escrow stays gated until Phase 7', async 
     const id = await user(client);
     await keys(client, id);
     await wrap(client, id, 'recovery_code');
+    await assert.rejects(
+      query(client, 'DELETE FROM public.user_keys WHERE user_id = $1', [id]),
+      { code: '23503', constraint: 'user_key_wraps_user_id_fkey' },
+    );
     const row = (
       await client.query(
         'SELECT * FROM public.user_key_wraps WHERE user_id = $1',
@@ -230,6 +239,10 @@ test('CCK records belong to key-capable members and cascade with membership and 
     const cal = await calendar(client, first);
     for (const id of [first, second, noKeys]) await member(client, cal, id);
     await record(client, cal, first);
+    await assert.rejects(
+      query(client, 'DELETE FROM public.user_keys WHERE user_id = $1', [first]),
+      { code: '23503', constraint: 'calendar_keys_user_id_fkey' },
+    );
     const row = (
       await client.query(
         'SELECT * FROM public.calendar_keys WHERE calendar_id = $1 AND user_id = $2',
