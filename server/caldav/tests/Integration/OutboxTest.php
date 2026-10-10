@@ -6,9 +6,12 @@ namespace Calflex\Tests\Integration;
 
 use Calflex\Database;
 use Calflex\Delegation;
+use Calflex\GuardedCalendars;
 use Calflex\Tests\EventFixture;
 use Calflex\Tests\GuardCases;
 use Calflex\Tests\Signer;
+use Calflex\Tests\ThrowingCalendars;
+use Calflex\WriteGuard;
 use PHPUnit\Framework\TestCase;
 
 final class OutboxTest extends TestCase
@@ -363,6 +366,69 @@ final class OutboxTest extends TestCase
         self::assertSame($token, $this->synctoken(), 'Unexpected calendars.synctoken');
     }
 
+    /**
+     * A failing object write must close its own transaction on the test's own
+     * connection and propagate the failure, leaving no object, change or outbox row.
+     */
+    private function assertRolledBack(\Closure $write): void
+    {
+        $raised = null;
+        try {
+            $write();
+        } catch (\RuntimeException $exception) {
+            $raised = $exception;
+        }
+        self::assertNotNull($raised, 'A failing object write must propagate its exception');
+        self::assertSame('afterObjectWrite failed', $raised->getMessage());
+        self::assertFalse($this->dav->inTransaction(), 'A failed object write must roll its transaction back');
+    }
+
+    /**
+     * Run one writer with the kill seam on, and assert what its open transaction
+     * saw between the object write and the outbox insert: a transaction is open,
+     * SabreDAV's change row is in it, and the outbox row is not. The seam must
+     * report from inside the transaction and the process must die of SIGKILL.
+     *
+     * @param array{calendar: int, instance: int} $ids
+     * @return array{object: bool, etag: ?string, changes: int, outbox: int, transaction: bool}
+     */
+    private function killedBetweenWrites(array $ids, string $mode, string $uri, string $payload): array
+    {
+        $changes = $this->changeCount();
+        $outbox = $this->outboxCount();
+        $child = $this->writer($ids, $mode, true, $uri, $payload);
+        $this->assertKilled($child);
+        $state = $this->seam($child);
+        self::assertTrue($state['transaction'], 'The kill seam must run inside the write transaction');
+        self::assertSame($changes + 1, $state['changes'], 'The transaction must hold the sabredav.calendarchanges row');
+        self::assertSame($outbox, $state['outbox'], 'The outbox row must not exist yet inside the transaction');
+        return $state;
+    }
+
+    /**
+     * The one state line the kill seam prints before it dies, from the writer's own
+     * connection. It carries no event content: counts, the object URI and the etag.
+     *
+     * @param array{signaled: bool, termsig: int, exitcode: int, output: string} $child
+     * @return array{object: bool, etag: ?string, changes: int, outbox: int, transaction: bool}
+     */
+    private function seam(array $child): array
+    {
+        self::assertSame(1, preg_match('/\ASEAM (\{.*\})$/m', $child['output'], $matches), 'The kill seam must report one state line: ' . $child['output']);
+        $state = json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($state);
+        $etag = $state['etag'] ?? null;
+        $changes = $state['changes'] ?? null;
+        $outbox = $state['outbox'] ?? null;
+        return [
+            'object' => ($state['object'] ?? null) === true,
+            'etag' => is_string($etag) ? $etag : null,
+            'changes' => is_int($changes) ? $changes : -1,
+            'outbox' => is_int($outbox) ? $outbox : -1,
+            'transaction' => ($state['transaction'] ?? null) === true,
+        ];
+    }
+
     private static function payload(string $uid): string
     {
         return str_replace('UID:adf46a78-3c92-4c1e-ab04-7f791296e61e', 'UID:' . $uid, GuardCases::skeleton());
@@ -410,8 +476,12 @@ final class OutboxTest extends TestCase
         $uri = self::uuid() . '.ics';
         $payload = self::payload($uid);
 
-        // A create killed in the seam writes neither the object nor the outbox row.
-        $this->assertKilled($this->writer($ids, 'create', true, $uri, $payload));
+        // A create killed in the seam: the writer's transaction already holds the
+        // object and SabreDAV's change row, the outbox row is not written yet, and
+        // the process dies before the commit, so a second connection sees neither.
+        $seam = $this->killedBetweenWrites($ids, 'create', $uri, $payload);
+        self::assertTrue($seam['object'], 'The kill seam must run after the object write');
+        self::assertNotNull($seam['etag']);
         $this->assertState(0, 0, 0, $token, $uri);
 
         // The same create without the kill writes all four.
@@ -420,10 +490,14 @@ final class OutboxTest extends TestCase
         $this->assertChange($uid, 'created', $token);
         $created = $this->objectRow($uri);
         self::assertNotNull($created);
+        self::assertSame($created['etag'], $seam['etag'], 'The killed create staged the bytes the committed create stored');
 
-        // An update killed in the seam leaves the stored bytes and etag alone.
+        // An update killed in the seam already replaced the stored bytes and etag
+        // in its transaction, still without an outbox row, and rolls back on the kill.
         $updated = str_replace(str_repeat('a', 64), str_repeat('b', 64), $payload);
-        $this->assertKilled($this->writer($ids, 'update', true, $uri, $updated));
+        $seam = $this->killedBetweenWrites($ids, 'update', $uri, $updated);
+        self::assertTrue($seam['object'], 'The kill seam must run after the object write');
+        self::assertNotSame($created['etag'], $seam['etag'], 'The kill seam must see the new bytes, not the old ones');
         $this->assertState(1, 1, 1, $token, $uri);
         self::assertSame($created, $this->objectRow($uri));
 
@@ -432,10 +506,15 @@ final class OutboxTest extends TestCase
         $this->assertState(1, 2, 2, ++$token, $uri);
         $this->assertChange($uid, 'updated', $token);
         $current = $this->objectRow($uri);
+        self::assertNotNull($current);
         self::assertNotSame($created, $current);
+        self::assertSame($current['etag'], $seam['etag'], 'The killed update staged the bytes the committed update stored');
 
-        // A delete killed in the seam leaves the object in place.
-        $this->assertKilled($this->writer($ids, 'delete', true, $uri, ''));
+        // A delete killed in the seam already removed the object in its
+        // transaction, still without an outbox row, and rolls back on the kill.
+        $seam = $this->killedBetweenWrites($ids, 'delete', $uri, '');
+        self::assertFalse($seam['object'], 'The kill seam must run after the object row is gone');
+        self::assertNull($seam['etag']);
         $this->assertState(1, 2, 2, $token, $uri);
         self::assertSame($current, $this->objectRow($uri));
 
@@ -443,6 +522,68 @@ final class OutboxTest extends TestCase
         $this->assertCompleted($this->writer($ids, 'delete', false, $uri, ''));
         $this->assertState(0, 3, 3, ++$token, $uri);
         $this->assertChange($uid, 'deleted', $token);
+    }
+
+    public function testNestedTransactionIsRefusedWithoutWriting(): void
+    {
+        $this->collection();
+        $token = $this->synctoken();
+        $uri = self::uuid() . '.ics';
+        $payload = self::payload(self::uuid());
+        $backend = new GuardedCalendars($this->dav, WriteGuard::fromPdo($this->dav));
+
+        $this->dav->beginTransaction();
+        try {
+            $raised = null;
+            try {
+                $backend->createCalendarObject([$this->sabreCalendar, $this->sabreInstance], $uri, $payload);
+            } catch (\RuntimeException $exception) {
+                $raised = $exception;
+            }
+            self::assertNotNull($raised, 'An object write on an open transaction must be refused');
+            self::assertSame('CalDAV object writes must not nest transactions', $raised->getMessage());
+            self::assertTrue($this->dav->inTransaction(), 'The refusal must leave the caller transaction alone');
+            $this->assertState(0, 0, 0, $token, $uri);
+        } finally {
+            if ($this->dav->inTransaction()) {
+                $this->dav->rollBack();
+            }
+        }
+    }
+
+    public function testWriteFailureRollsBackTheTransaction(): void
+    {
+        $this->collection();
+        $ids = $this->ids();
+        $token = $this->synctoken();
+        $uri = self::uuid() . '.ics';
+        $payload = self::payload(self::uuid());
+        $calendarId = [$this->sabreCalendar, $this->sabreInstance];
+        $backend = new ThrowingCalendars($this->dav, WriteGuard::fromPdo($this->dav));
+
+        $this->assertRolledBack(function () use ($backend, $calendarId, $uri, $payload): void {
+            $backend->createCalendarObject($calendarId, $uri, $payload);
+        });
+        $this->assertState(0, 0, 0, $token, $uri);
+
+        // A committed create gives the update and the delete something to work on.
+        $this->assertCompleted($this->writer($ids, 'create', false, $uri, $payload));
+        $this->assertState(1, 1, 1, ++$token, $uri);
+        $created = $this->objectRow($uri);
+        self::assertNotNull($created);
+
+        $changed = str_replace(str_repeat('a', 64), str_repeat('b', 64), $payload);
+        $this->assertRolledBack(function () use ($backend, $calendarId, $uri, $changed): void {
+            $backend->updateCalendarObject($calendarId, $uri, $changed);
+        });
+        $this->assertState(1, 1, 1, $token, $uri);
+        self::assertSame($created, $this->objectRow($uri));
+
+        $this->assertRolledBack(function () use ($backend, $calendarId, $uri): void {
+            $backend->deleteCalendarObject($calendarId, $uri);
+        });
+        $this->assertState(1, 1, 1, $token, $uri);
+        self::assertSame($created, $this->objectRow($uri));
     }
 
     public function testConcurrentWritersGetDistinctTokens(): void

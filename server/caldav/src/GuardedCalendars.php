@@ -40,7 +40,7 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
         $this->begin($calendarId);
         try {
             $result = parent::createCalendarObject($calendarId, $objectUri, $calendarData);
-            $this->afterObjectWrite();
+            $this->afterObjectWrite($calendarId, $objectUri);
             $this->append($collection, $this->objectUid($calendarId, $objectUri), 'created', $calendarId);
             $this->pdo->commit();
             return $result;
@@ -57,7 +57,7 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
         $this->begin($calendarId);
         try {
             $result = parent::updateCalendarObject($calendarId, $objectUri, $calendarData);
-            $this->afterObjectWrite();
+            $this->afterObjectWrite($calendarId, $objectUri);
             $this->append($collection, $this->objectUid($calendarId, $objectUri), 'updated', $calendarId);
             $this->pdo->commit();
             return $result;
@@ -75,7 +75,7 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
             // The row is gone after the parent write, so read the UID before it.
             $uid = $this->objectUid($calendarId, $objectUri);
             parent::deleteCalendarObject($calendarId, $objectUri);
-            $this->afterObjectWrite();
+            $this->afterObjectWrite($calendarId, $objectUri);
             $this->append($collection, $uid, 'deleted', $calendarId);
             $this->pdo->commit();
         } catch (\Throwable $exception) {
@@ -87,9 +87,13 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
     /**
      * Test seam: runs after the object write and before the outbox insert, inside
      * the transaction. Overridden only by a subclass under tests/ so a test can
-     * kill the process and prove both writes are all-or-nothing.
+     * kill the process and prove both writes are all-or-nothing. The override
+     * receives the SabreDAV calendar id pair and the object URI so it can read,
+     * on the same connection, what the open transaction has written so far.
+     *
+     * @param array{0: mixed, 1: mixed} $calendarId
      */
-    protected function afterObjectWrite(): void
+    protected function afterObjectWrite(array $calendarId, string $objectUri): void
     {
     }
 

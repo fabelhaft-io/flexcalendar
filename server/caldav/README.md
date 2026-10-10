@@ -125,7 +125,11 @@ A collection without a `public.calendars` row (or without a UUID URI) is refused
 before any write with `403` and a `cf:unmapped-collection` precondition, because
 the outbox row's foreign key could not be satisfied; the object write and the
 outbox row are never split. `deleteCalendarObject` reads the `UID` before the
-delete. The protected no-op `afterObjectWrite()` seam runs between the parent
-write and the outbox insert and is overridden only by `tests/KillingCalendars.php`
-so `tests/Integration/OutboxTest.php` can prove the all-or-nothing behaviour.
-`tests/OutboxWriter.php` is a test-only script, not part of the runtime image.
+delete; a `PUT` body without `UID` is stored with a `sabre-vobject-<uuid>` `UID`
+by SabreDAV's repair before the outbox sees it, so that generated `UID` is what
+the row records. The protected no-op `afterObjectWrite($calendarId, $objectUri)`
+seam runs between the parent write and the outbox insert and is overridden only
+by `tests/KillingCalendars.php` so `tests/Integration/OutboxTest.php` can prove
+the all-or-nothing behaviour; `tests/ThrowingCalendars.php` overrides it to prove
+the rollback. `tests/OutboxWriter.php` is a test-only script, not part of the
+runtime image.

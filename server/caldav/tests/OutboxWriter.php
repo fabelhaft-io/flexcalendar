@@ -13,6 +13,12 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+// The kill seam prints its state line and is then SIGKILLed, so nothing may sit
+// in an output buffer when the process dies.
+while (ob_get_level() > 0) {
+    ob_end_flush();
+}
+
 /** @var array{mode: string, kill: bool, calendar: int, instance: int, uri: string, payload: string, barrier?: array{dir: string, index: int, count: int}} $config */
 $config = json_decode((string) file_get_contents((string) ($argv[1] ?? '')), true, 512, JSON_THROW_ON_ERROR);
 
