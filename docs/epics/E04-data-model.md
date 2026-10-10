@@ -70,8 +70,8 @@ The table `event_envelopes (calendar_id, uid, recurrence_id NULL, envelope_sha25
 - Notes: getting `recurrence_id` wrong makes an edited occurrence show the master's title (ADR 0001).
 
 ### E04-R05 · Member key material   `agent`
-Tables `user_keys` (user, X25519 public key, Ed25519 identity public key, wrapped private key copies by kind `recovery_code|escrow`) and `calendar_keys` (calendar, epoch, member, sealed and signed CCK record) MUST exist in Phase 1. Per D-17 there is **no `password` kind**: nothing is wrapped under a key derived from the login password. Blobs are stored opaquely, in the formats of `spec/crypto.md` (E12-R01).
-- Accept: the schema matches the ADR 0001 key diagram as amended by D-17; an `escrow` row can't be inserted before Phase 7 (check constraint dropped by E14-R01).
+Tables `user_keys` (user, X25519 public key, Ed25519 identity public key), `user_key_wraps` (user, kind `recovery_code|escrow`, wrapped private key copy) and `calendar_keys` (calendar, epoch, member, sealed and signed CCK record) MUST exist in Phase 1. A user has one `user_keys` row and at most one wrap per kind, so the public keys are stored once. Per D-17 there is **no `password` kind**: nothing is wrapped under a key derived from the login password. Blobs are stored opaquely, in the formats of `spec/crypto.md` (E12-R01).
+- Accept: the schema matches the ADR 0001 key diagram as amended by D-17; an `escrow` wrap can't be inserted before Phase 7: the check constraint `user_key_wraps_no_escrow_check` is dropped by E14-R01's migration, whose `down` puts it back.
 - Deps: E04-R02.
 
 ### E04-R06 · UUIDv4 identifiers in the schema   `agent`
