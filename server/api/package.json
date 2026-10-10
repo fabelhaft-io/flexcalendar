@@ -11,11 +11,12 @@
     "start": "node src/server.mjs",
     "format:check": "prettier --check package.json migrate.config.json src test migrations \"sabredav/*.mjs\" \"sabredav/*.json\"",
     "lint": "eslint src test migrations sabredav/*.mjs",
-    "typecheck": "tsc --noEmit --types node --allowJs --checkJs --module nodenext --target es2023 src/*.mjs test/*.test.mjs migrations/*.mjs sabredav/*.mjs",
+    "typecheck": "tsc --noEmit --skipLibCheck --types node --allowJs --checkJs --module nodenext --target es2023 src/*.mjs test/*.test.mjs migrations/*.mjs sabredav/*.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "fastify": "5.12.5",
+    "ical.js": "2.2.1",
     "node-pg-migrate": "9.0.0",
     "pg": "8.23.1"
   },

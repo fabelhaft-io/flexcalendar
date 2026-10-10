@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | In progress: R01 ([PR #38](https://github.com/fabelhaft-io/flexcalendar/pull/38)) and R02 ([PR #41](https://github.com/fabelhaft-io/flexcalendar/pull/41)) Done, 2026-10-09; R03 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E04-R03-mode-column/docs/reviews/E04-R03.md), [PR #44](https://github.com/fabelhaft-io/flexcalendar/pull/44)), Done once merged; R04–R06 Ready |
+| Status | In progress: R01 ([PR #38](https://github.com/fabelhaft-io/flexcalendar/pull/38)), R02 ([PR #41](https://github.com/fabelhaft-io/flexcalendar/pull/41)) and R03 ([PR #44](https://github.com/fabelhaft-io/flexcalendar/pull/44)) Done, 2026-10-09; R04 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E04-R04-sidecar-envelope-table/docs/reviews/E04-R04.md), [PR #46](https://github.com/fabelhaft-io/flexcalendar/pull/46)), Done once merged; R05–R06 Ready |
 | Executor | `agent` |
 | Depends on | E02-R03; D-02, D-06, D-17, D-18, D-19 |
 | Spec | `04` Phase 1, ADR 0001, ADR 0003 |
