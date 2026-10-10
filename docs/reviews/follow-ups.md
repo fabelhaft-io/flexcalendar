@@ -6,8 +6,8 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it builds on are merged.
 
-1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 and E04-R02 (Done, PRs #38 and #41, 2026-10-09), E03-R01 (`agent+review`, Ready), then E04-R03…R06 (Ready) and E03-R02, R08 (`agent+review`), R09, R10.
-   - E04-R03…R06 each add migrations and extend `schema.test.mjs`, so they run one after another. E03-R01 can run beside one of them only if their `--paths` don't overlap (`infra/dev/compose.yaml`, `Makefile`, `CONTRIBUTING.md`).
+1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 and E04-R02 (Done, PRs #38 and #41, 2026-10-09), E04-R03 (passed review, PR #44, 2026-10-09), E03-R01 (`agent+review`, Ready), then E04-R04…R06 (Ready) and E03-R02, R08 (`agent+review`), R09, R10.
+   - E04-R04…R06 each add migrations and extend `schema.test.mjs`, so they run one after another, each after the previous merge. E03-R01 can run beside one of them only if their `--paths` don't overlap (`infra/dev/compose.yaml`, `Makefile`, `CONTRIBUTING.md`).
 2. **E05**: R01 (`agent+review`), R02–R05, R08–R10.
 3. **E08**: R02, R03, R04, R05, R07, R08, and R10 (Zitadel's database role: not urgent, but its step 1, an ADR the owner accepts, comes before R02). Staging checks by the coordinator (D-20).
 4. **E15**: R01–R03.
@@ -26,7 +26,7 @@ As of 2026-10-09. Each requirement starts only once it is Ready and the PRs it b
   - whoever adds the first `down = false` migration: the "down to zero" cases in `migrate.test.mjs` and `schema.test.mjs` must stop at it;
   - `server/api/migrate.config.json` holds dashed keys only: node-pg-migrate 9.0.0 reads those from the file, lets the file override the command line, and takes `single-transaction` and `lock` from its CLI defaults (`true`), which the rollback cases guard;
   - the role-exists guard at the top of `1791496692783_core-tables-and-roles.mjs` has no test; a regression there only costs a worse error message.
-- **E04-R03:** E04-R02 left `calendars.mode` as `text NOT NULL` with `CONSTRAINT calendars_meta_envelope_check CHECK ((mode = 'private') = (meta_envelope IS NOT NULL))`. The enum conversion and the private-only check are yours; keep the envelope check working through the conversion.
+- **E13-R06 (E04-R03 review 1):** E04-R03 made `calendars.mode` the enum `public.calendar_mode` and added `calendars_mode_private_only_check CHECK (mode = 'private')`. E13-R06's migration lifts it with `ALTER TABLE public.calendars DROP CONSTRAINT calendars_mode_private_only_check`, which leaves `calendars_meta_envelope_check` in force (tested). Its `down` must re-add the constraint: E04-R03's `down` drops it without `IF EXISTS` and fails otherwise. Neither E13-R06's text nor E04's names the constraint yet.
 - **E06:** `invitations` has only `token_hash`, `expires_at` and `revoked_at`. The invite role, invitee email, creator and a consumption marker (E06-R01/R09: "a reused token is rejected") come with E06's own migration, and so does a pending state for `calendar_members`.
 - **E07:** `calflex_api` has `SELECT` only on `caldav_changes` (the CalDAV service writes the outbox). The grants its worker needs go into E07's own migration.
 - **E04-R06:** SabreDAV's tables in the schema `sabredav` use `SERIAL` integer keys, and the upstream scripts are not ours to change. "Every generated ID column defaults to `gen_random_uuid()`" must exempt that schema by name, and `public.pgmigrations` (node-pg-migrate's own `SERIAL` id). The integers never reach an href: a calendar's collection URI is `calendarinstances.uri`, which holds the API's UUID (E03 § Layout).
