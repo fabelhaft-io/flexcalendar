@@ -116,6 +116,6 @@ test-caldav: migrate ## Test internal CalDAV protocol/auth and check redacted lo
 	@status=0; $(COMPOSE) --profile test run --build --rm -T caldav-test || status=$$?; \
 	logs=$$(mktemp); \
 	if ! $(COMPOSE) logs caldav >"$$logs" 2>&1; then rm -f "$$logs"; exit 1; fi; \
-	if grep -qE 'CALFLEX_(REJECTED_HEADER|REJECTED_BODY|EVENT_CONTENT)_CANARY' "$$logs"; then \
+	if grep -qE 'CALFLEX_(REJECTED_HEADER|REJECTED_BODY|EVENT_CONTENT)_CANARY|CALFLEX_GUARD_MARKER' "$$logs"; then \
 		printf 'CalDAV logs leaked test canary data\n' >&2; status=1; \
 	fi; rm -f "$$logs"; exit $$status

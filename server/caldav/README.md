@@ -1,4 +1,4 @@
-# CalDAV service — E03-R01
+# CalDAV service — E03-R01 / E03-R09
 
 PHP 8.4 / SabreDAV 4.7.1, PostgreSQL PDO, FrankenPHP classic mode.
 `composer.lock` must match `server/api/sabredav/record.json`; unit tests reject
@@ -29,7 +29,7 @@ version or commit drift. Schema creation stays in the API migration chain.
 - Principal lookup/listing is restricted to the acting `public.users` row;
   principal data is read-only. ACL unauthenticated access is off and inaccessible
   nodes are hidden. Other users' homes/principals are 404. Ownership is Sabre's
-  `principaluri`; membership integration, write guard and outbox remain R08–R10.
+  `principaluri`; membership integration and outbox remain R08 and R10.
 - CalDAV, ACL, Sync, PropertyStorage and the already-authenticated identity plugin
   are installed. No Browser, Locks, Scheduling, Sharing, export or CardDAV plugin.
   Every PDO table and sequence is schema-qualified; CRUD integration exercises
@@ -71,3 +71,26 @@ Its registry entry runs through `make verify-invariants` and `make verify`.
 The stack-dependent suite and image must be exercised outside the sandbox; its
 warm `make test-caldav` run took 21 s in review 1, with CalDAV RSS 43 MB
 of its 256 MiB limit.
+
+## Private write guard (E03-R09)
+
+The CalDAV PDO backend guards stored object bytes (including COPY and cross-collection
+MOVE), collection creation (MKCALENDAR and extended MKCOL) and collection PROPPATCH.
+The PropertyStorage PDO backend rejects all object dead properties in Private
+collections. The pure allow-list uses sabre/vobject, not a new recurrence engine. It requires
+full input consumption and rejects property groups not listed by E03-R09.
+Every VEVENT requires exactly one lowercase SHA-256 envelope hash. No event-content
+crypto or body logging is added. Violations serialize only a fixed precondition and
+an offending parsed name; names outside `[A-Z][A-Z0-9-]{0,63}` become `UNLISTED`.
+Collection XML names are reduced to uppercase local names before that check.
+
+Mode is looked up from public.calendars per backend call on the service connection.
+A missing row or non-UUID collection URI means Private (fail closed); database
+errors propagate without writes. Only explicit Shared/Published modes bypass the
+guard. Empty creation properties are allowed; displayname, if supplied, must be
+`Private calendar`. No rule beyond E03-R09's table is imposed by the guard.
+
+Unit tests exercise the allow-list and injected modes. Integration GuardTest
+exercises delegated requests, persistence after denials, copy/move, collection
+and object properties, malformed-body redaction and marker responses/headers.
+`make test-caldav` also scans service logs for guard markers; run it twice.
