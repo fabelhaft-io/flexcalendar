@@ -210,7 +210,7 @@ services:
         ipv4_address: 172.30.91.2
         aliases: [caldav-internal]
 
-  # The API service (D-01). Like CalDAV, the container runs the skeleton in
+  # The API service (D-01). The container runs the skeleton in
   # server/api/ until E05-R01 builds the Fastify facade on it.
   api:
     build:
