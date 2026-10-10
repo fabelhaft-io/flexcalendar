@@ -39,7 +39,8 @@ final class Service
     {
         \Sabre\DAV\Server::$exposeVersion = false;
         $principals = new Principals($pdo, 'principals/' . $id);
-        $calendars = new \Sabre\CalDAV\Backend\PDO($pdo);
+        $guard = WriteGuard::fromPdo($pdo);
+        $calendars = new GuardedCalendars($pdo, $guard);
         $calendars->calendarTableName = 'sabredav.calendars';
         $calendars->calendarInstancesTableName = 'sabredav.calendarinstances';
         $calendars->calendarObjectTableName = 'sabredav.calendarobjects';
@@ -55,7 +56,7 @@ final class Service
         $acl->hideNodesFromListings = true;
         $server->addPlugin($acl);
         $server->addPlugin(new \Sabre\DAV\Sync\Plugin());
-        $properties = new \Sabre\DAV\PropertyStorage\Backend\PDO($pdo);
+        $properties = new GuardedProperties($pdo, $guard);
         $properties->tableName = 'sabredav.propertystorage';
         $server->addPlugin(new \Sabre\DAV\PropertyStorage\Plugin($properties));
         return $server;
