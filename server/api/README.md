@@ -57,4 +57,16 @@ and hit CalDAV directly (CLAUDE.md).
   rejected rather than assigned an incorrect envelope key.
   The typecheck skips library declarations because `ical.js` 2.2.1's declarations
   do not satisfy NodeNext; our own code remains checked.
+- **Member keys (E04-R05):** `public.user_keys` stores one 32-byte X25519 and
+  Ed25519 public-key pair per user; `public.user_key_wraps` stores one opaque,
+  non-empty wrapped private-key bundle per user and kind. Only `recovery_code`
+  is allowed until E14-R01 drops `user_key_wraps_no_escrow_check` in Phase 7
+  (its `down` restores the gate); the separate kind check still forbids `password`.
+  `public.calendar_keys` stores opaque, non-empty sealed and signed CCK records
+  per `(calendar_id, epoch, user_id)`, with the signer inside the E12-R01 record,
+  not a server-side column. Members must have a `user_keys` row; membership and
+  calendar deletion cascade to their CCK records, not their user keys or wraps.
+  Blob formats belong to `spec/crypto.md` (E12-R01), with size limits at the API
+  boundary, not here. Only `calflex_api` has service access to these three tables;
+  the CalDAV service has none. No server-side crypto is added.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.

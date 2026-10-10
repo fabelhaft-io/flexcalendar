@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | In progress: R01 ([PR #38](https://github.com/fabelhaft-io/flexcalendar/pull/38)), R02 ([PR #41](https://github.com/fabelhaft-io/flexcalendar/pull/41)) and R03 ([PR #44](https://github.com/fabelhaft-io/flexcalendar/pull/44)) Done, 2026-10-09; R04 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E04-R04-sidecar-envelope-table/docs/reviews/E04-R04.md), [PR #46](https://github.com/fabelhaft-io/flexcalendar/pull/46)), Done once merged; R05–R06 Ready |
+| Status | In progress: R01 ([PR #38](https://github.com/fabelhaft-io/flexcalendar/pull/38)), R02 ([PR #41](https://github.com/fabelhaft-io/flexcalendar/pull/41)) and R03 ([PR #44](https://github.com/fabelhaft-io/flexcalendar/pull/44)) Done, 2026-10-09; R04 ([PR #46](https://github.com/fabelhaft-io/flexcalendar/pull/46)) Done, 2026-10-10; R05 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E04-R05-member-key-material/docs/reviews/E04-R05.md), [PR #48](https://github.com/fabelhaft-io/flexcalendar/pull/48)), Done once merged; R06 Ready, after R05 is merged |
 | Executor | `agent` |
 | Depends on | E02-R03; D-02, D-06, D-17, D-18, D-19 |
 | Spec | `04` Phase 1, ADR 0001, ADR 0003 |
@@ -70,8 +70,8 @@ The table `event_envelopes (calendar_id, uid, recurrence_id NULL, envelope_sha25
 - Notes: getting `recurrence_id` wrong makes an edited occurrence show the master's title (ADR 0001).
 
 ### E04-R05 · Member key material   `agent`
-Tables `user_keys` (user, X25519 public key, Ed25519 identity public key, wrapped private key copies by kind `recovery_code|escrow`) and `calendar_keys` (calendar, epoch, member, sealed and signed CCK record) MUST exist in Phase 1. Per D-17 there is **no `password` kind**: nothing is wrapped under a key derived from the login password. Blobs are stored opaquely, in the formats of `spec/crypto.md` (E12-R01).
-- Accept: the schema matches the ADR 0001 key diagram as amended by D-17; an `escrow` row can't be inserted before Phase 7 (check constraint dropped by E14-R01).
+Tables `user_keys` (user, X25519 public key, Ed25519 identity public key), `user_key_wraps` (user, kind `recovery_code|escrow`, wrapped private key copy) and `calendar_keys` (calendar, epoch, member, sealed and signed CCK record) MUST exist in Phase 1. A user has one `user_keys` row and at most one wrap per kind, so the public keys are stored once. Per D-17 there is **no `password` kind**: nothing is wrapped under a key derived from the login password. Blobs are stored opaquely, in the formats of `spec/crypto.md` (E12-R01).
+- Accept: the schema matches the ADR 0001 key diagram as amended by D-17; an `escrow` wrap can't be inserted before Phase 7: the check constraint `user_key_wraps_no_escrow_check` is dropped by E14-R01's migration, whose `down` puts it back.
 - Deps: E04-R02.
 
 ### E04-R06 · UUIDv4 identifiers in the schema   `agent`
