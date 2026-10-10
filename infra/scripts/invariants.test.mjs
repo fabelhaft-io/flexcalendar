@@ -12,7 +12,12 @@ import {
 } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { cryptoName } from './invariants.mjs';
+import {
+  cryptoName,
+  identifierSources,
+  nonV4Generators,
+  nonV4GeneratorCases,
+} from './invariants.mjs';
 import { fileURLToPath } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -317,6 +322,26 @@ for (const [path, content] of [
 const uuidDiagnostic = (label, path) =>
   `INV-03: non-v4 UUID generator ${label} in ${path}; generated IDs must be a random UUIDv4.\n`;
 
+test('every nonV4Generators label has a table-driven bad case', () => {
+  const labels = new Set(nonV4Generators.map(([label]) => label));
+  const cases = new Set(nonV4GeneratorCases.map(({ label }) => label));
+  for (const label of labels)
+    assert.ok(cases.has(label), `no bad case for the ${label} pattern`);
+  for (const label of cases)
+    assert.ok(labels.has(label), `case label ${label} is not a pattern label`);
+});
+
+for (const { label, path, content } of nonV4GeneratorCases) {
+  test(`INV-03 rejects the ${label} name in ${path}`, () => {
+    tree({ [path]: content }, (root) => {
+      const result = run('INV-03', root);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(result.stderr, uuidDiagnostic(label, path));
+    });
+  });
+}
+
 test('INV-03 decides on whole tokens and cannot let a longer identifier hide a real generator', () => {
   tree(
     { 'server/api/src/tokens.ts': 'export const my_uuidv7_free = 1;' },
@@ -379,6 +404,91 @@ test('INV-03 ignores installed dependencies and skips symlinks', () => {
     },
     (root) => {
       symlinkSync('../../outside/leak.ts', resolve(root, 'server/api/leak.ts'));
+      const result = run('INV-03', root);
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, 'INV-03: pass\n');
+      assert.equal(result.stderr, '');
+    },
+  );
+});
+
+test('INV-03 matches whole tokens only, case-insensitively, and a real generator still fails', () => {
+  for (const nearMiss of ['my_uuidv7()', 'uuidv7_free()', 'x-uuid6-y']) {
+    tree(
+      { 'server/api/src/tokens.ts': `export const candidate = "${nearMiss}";` },
+      (root) => {
+        const result = run('INV-03', root);
+        assert.equal(result.status, 0, nearMiss);
+        assert.equal(result.stdout, 'INV-03: pass\n');
+        assert.equal(result.stderr, '');
+      },
+    );
+    tree(
+      {
+        'server/api/src/tokens.ts': `export const candidate = "${nearMiss}"; const id = uuidv7();`,
+      },
+      (root) => {
+        const result = run('INV-03', root);
+        assert.equal(result.status, 1, nearMiss);
+        assert.equal(result.stdout, '');
+        assert.equal(
+          result.stderr,
+          uuidDiagnostic('uuidv7()', 'server/api/src/tokens.ts'),
+        );
+      },
+    );
+  }
+  for (const [content, label] of [
+    ['const id = UUIDV7();', 'uuidv7()'],
+    ['const id = UUID_GENERATE_V1MC();', 'uuid_generate_v1mc()'],
+  ]) {
+    tree({ 'server/api/src/tokens.ts': content }, (root) => {
+      const result = run('INV-03', root);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(
+        result.stderr,
+        uuidDiagnostic(label, 'server/api/src/tokens.ts'),
+      );
+    });
+  }
+});
+
+test('INV-03 reads every file type in identifierSources and nothing else', () => {
+  const cases = [
+    ['.sql', 'SELECT uuidv7();'],
+    ['.php', '<?php $id = uuidv7();'],
+    ['.mjs', 'export const id = uuidv7();'],
+    ['.js', 'module.exports = () => uuidv7();'],
+    ['.ts', 'export const id = () => uuidv7();'],
+    ['.dart', 'final id = uuidv7();'],
+    ['.kt', 'val id = uuidv7()'],
+    ['.java', 'String id = uuidv7();'],
+    ['.swift', 'let id = uuidv7()'],
+    ['.yaml', 'id: uuidv7()'],
+    ['.yml', 'id: uuidv7()'],
+    ['.json', '{"default": "uuidv7()"}'],
+  ];
+  // A file type added to identifierSources without a case here fails this.
+  assert.deepEqual(
+    cases.map(([extension]) => extension).sort(),
+    [...identifierSources].sort(),
+  );
+  for (const [extension, content] of cases) {
+    const path = `server/api/src/identifiers${extension}`;
+    tree({ [path]: content }, (root) => {
+      const result = run('INV-03', root);
+      assert.equal(result.status, 1, extension);
+      assert.equal(result.stdout, '');
+      assert.equal(result.stderr, uuidDiagnostic('uuidv7()', path));
+    });
+  }
+  tree(
+    {
+      'server/api/README.md': 'Generated IDs use uuidv7() in the legacy code.',
+      'server/api/notes.txt': 'SELECT uuid_generate_v1();',
+    },
+    (root) => {
       const result = run('INV-03', root);
       assert.equal(result.status, 0);
       assert.equal(result.stdout, 'INV-03: pass\n');

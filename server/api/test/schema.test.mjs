@@ -65,6 +65,27 @@ async function seed(client) {
 }
 
 /**
+ * True when a column default names a UUID generator other than the v4
+ * `gen_random_uuid()`. A default whose column type is not `uuid` is reported by
+ * Postgres as a cast expression — a `text` column defaulting to a non-v4
+ * generator reads back as `(<generator>())::text` — so any enclosing
+ * parentheses and a trailing cast are stripped before the comparison. Matching
+ * is case-insensitive because SQL is.
+ * @param {string | null} value
+ */
+function namesNonV4Generator(value) {
+  let text = value ?? '';
+  for (;;) {
+    const stripped = text
+      .replace(/^\(([\s\S]*)\)$/, '$1')
+      .replace(/::[a-z_ ]+$/i, '');
+    if (stripped === text) break;
+    text = stripped;
+  }
+  return /uuid/i.test(value ?? '') && text !== 'gen_random_uuid()';
+}
+
+/**
  * Columns whose database-generated identity is not a random UUIDv4 (INV-03).
  * SabreDAV's tables use upstream `SERIAL` keys and node-pg-migrate owns
  * `pgmigrations`; both are exempt by name. Tables with a composite natural key
@@ -91,7 +112,10 @@ async function generatedIdOffenders(client) {
         /^nextval\(/.test(column.column_default ?? '') ||
         (column.data_type === 'uuid' &&
           column.column_default !== null &&
-          column.column_default !== 'gen_random_uuid()'),
+          column.column_default !== 'gen_random_uuid()') ||
+        // Any column type, so a default cast to text cannot hide a non-v4
+        // generator behind the cast.
+        namesNonV4Generator(column.column_default),
     )
     .map((column) => ({
       table: `${column.table_schema}.${column.table_name}`,
@@ -620,6 +644,14 @@ test('non-v4 uuid defaults, SERIAL and IDENTITY offenders are caught; sabredav a
     await client.query(
       'ALTER TABLE public.users ADD COLUMN offender_identity bigint GENERATED ALWAYS AS IDENTITY',
     );
+    // A non-uuid column type must not hide the generator behind a cast.
+    await client.query(
+      `ALTER TABLE public.users ADD COLUMN offender_text text DEFAULT ${nonV4}::text`,
+    );
+    // A v4 generator cast to text is a v4 ID and stays allowed.
+    await client.query(
+      'ALTER TABLE public.users ADD COLUMN allowed_text text DEFAULT gen_random_uuid()::text',
+    );
     // SabreDAV keeps its upstream SERIAL keys, and node-pg-migrate its own table.
     await client.query(
       `ALTER TABLE sabredav.calendars ADD COLUMN exempt_uuid uuid DEFAULT ${nonV4}`,
@@ -628,6 +660,7 @@ test('non-v4 uuid defaults, SERIAL and IDENTITY offenders are caught; sabredav a
       { table: 'public.users', column: 'offender_uuid' },
       { table: 'public.users', column: 'offender_serial' },
       { table: 'public.users', column: 'offender_identity' },
+      { table: 'public.users', column: 'offender_text' },
     ]);
   });
 });

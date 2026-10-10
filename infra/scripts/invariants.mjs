@@ -35,7 +35,7 @@ const sources = new Set([
 ]);
 
 /** File types the UUIDv4 identifier tripwire reads (INV-03). */
-const identifierSources = new Set([
+export const identifierSources = new Set([
   '.sql',
   '.php',
   '.mjs',
@@ -54,10 +54,11 @@ const identifierSources = new Set([
  * Literal non-v4 UUID generator names (INV-03). A conservative tripwire, like
  * INV-05: whole tokens only (letters, digits, underscores and hyphens delimit
  * neither end of a token), so comments and string literals match and computed
- * names do not.
+ * names do not. Exported so `invariants.test.mjs` can assert that every label
+ * has a table-driven bad case.
  * @type {[string, RegExp][]}
  */
-const nonV4Generators = [
+export const nonV4Generators = [
   // Postgres 18's uuidv7() and the uuid-ossp extension's v1/v3/v5/v7 functions.
   ['uuidv7()', /(?<![\w-])uuidv7(?![\w-])/i],
   ['uuid_generate_v1()', /(?<![\w-])uuid_generate_v1(?![\w-])/i],
@@ -93,6 +94,181 @@ const nonV4Generators = [
   ['uuid1', /(?<![\w-])uuid1(?![\w-])/i],
   ['uuid6', /(?<![\w-])uuid6(?![\w-])/i],
   ['uuid7', /(?<![\w-])uuid7(?![\w-])/i],
+];
+
+/**
+ * One deliberately bad tree per generator name above (INV-03), kept next to the
+ * pattern table so a name added without a case here fails the coverage
+ * assertion in `invariants.test.mjs`. Each case is materialized on its own and
+ * run through the real CLI, asserting the exact `label` diagnostic. The bare
+ * `uuidv7` token promised by the README needs no separate entry — the
+ * `uuidv7()` pattern matches it too, and the bare Kotlin case below shows that
+ * form — so every one of the 23 labels has at least one case.
+ * @type {{ label: string, path: string, content: string }[]}
+ */
+export const nonV4GeneratorCases = [
+  // The six SQL generator names: Postgres 18's uuidv7() and uuid-ossp v1/v3/v5/v7.
+  {
+    label: 'uuidv7()',
+    path: 'server/api/db/identifiers.sql',
+    content: 'CREATE TABLE t (id uuid PRIMARY KEY DEFAULT uuidv7());',
+  },
+  {
+    label: 'uuid_generate_v1()',
+    path: 'server/api/db/identifiers.sql',
+    content: 'SELECT uuid_generate_v1();',
+  },
+  {
+    label: 'uuid_generate_v1mc()',
+    path: 'server/api/db/identifiers.sql',
+    content: 'SELECT uuid_generate_v1mc();',
+  },
+  {
+    label: 'uuid_generate_v3()',
+    path: 'server/api/db/identifiers.sql',
+    content: "SELECT uuid_generate_v3('dns', 'example.invalid');",
+  },
+  {
+    label: 'uuid_generate_v5()',
+    path: 'server/api/db/identifiers.sql',
+    content: "SELECT uuid_generate_v5('dns', 'example.invalid');",
+  },
+  {
+    label: 'uuid_generate_v7()',
+    path: 'server/api/db/identifiers.sql',
+    content: 'SELECT uuid_generate_v7();',
+  },
+  // The uuid package's non-v4 accessors, including the `uuid/v7` subpath.
+  {
+    label: 'uuid package v1/v3/v5/v6/v7 accessor',
+    path: 'server/api/src/identifiers.ts',
+    content: 'export const id = () => uuid.v1();',
+  },
+  {
+    label: 'uuid package v1/v3/v5/v6/v7 accessor',
+    path: 'server/api/src/identifiers.ts',
+    content: 'export const id = () => uuid.v3();',
+  },
+  {
+    label: 'uuid package v1/v3/v5/v6/v7 accessor',
+    path: 'server/api/src/identifiers.ts',
+    content: 'export const id = () => uuid.v5();',
+  },
+  {
+    label: 'uuid package v1/v3/v5/v6/v7 accessor',
+    path: 'server/api/src/identifiers.ts',
+    content: 'export const id = () => uuid.v6();',
+  },
+  {
+    label: 'uuid package v1/v3/v5/v6/v7 accessor',
+    path: 'server/api/src/identifiers.ts',
+    content: 'export const id = () => uuid.v7();',
+  },
+  {
+    label: 'uuid package v1/v3/v5/v6/v7 accessor',
+    path: 'apps/web/src/identifiers.ts',
+    content: "import 'uuid/v7';",
+  },
+  // The uuid package's non-v4 named imports: one-line ESM, multi-line ESM, CJS.
+  {
+    label: 'uuid package non-v4 named import',
+    path: 'apps/web/src/identifiers.ts',
+    content: "import { v7 as uuidFactory } from 'uuid';",
+  },
+  {
+    label: 'uuid package non-v4 named import',
+    path: 'apps/web/src/identifiers.ts',
+    content: "import {\n  v3,\n  v4,\n} from 'uuid';",
+  },
+  {
+    label: 'uuid package non-v4 named import',
+    path: 'apps/web/src/identifiers.ts',
+    content: "const { v1: makeId } = require('uuid');",
+  },
+  // PHP ramsey/uuid static factories.
+  {
+    label: 'Uuid::uuid1',
+    path: 'server/caldav/src/Identifier.php',
+    content: '<?php $id = Uuid::uuid1();',
+  },
+  {
+    label: 'Uuid::uuid3',
+    path: 'server/caldav/src/Identifier.php',
+    content: '<?php $id = Uuid::uuid3();',
+  },
+  {
+    label: 'Uuid::uuid5',
+    path: 'server/caldav/src/Identifier.php',
+    content: '<?php $id = Uuid::uuid5();',
+  },
+  {
+    label: 'Uuid::uuid6',
+    path: 'server/caldav/src/Identifier.php',
+    content: '<?php $id = Uuid::uuid6();',
+  },
+  {
+    label: 'Uuid::uuid7',
+    path: 'server/caldav/src/Identifier.php',
+    content: '<?php $id = Uuid::uuid7();',
+  },
+  // Dart uuid package factories.
+  {
+    label: 'Uuid().v1()',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = const Uuid().v1();',
+  },
+  {
+    label: 'Uuid().v3()',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = const Uuid().v3();',
+  },
+  {
+    label: 'Uuid().v5()',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = const Uuid().v5();',
+  },
+  {
+    label: 'Uuid().v6()',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = const Uuid().v6();',
+  },
+  {
+    label: 'Uuid().v7()',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = const Uuid().v7();',
+  },
+  // Bare uuidv1/uuidv6/uuid1/uuid6/uuid7 identifiers in any language.
+  {
+    label: 'uuidv1',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = uuidv1();',
+  },
+  {
+    label: 'uuidv6',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = uuidv6();',
+  },
+  {
+    label: 'uuid1',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = uuid1();',
+  },
+  {
+    label: 'uuid6',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = uuid6();',
+  },
+  {
+    label: 'uuid7',
+    path: 'apps/mobile/lib/identifiers.dart',
+    content: 'final id = uuid7();',
+  },
+  // The bare `uuidv7` token resolves to the earlier `uuidv7()` label.
+  {
+    label: 'uuidv7()',
+    path: 'apps/mobile/android/src/Identifiers.kt',
+    content: 'val id = uuidv7()',
+  },
 ];
 
 /** @param {string} root @param {string} path */
