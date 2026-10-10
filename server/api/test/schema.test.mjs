@@ -16,6 +16,9 @@ const apiTables = [
   'caldav_changes',
   'delegation_nonces',
   'event_envelopes',
+  'user_keys',
+  'user_key_wraps',
+  'calendar_keys',
 ];
 const sabreTables = [
   'calendars',
@@ -625,6 +628,7 @@ test('calendar deletion cascades and the whole chain goes down and up as migrati
       'feed_tokens',
       'caldav_changes',
       'event_envelopes',
+      'calendar_keys',
     ]) {
       assert.equal(
         (await client.query(`SELECT count(*)::int AS n FROM public.${table}`))
