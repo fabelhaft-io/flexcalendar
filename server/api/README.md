@@ -39,4 +39,10 @@ and hit CalDAV directly (CLAUDE.md).
   overrides the command line. Fixtures therefore copy the config and change only
   the directory. `single-transaction` and `lock` are CLI defaults (`true`), not
   options read from this file; the rollback tests depend on these defaults.
+- **Calendar mode (E04-R03):** `public.calendar_mode` reserves `private`,
+  `shared`, and `published`, with no column default. Until Phase 4,
+  `calendars_mode_private_only_check` permits only `private`. The named migration
+  shipping with E13-R06 must run
+  `ALTER TABLE public.calendars DROP CONSTRAINT calendars_mode_private_only_check`
+  to lift that gate, leaving `calendars_meta_envelope_check` intact.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.
