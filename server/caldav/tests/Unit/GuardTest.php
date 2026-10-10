@@ -58,11 +58,86 @@ final class GuardTest extends TestCase
                 self::assertSame('Private skeleton only', $exception->getMessage());
             }
         }
+        foreach (['{http://apple.com/ns/ical/}calendar-color', '{urn:ietf:params:xml:ns:caldav}calendar-description', '{DAV:}unknown'] as $name) {
+            try {
+                PrivateSkeleton::properties([$name => 'Private calendar']);
+                self::fail('Unlisted property with allowed value passed');
+            } catch (SkeletonViolation $exception) {
+                self::assertSame(strtoupper(substr($name, (int) strrpos($name, '}') + 1)), $exception->name);
+            }
+        }
         foreach (['bad name', str_repeat('A', 65), '123', 'NAME<', ''] as $name) {
             self::assertSame('UNLISTED', (new SkeletonViolation($name))->name);
         }
         $this->expectException(SkeletonViolation::class);
         PrivateSkeleton::properties(['{DAV:}displayname' => 'Private calendar'], false);
+    }
+
+    public function testNonCalendarParsedRoots(): void
+    {
+        // MimeDir only accepts VCALENDAR/VCARD on the wire. Change its document
+        // default name to exercise our independent root check after parsing.
+        $original = \Sabre\VObject\Component\VCalendar::$defaultName;
+        try {
+            foreach (['VEVENT', 'VTODO'] as $name) {
+                \Sabre\VObject\Component\VCalendar::$defaultName = $name;
+                $text = "BEGIN:VCALENDAR\r\nEND:" . $name . "\r\n";
+                try {
+                    PrivateSkeleton::calendar($text);
+                    self::fail('Non-calendar root passed');
+                } catch (SkeletonViolation $exception) {
+                    self::assertSame('VCALENDAR', $exception->name);
+                }
+            }
+        } finally {
+            \Sabre\VObject\Component\VCalendar::$defaultName = $original;
+        }
+    }
+
+    public function testResponseExceptionSafeNames(): void
+    {
+        foreach (['bad name', str_repeat('A', 65)] as $name) {
+            $exception = new PrivateSkeletonOnly($name);
+            self::assertSame('UNLISTED', $exception->name);
+            $server = new \Sabre\DAV\Server();
+            Service::errorResponse($server, $exception);
+            self::assertSame(403, $server->httpResponse->getStatus());
+            $xml = new \DOMDocument();
+            self::assertTrue($xml->loadXML($server->httpResponse->getBodyAsString()));
+            self::assertSame(1, $xml->getElementsByTagNameNS('https://flexcalendar.de/ns/caldav', 'private-skeleton-only')->length);
+            self::assertSame('UNLISTED', $xml->getElementsByTagNameNS('https://flexcalendar.de/ns/caldav', 'name')->item(0)?->textContent);
+        }
+    }
+
+    public function testModeAwareWrites(): void
+    {
+        $id = 'adf46a78-3c92-4c1e-ab04-7f791296e61e';
+        foreach (['private', null, 'shared'] as $mode) {
+            $guard = new WriteGuard(static fn (string $lookupId): ?string => $mode);
+            // Accepted writes exercise both entry points on the happy path too.
+            $guard->calendar($id, GuardCases::skeleton());
+            $guard->properties($id, ['{DAV:}displayname' => 'Private calendar']);
+            $writes = [
+                'SUMMARY' => static fn () => $guard->calendar($id, GuardCases::eventLine('SUMMARY:CALFLEX_GUARD_MARKER_write')),
+                'CALENDAR-COLOR' => static fn () => $guard->properties($id, ['{http://apple.com/ns/ical/}calendar-color' => 'Private calendar']),
+            ];
+            $accepted = 0;
+            foreach ($writes as $name => $write) {
+                if ($mode === 'shared') {
+                    $write();
+                    ++$accepted;
+                    continue;
+                }
+                try {
+                    $write();
+                    self::fail('Private or missing-row write passed: ' . $name);
+                } catch (PrivateSkeletonOnly $exception) {
+                    self::assertSame($name, $exception->name);
+                    self::assertSame('Private skeleton only', $exception->getMessage());
+                }
+            }
+            self::assertSame($mode === 'shared' ? 2 : 0, $accepted);
+        }
     }
 
     public function testModesAndNoCache(): void

@@ -83,6 +83,11 @@ Every VEVENT requires exactly one lowercase SHA-256 envelope hash. No event-cont
 crypto or body logging is added. Violations serialize only a fixed precondition and
 an offending parsed name; names outside `[A-Z][A-Z0-9-]{0,63}` become `UNLISTED`.
 Collection XML names are reduced to uppercase local names before that check.
+The guard checks names, parameters, components and the listed fixed values, not
+the free-text values of allowed properties (`UID`, `PRODID`, a `TZID` parameter,
+`TZURL`, `X-LIC-LOCATION`, `TZNAME`).
+A `VTIMEZONE` from tzurl.org carries `X-PROLEPTIC-TZNAME`, which the guard rejects
+(the test fixture removes it).
 
 Mode is looked up from public.calendars per backend call on the service connection.
 A missing row or non-UUID collection URI means Private (fail closed); database

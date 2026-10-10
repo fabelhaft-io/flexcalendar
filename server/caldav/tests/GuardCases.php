@@ -42,6 +42,9 @@ final class GuardCases
         foreach (['CALFLEX_GUARD_MARKER_hash', str_repeat('A', 64), str_repeat('a', 63), str_repeat('a', 64) . '\\n'] as $i => $hash) {
             $cases['hash_' . $i] = [str_replace(str_repeat('a', 64), $hash, self::skeleton()), 'X-CALFLEX-ENVELOPE-SHA256'];
         }
+        foreach ([65, 128] as $length) {
+            $cases['hash_length_' . $length] = [str_replace(str_repeat('a', 64), str_repeat('a', $length), self::skeleton()), 'X-CALFLEX-ENVELOPE-SHA256'];
+        }
         $cases['parameter_related_wrong'] = [self::eventLine('UID;RELATED=CALFLEX_GUARD_MARKER_related:identifier'), 'RELATED'];
         $cases['parameter_range_wrong'] = [self::eventLine("BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;RANGE=CALFLEX_GUARD_MARKER_range:-PT5M\r\nDESCRIPTION:Reminder\r\nEND:VALARM"), 'RANGE'];
         $cases['unknown_alarm_child'] = [self::eventLine("BEGIN:VALARM\r\nBEGIN:X-UNKNOWN\r\nSUMMARY:CALFLEX_GUARD_MARKER_alarm_child\r\nEND:X-UNKNOWN\r\nEND:VALARM"), 'X-UNKNOWN'];

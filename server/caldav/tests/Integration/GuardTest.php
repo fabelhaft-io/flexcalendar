@@ -193,6 +193,7 @@ final class GuardTest extends TestCase
     {
         $path = $this->collection();
         $this->rejected($this->request('PROPPATCH', $path, $this->propertyBody('propertyupdate', '<a:calendar-color>CALFLEX_GUARD_MARKER_color</a:calendar-color>')), 'CALENDAR-COLOR');
+        $this->rejected($this->request('PROPPATCH', $path, $this->propertyBody('propertyupdate', '<a:calendar-color>Private calendar</a:calendar-color>')), 'CALENDAR-COLOR');
         self::assertSame(207, $this->request('PROPPATCH', $path, $this->propertyBody('propertyupdate', '<d:displayname>Private calendar</d:displayname>'))['status']);
         $object = $path . self::uuid() . '.ics';
         self::assertSame(201, $this->request('PUT', $object, \Calflex\Tests\GuardCases::skeleton(), ['Content-Type' => 'text/calendar'])['status']);
