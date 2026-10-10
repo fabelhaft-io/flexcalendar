@@ -45,4 +45,14 @@ and hit CalDAV directly (CLAUDE.md).
   shipping with E13-R06 must run
   `ALTER TABLE public.calendars DROP CONSTRAINT calendars_mode_private_only_check`
   to lift that gate, leaving `calendars_meta_envelope_check` intact.
+- **Sidecar envelopes (E04-R04):** `public.event_envelopes` stores opaque envelope
+  bytes, keyed by `(calendar_id, uid, recurrence_id, envelope_sha256)` with
+  `NULLS NOT DISTINCT` for master rows. The SHA-256 digest is 32-byte `bytea`
+  (64 lowercase hex digits in `X-CALFLEX-ENVELOPE-SHA256`).
+  [`src/recurrence-key.mjs`](src/recurrence-key.mjs) canonicalizes override
+  `RECURRENCE-ID` properties with `ical.js`: `recurrence_id` is canonical text,
+  not the original spelling (`YYYYMMDDTHHMMSSZ` for instants, `YYYYMMDD` for
+  dates, NULL for masters). TZIDs must resolve through a supplied `VTIMEZONE`
+  or the caller's `ICAL.TimezoneService`; floating or unresolved times are
+  rejected rather than assigned an incorrect envelope key.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.

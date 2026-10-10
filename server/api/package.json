@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "fastify": "5.12.5",
+    "ical.js": "2.2.1",
     "node-pg-migrate": "9.0.0",
     "pg": "8.23.1"
   },
