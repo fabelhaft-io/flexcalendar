@@ -30,7 +30,7 @@ Schema changes MUST go through one migration tool, owned by the API: **`node-pg-
 ### E04-R02 · Core tables and roles   `agent`
 The schema MUST contain:
 - `users`: IdP subject, handle, email.
-- `calendars`: id, owner, **`mode`**, CalDAV href, `meta_envelope bytea`, `meta_epoch`, `version` (an integer from 1, bumped on every update: the calendars API's `ETag` and `If-Match` token, added by E05-R03), created/updated. **No name or colour column** (D-18):
+- `calendars`: id, owner, **`mode`**, CalDAV href, `meta_envelope bytea`, `meta_epoch`, created/updated. **No name or colour column** (D-18):
   - a Private calendar's name and colour are in `meta_envelope`, sealed by the client under the calendar's key and stored opaquely; it is required when `mode = private`;
   - a Shared or Published calendar's name and colour live in CalDAV (`displayname`, `calendar-color`), where stock apps read them; `meta_envelope` is NULL.
 - `calendar_members`: calendar, user, role `owner|editor|viewer`.
