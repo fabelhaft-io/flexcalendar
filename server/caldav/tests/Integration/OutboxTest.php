@@ -329,6 +329,7 @@ final class OutboxTest extends TestCase
             'instance' => $ids['instance'],
             'uri' => $uri,
             'payload' => base64_encode($payload),
+            'principal' => $this->a,
         ];
         if ($barrier !== null) {
             $config['barrier'] = $barrier;
@@ -530,7 +531,7 @@ final class OutboxTest extends TestCase
         $token = $this->synctoken();
         $uri = self::uuid() . '.ics';
         $payload = self::payload(self::uuid());
-        $backend = new GuardedCalendars($this->dav, WriteGuard::fromPdo($this->dav));
+        $backend = new GuardedCalendars($this->dav, WriteGuard::fromPdo($this->dav), $this->a);
 
         $this->dav->beginTransaction();
         try {
@@ -559,7 +560,7 @@ final class OutboxTest extends TestCase
         $uri = self::uuid() . '.ics';
         $payload = self::payload(self::uuid());
         $calendarId = [$this->sabreCalendar, $this->sabreInstance];
-        $backend = new ThrowingCalendars($this->dav, WriteGuard::fromPdo($this->dav));
+        $backend = new ThrowingCalendars($this->dav, WriteGuard::fromPdo($this->dav), $this->a);
 
         $this->assertRolledBack(function () use ($backend, $calendarId, $uri, $payload): void {
             $backend->createCalendarObject($calendarId, $uri, $payload);

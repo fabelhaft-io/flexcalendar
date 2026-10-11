@@ -22,6 +22,8 @@ final class GuardTest extends TestCase
     private array $nonces = [];
     /** @var list<string> */
     private array $extraCollections = [];
+    /** @var list<string> the public.calendars rows those collections are bound to */
+    private array $extraCalendars = [];
 
     private static function uuid(): string
     {
@@ -71,10 +73,10 @@ final class GuardTest extends TestCase
             $q = $this->dav->prepare('DELETE FROM public.delegation_nonces WHERE nonce = ?');
             $q->execute([$nonce]);
         }
-        $q = $this->api->prepare('DELETE FROM public.calendar_members WHERE calendar_id = ?');
-        $q->execute([$this->calendar]);
-        $q = $this->api->prepare('DELETE FROM public.calendars WHERE id = ?');
-        $q->execute([$this->calendar]);
+        $q = $this->api->prepare('DELETE FROM public.calendar_members WHERE calendar_id = ANY(?)');
+        $q->execute(['{' . implode(',', array_merge([$this->calendar], $this->extraCalendars)) . '}']);
+        $q = $this->api->prepare('DELETE FROM public.calendars WHERE id = ANY(?)');
+        $q->execute(['{' . implode(',', array_merge([$this->calendar], $this->extraCalendars)) . '}']);
         $q = $this->api->prepare('DELETE FROM public.users WHERE id IN (?, ?)');
         $q->execute([$this->a, $this->b]);
     }
@@ -148,6 +150,23 @@ final class GuardTest extends TestCase
         return $path;
     }
 
+    /**
+     * Register a collection the way the API does (E05-R03): a `public.calendars`
+     * row and the creator's `calendar_members` row. E03-R08 derives access from
+     * those rows, so a collection created without them is in nobody's home.
+     */
+    private function register(string $id): string
+    {
+        $path = $this->home() . $id . '/';
+        $this->extraCollections[] = $path;
+        $this->extraCalendars[] = $id;
+        $q = $this->api->prepare("INSERT INTO public.calendars (id, owner_id, mode, caldav_href, meta_envelope, meta_epoch) VALUES (?, ?, 'private', ?, decode('00', 'hex'), 1)");
+        $q->execute([$id, $this->a, $path]);
+        $q = $this->api->prepare("INSERT INTO public.calendar_members (calendar_id, user_id, role) VALUES (?, ?, 'owner')");
+        $q->execute([$id, $this->a]);
+        return $path;
+    }
+
     public function testPutGuardAndMarkers(): void
     {
         $path = $this->collection();
@@ -211,16 +230,14 @@ final class GuardTest extends TestCase
             $this->rejected($this->request($method, $target, $this->propertyBody(strtolower($method), $properties)), 'DISPLAYNAME');
             self::assertSame(404, $this->request('PROPFIND', $target, '', ['Depth' => '0'])['status']);
         }
-        $target = $this->home() . self::uuid() . '/';
-        $this->extraCollections[] = $target;
+        $target = $this->register(self::uuid());
         self::assertSame(201, $this->request('MKCALENDAR', $target, $this->propertyBody('mkcalendar', '<d:displayname>Private calendar</d:displayname>'))['status']);
     }
 
     public function testCopyAndCrossCollectionMoveCannotBypass(): void
     {
         $source = $this->collection();
-        $target = $this->home() . self::uuid() . '/';
-        $this->extraCollections[] = $target;
+        $target = $this->register(self::uuid());
         self::assertSame(201, $this->request('MKCALENDAR', $target)['status']);
         $object = $source . self::uuid() . '.ics';
         self::assertSame(201, $this->request('PUT', $object, \Calflex\Tests\GuardCases::skeleton(), ['Content-Type' => 'text/calendar'])['status']);
