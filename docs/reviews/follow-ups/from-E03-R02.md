@@ -1,0 +1,4 @@
+- **From the E03-R02 review, for later requirements** (R02 itself is in PR #52):
+  - **E03-R03 (Phase 4):** the device-credential backend re-runs the discovery case (`tests/Integration/DiscoveryTest.php`) on the public listener with an app password, and `/.well-known/caldav` stays unauthenticated: it is answered by the standalone `public/index.php` before any auth;
+  - **E15-R05:** Apple Calendar and DAVx⁵ follow `301` with a `PROPFIND` on staging; the redirect is `Location: /` (the DAV root) for every method;
+  - **E08:** a production Caddyfile proxies `/.well-known/caldav` to the CalDAV public listener unchanged; no rewrite to another path;
