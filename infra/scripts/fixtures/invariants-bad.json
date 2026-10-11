@@ -255,5 +255,69 @@
       "pnpm-lock.yaml": "{\"importers\":{\"server/api\":{\"dependencies\":{\"@local/crypto\":{\"version\":\"link:../../packages/crypto\"}}},\"packages/crypto\":{}},\"snapshots\":{}}"
     },
     "diagnostic": "INV-07: unreviewed crypto-looking dependency @local/crypto@1.0.0; a non-content-crypto justification is required."
+  },
+  {
+    "label": "uuidv7 default in SQL",
+    "invariant": "INV-03",
+    "files": {
+      "server/api/db/identifiers.sql": "CREATE TABLE t (id uuid PRIMARY KEY DEFAULT uuidv7());"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator uuidv7() in server/api/db/identifiers.sql; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "uuid_generate_v1mc in SQL",
+    "invariant": "INV-03",
+    "files": {
+      "server/api/db/legacy.sql": "SELECT uuid_generate_v1mc();"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator uuid_generate_v1mc() in server/api/db/legacy.sql; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "uuid package non-v4 accessor",
+    "invariant": "INV-03",
+    "files": {
+      "server/api/src/identifiers.ts": "export const id = () => uuid.v1();"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator uuid package v1/v3/v5/v6/v7 accessor in server/api/src/identifiers.ts; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "uuid package non-v4 named import",
+    "invariant": "INV-03",
+    "files": {
+      "apps/web/src/identifiers.ts": "import { v7 as uuidFactory } from 'uuid';"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator uuid package non-v4 named import in apps/web/src/identifiers.ts; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "bare uuid7 token",
+    "invariant": "INV-03",
+    "files": {
+      "apps/mobile/lib/identifiers.dart": "final id = uuid7();"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator uuid7 in apps/mobile/lib/identifiers.dart; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "PHP ramsey/uuid factory",
+    "invariant": "INV-03",
+    "files": {
+      "server/caldav/src/Identifier.php": "<?php $id = Uuid::uuid1();"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator Uuid::uuid1 in server/caldav/src/Identifier.php; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "Dart Uuid factory",
+    "invariant": "INV-03",
+    "files": {
+      "apps/mobile/lib/uuid_ids.dart": "final id = const Uuid().v5();"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator Uuid().v5() in apps/mobile/lib/uuid_ids.dart; generated IDs must be a random UUIDv4."
+  },
+  {
+    "label": "uuid-ossp generator in a YAML seed",
+    "invariant": "INV-03",
+    "files": {
+      "server/caldav/seed/identifiers.yaml": "sql: SELECT uuid_generate_v3('dns', 'example.invalid');"
+    },
+    "diagnostic": "INV-03: non-v4 UUID generator uuid_generate_v3() in server/caldav/seed/identifiers.yaml; generated IDs must be a random UUIDv4."
   }
 ]
