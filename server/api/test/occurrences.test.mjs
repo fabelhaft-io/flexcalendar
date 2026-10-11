@@ -25,6 +25,7 @@ import {
   MAX_INSTANCES,
   expandOccurrences,
 } from '../src/occurrences.mjs';
+import { vtimezoneFor } from '../src/zones.mjs';
 
 /** The Private skeleton of E15-R01: a weekly master with an EXDATE and an override. */
 const OVERRIDE_FIXTURE = readFileSync(
@@ -653,4 +654,408 @@ test('an occurrence carries exactly the seven members the contract declares', ()
   // No content, no envelope bytes and no object text leaves here (INV-01,
   // INV-07): the answer is names and times.
   assert.ok(!JSON.stringify(result).includes(CANARY));
+});
+
+/**
+ * One object with the zone's own generated `VTIMEZONE` in front of its
+ * `VEVENT`s when `tzid` is given — every object this API writes carries one, and
+ * the expansion has to read an object with an embedded definition exactly like
+ * one without.
+ * @param {string} uid @param {string[][]} events @param {string} [tzid]
+ */
+function withZone(uid, events, tzid) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//flexcalendar//E05-R05 test//EN',
+  ];
+  if (tzid !== undefined) {
+    lines.push(
+      ...vtimezoneFor(tzid, { from: '2026-01-01', to: '2028-01-01' })
+        .trimEnd()
+        .split('\r\n'),
+    );
+  }
+  for (const event of events) {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      'DTSTAMP:20260101T000000Z',
+      ...event,
+      'END:VEVENT',
+    );
+  }
+  lines.push('END:VCALENDAR', '');
+  return {
+    href: `/calendars/00000000-0000-4000-8000-000000000000/${uid}.ics`,
+    ical: lines.join('\r\n'),
+  };
+}
+
+/** One instant moved by whole seconds, `YYYYMMDDTHHMMSSZ` in and out. @param {string} instant @param {number} seconds */
+function shifted(instant, seconds) {
+  const at = new Date(
+    Date.UTC(
+      Number(instant.slice(0, 4)),
+      Number(instant.slice(4, 6)) - 1,
+      Number(instant.slice(6, 8)),
+      Number(instant.slice(9, 11)),
+      Number(instant.slice(11, 13)),
+      Number(instant.slice(13, 15)) + seconds,
+    ),
+  );
+  const pad = (/** @type {number} */ value) => String(value).padStart(2, '0');
+  return `${at.getUTCFullYear()}${pad(at.getUTCMonth() + 1)}${pad(
+    at.getUTCDate(),
+  )}T${pad(at.getUTCHours())}${pad(at.getUTCMinutes())}${pad(
+    at.getUTCSeconds(),
+  )}Z`;
+}
+
+/**
+ * The three instants of a weekly 10:00 local series that starts 2026-10-10, per
+ * zone: before every one of the five autumn changes and after Chatham's own
+ * spring one, so the offset is the same for all three.
+ */
+const UNTIL_SERIES = [
+  [
+    'America/New_York',
+    '20261010T140000Z',
+    '20261017T140000Z',
+    '20261024T140000Z',
+  ],
+  [
+    'America/Sao_Paulo',
+    '20261010T130000Z',
+    '20261017T130000Z',
+    '20261024T130000Z',
+  ],
+  ['Asia/Kolkata', '20261010T043000Z', '20261017T043000Z', '20261024T043000Z'],
+  [
+    'Pacific/Chatham',
+    '20261009T201500Z',
+    '20261016T201500Z',
+    '20261023T201500Z',
+  ],
+  ['Europe/Berlin', '20261010T080000Z', '20261017T080000Z', '20261024T080000Z'],
+];
+
+for (const [tzid, first, second, third] of UNTIL_SERIES) {
+  for (const embedded of [false, true]) {
+    test(`\`UNTIL\` is an instant, not a wall clock, in ${tzid}${embedded ? ' with its VTIMEZONE' : ''}`, () => {
+      /** @param {string} until */
+      const expand = (until) => {
+        const result = expandOccurrences(
+          [
+            withZone(
+              id(1),
+              [
+                [
+                  `DTSTART;TZID=${tzid}:20261010T100000`,
+                  `DTEND;TZID=${tzid}:20261010T110000`,
+                  `RRULE:FREQ=WEEKLY;UNTIL=${until}`,
+                ],
+              ],
+              embedded ? tzid : undefined,
+            ),
+          ],
+          { ...YEAR, tz: tzid },
+        );
+        assert.deepEqual(result.unsupported, []);
+        return starts(result);
+      };
+      // One second before the third instance: the rule ends at the second.
+      assert.deepEqual(expand(shifted(third, -1)), [first, second]);
+      // At the instant: in, which is `UNTIL`'s inclusive boundary — the
+      // instance a zone behind UTC loses when the library compares a floating
+      // `UNTIL` against a zoned start.
+      assert.deepEqual(expand(third), [first, second, third]);
+      // One second after: still three.
+      assert.deepEqual(expand(shifted(third, 1)), [first, second, third]);
+    });
+  }
+}
+
+test('a `Z` `RDATE` and a `Z` `EXDATE` on a zoned master name instants', () => {
+  for (const embedded of [false, true]) {
+    const result = expandOccurrences(
+      [
+        withZone(
+          id(1),
+          [
+            [
+              'DTSTART;TZID=Europe/Berlin:20261010T100000',
+              'DTEND;TZID=Europe/Berlin:20261010T110000',
+              'RRULE:FREQ=WEEKLY;COUNT=3',
+              // 10:00 Berlin on 17 October 2026 (CEST, +2): the instance is
+              // removed only when the `Z` value is read as the instant it is.
+              'EXDATE:20261017T080000Z',
+              // 10:00 Berlin on 1 November 2026 (CET, +1) — read as a wall
+              // clock it would land an hour earlier.
+              'RDATE:20261101T090000Z',
+            ],
+          ],
+          embedded ? 'Europe/Berlin' : undefined,
+        ),
+      ],
+      { ...YEAR, tz: 'Europe/Berlin' },
+    );
+    assert.deepEqual(result.unsupported, []);
+    assert.deepEqual(starts(result), [
+      '20261010T080000Z',
+      '20261024T080000Z',
+      '20261101T090000Z',
+    ]);
+  }
+});
+
+test('an `RDATE` that repeats a rule instance is one occurrence, not two', () => {
+  const result = expandOccurrences(
+    [
+      numbered(1, [
+        'DTSTART:20260105T090000Z',
+        'DTEND:20260105T100000Z',
+        'RRULE:FREQ=DAILY;COUNT=3',
+        'RDATE:20260106T090000Z',
+        'RDATE:20260106T090000Z',
+      ]),
+    ],
+    { ...YEAR, tz: 'UTC' },
+  );
+  assert.deepEqual(starts(result), [
+    '20260105T090000Z',
+    '20260106T090000Z',
+    '20260107T090000Z',
+  ]);
+});
+
+test('an `RDATE` past `UNTIL` stays: `UNTIL` bounds the rule only', () => {
+  for (const embedded of [false, true]) {
+    const result = expandOccurrences(
+      [
+        withZone(
+          id(1),
+          [
+            [
+              'DTSTART;TZID=Europe/Berlin:20261020T100000',
+              'DTEND;TZID=Europe/Berlin:20261020T110000',
+              'RRULE:FREQ=DAILY;UNTIL=20261024T080000Z',
+              // Berlin's clocks go back on 25 October: 20 November is CET (+1),
+              // so 10:00 wall is 09:00Z — and the rule's own `UNTIL` is days
+              // behind it.
+              'RDATE:20261120T090000Z',
+            ],
+          ],
+          embedded ? 'Europe/Berlin' : undefined,
+        ),
+      ],
+      { ...YEAR, tz: 'Europe/Berlin' },
+    );
+    assert.deepEqual(result.unsupported, []);
+    assert.deepEqual(starts(result), [
+      '20261020T080000Z',
+      '20261021T080000Z',
+      '20261022T080000Z',
+      '20261023T080000Z',
+      '20261024T080000Z',
+      '20261120T090000Z',
+    ]);
+  }
+});
+
+test('a floating master and its override match on the wall clock, not an instant', () => {
+  const objects = [
+    objectOf(id(1), [
+      [
+        'DTSTART:20260601T090000',
+        'DTEND:20260601T100000',
+        'RRULE:FREQ=DAILY;COUNT=3',
+      ],
+      [
+        'RECURRENCE-ID:20260602T090000',
+        'DTSTART:20260620T090000',
+        'DTEND:20260620T100000',
+      ],
+    ]),
+  ];
+  // A floating reading is read in the requested zone, and the `RECURRENCE-ID`
+  // spells the same wall clock: the override removes 2 June and is reported by
+  // its own times, which no instant comparison does outside `UTC`.
+  const day = expandOccurrences(objects, {
+    from: '20260601T000000Z',
+    to: '20260604T000000Z',
+    tz: 'America/New_York',
+  });
+  assert.deepEqual(starts(day), ['20260601T130000Z', '20260603T130000Z']);
+
+  const moved = expandOccurrences(objects, {
+    from: '20260620T000000Z',
+    to: '20260621T000000Z',
+    tz: 'America/New_York',
+  });
+  assert.deepEqual(starts(moved), ['20260620T130000Z']);
+  assert.equal(moved.occurrences[0].override, true);
+  assert.deepEqual(moved.occurrences[0].recurrenceId, {
+    local: '20260602T090000',
+  });
+
+  // A `Z` `RECURRENCE-ID` names the same instant, and the key is still the wall
+  // clock the requested zone reads for it.
+  const zoned = expandOccurrences(
+    [
+      objectOf(id(1), [
+        [
+          'DTSTART:20260601T090000',
+          'DTEND:20260601T100000',
+          'RRULE:FREQ=DAILY;COUNT=3',
+        ],
+        [
+          'RECURRENCE-ID:20260602T130000Z',
+          'DTSTART:20260620T090000',
+          'DTEND:20260620T100000',
+        ],
+      ]),
+    ],
+    {
+      from: '20260601T000000Z',
+      to: '20260604T000000Z',
+      tz: 'America/New_York',
+    },
+  );
+  assert.deepEqual(starts(zoned), ['20260601T130000Z', '20260603T130000Z']);
+});
+
+test('an instance in a spring gap is bounded by `UNTIL` by its instant', () => {
+  // Berlin's spring gap is 2026-03-29: 02:30 does not exist there, and the
+  // pending ruling reads it with the offset before it, 01:30Z.
+  /** @param {string} until */
+  const expand = (until) => {
+    const result = expandOccurrences(
+      [
+        numbered(1, [
+          'DTSTART;TZID=Europe/Berlin:20260327T023000',
+          'DTEND;TZID=Europe/Berlin:20260327T033000',
+          `RRULE:FREQ=DAILY;UNTIL=${until}`,
+        ]),
+      ],
+      { from: '20260320T000000Z', to: '20260410T000000Z', tz: 'Europe/Berlin' },
+    );
+    assert.deepEqual(result.unsupported, []);
+    return starts(result);
+  };
+  // One second before the gap instance's own instant: the rule ends at the
+  // second, even though the wall clock the library compares sits an hour later.
+  assert.deepEqual(expand('20260329T012959Z'), [
+    '20260327T013000Z',
+    '20260328T013000Z',
+  ]);
+  assert.deepEqual(expand('20260329T013000Z'), [
+    '20260327T013000Z',
+    '20260328T013000Z',
+    '20260329T013000Z',
+  ]);
+});
+
+test('an all-day event is the requested zone’s midnight, not UTC’s', () => {
+  /** @param {string} tz @param {string} from @param {string} to */
+  const dates = (tz, from, to) =>
+    expandOccurrences(
+      [
+        numbered(1, [
+          'DTSTART;VALUE=DATE:20260310',
+          'DTEND;VALUE=DATE:20260311',
+        ]),
+      ],
+      { from, to, tz },
+    ).occurrences.map((occurrence) => occurrence.start.date);
+
+  // Kiritimati is UTC+14: 10 March starts 2026-03-09T10:00Z, a window that
+  // holds it and an hour of the day after it that does not.
+  assert.deepEqual(
+    dates('Pacific/Kiritimati', '20260309T100000Z', '20260309T110000Z'),
+    ['2026-03-10'],
+  );
+  assert.deepEqual(
+    dates('Pacific/Kiritimati', '20260310T100000Z', '20260310T110000Z'),
+    [],
+  );
+  // Pago Pago is UTC-11: the day runs past its UTC midnight by eleven hours.
+  assert.deepEqual(
+    dates('Pacific/Pago_Pago', '20260311T000000Z', '20260311T010000Z'),
+    ['2026-03-10'],
+  );
+  assert.deepEqual(
+    dates('Pacific/Pago_Pago', '20260310T000000Z', '20260310T010000Z'),
+    [],
+  );
+});
+
+test('an all-day override is placed by the requested zone’s midnights too', () => {
+  const objects = [
+    objectOf(id(1), [
+      [
+        'DTSTART;VALUE=DATE:20260301',
+        'DTEND;VALUE=DATE:20260302',
+        'RRULE:FREQ=DAILY;COUNT=20',
+      ],
+      [
+        'RECURRENCE-ID;VALUE=DATE:20260310',
+        'DTSTART;VALUE=DATE:20260401',
+        'DTEND;VALUE=DATE:20260402',
+      ],
+    ]),
+  ];
+  /** @param {string} tz @param {string} from @param {string} to */
+  const dates = (tz, from, to) =>
+    expandOccurrences(objects, { from, to, tz }).occurrences.map(
+      (occurrence) => occurrence.start.date,
+    );
+
+  assert.deepEqual(
+    dates('Pacific/Kiritimati', '20260331T100000Z', '20260331T110000Z'),
+    ['2026-04-01'],
+  );
+  assert.deepEqual(
+    dates('Pacific/Kiritimati', '20260401T100000Z', '20260401T110000Z'),
+    [],
+  );
+  assert.deepEqual(
+    dates('Pacific/Pago_Pago', '20260401T110000Z', '20260401T120000Z'),
+    ['2026-04-01'],
+  );
+  assert.deepEqual(
+    dates('Pacific/Pago_Pago', '20260401T000000Z', '20260401T010000Z'),
+    [],
+  );
+});
+
+test('an instance far before the window costs no zone work', () => {
+  // A daily Berlin series from 1971 puts ~20,000 instances before a 2026
+  // window; each one the expansion reads costs several ICU calls, and the guard
+  // skips them by wall clock. The bound is generous — with the guard the whole
+  // expansion makes a few hundred calls — and the count, not a wall-clock
+  // timing, is what the test holds.
+  const original = Intl.DateTimeFormat.prototype.formatToParts;
+  let calls = 0;
+  Intl.DateTimeFormat.prototype.formatToParts = function (...args) {
+    calls += 1;
+    return original.apply(this, args);
+  };
+  try {
+    const result = expandOccurrences(
+      [
+        numbered(1, [
+          'DTSTART;TZID=Europe/Berlin:19710101T090000',
+          'DTEND;TZID=Europe/Berlin:19710101T100000',
+          'RRULE:FREQ=DAILY',
+        ]),
+      ],
+      { from: '20260201T000000Z', to: '20260301T000000Z', tz: 'Europe/Berlin' },
+    );
+    assert.equal(result.occurrences.length, 28);
+    assert.deepEqual(result.unsupported, []);
+    assert.ok(calls < 5_000, `zone calls: ${calls}`);
+  } finally {
+    Intl.DateTimeFormat.prototype.formatToParts = original;
+  }
 });

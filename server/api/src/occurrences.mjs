@@ -20,11 +20,17 @@
 // (`spec/ical-fixtures/dst/README.md`) — so **no instant this module returns
 // comes out of `ical.js`**:
 //
-//   * The recurrence is expanded on **wall clocks**. `ical.js` reads
-//     `DTSTART;TZID=…` as a floating time (it has no zone to attach), so its
-//     iterator already yields exactly the wall-clock readings the rule names,
-//     in order, with `RDATE` merged and `EXDATE` removed. That is the only
-//     thing it is asked for.
+//   * The recurrence is expanded on **wall clocks**, in a floating copy of the
+//     object (`floatingCopy` below): every `VTIMEZONE` removed, every `TZID`
+//     parameter stripped. `ical.js` reads a `TZID` start as a real zone when the
+//     object embeds the definition — every object this API writes does — and
+//     then compares a floating `UNTIL` and a `Z` `RDATE`/`EXDATE` against true
+//     instants, so a zone behind UTC loses its last instance and a `Z` `RDATE`
+//     lands at the wrong wall clock. The copy has neither, so the iterator
+//     yields exactly the wall-clock readings the rule names, in order, with
+//     `RDATE` merged and `EXDATE` removed. That is the only thing the library is
+//     asked for, and an answer is the same with and without an embedded
+//     `VTIMEZONE`.
 //   * Every wall clock is then turned into an instant by `instantOf` from
 //     `src/zones.mjs` (RFC 5545 § 3.3.5 form 3, through ICU): a repeated
 //     reading is the first occurrence, a reading that does not exist is read
@@ -32,8 +38,10 @@
 //     the **requested** zone, which is what makes a day 23, 24 or 25 hours long.
 //   * A `UNTIL` beside a zone start is a UTC instant (RFC 5545 § 3.3.10), while
 //     the expansion compares wall clocks; it is therefore converted once with
-//     `localOf` before the expansion, and every instance is tested against the
+//     `localOf` on the copy, and every **rule** instance is tested against the
 //     **instant** as well, so the boundary is the RFC's and not the library's.
+//     An `RDATE` is not bounded by `UNTIL` (§ 3.3.10 bounds the rule only), and
+//     an `RDATE` that names a rule instance is that one occurrence, not two.
 //
 // ## The pending ruling of E15-R02
 //
@@ -206,6 +214,103 @@ function wallClockOf(value) {
   return `${date}T${pad(fields.hour)}${pad(fields.minute)}${pad(
     fields.second,
   )}`;
+}
+
+/**
+ * The `ICAL.Time` one compact wall clock spells, **floating**: the reading names
+ * no zone, which is what an `ical.js` rule needs to expand on wall clocks.
+ * @param {string} wall `YYYYMMDDTHHMMSS`
+ * @returns {ICAL.Time}
+ */
+function floatingTime(wall) {
+  return ICAL.Time.fromData({
+    year: Number(wall.slice(0, 4)),
+    month: Number(wall.slice(4, 6)),
+    day: Number(wall.slice(6, 8)),
+    hour: Number(wall.slice(9, 11)),
+    minute: Number(wall.slice(11, 13)),
+    second: Number(wall.slice(13, 15)),
+  });
+}
+
+/**
+ * A cheap, ICU-free proxy for the instant one wall clock names: its fields read
+ * as if they were UTC, off by at most the zone's offset. It exists only for the
+ * cost guard below, where a two-day margin dwarfs every offset; it is never
+ * reported and never decides an answer.
+ * @param {string} wall `YYYYMMDD` or `YYYYMMDDTHHMMSS`
+ * @returns {number} epoch seconds
+ */
+function proxyEpoch(wall) {
+  const date = midnight(wall.slice(0, 8)) / 1000;
+  if (wall.length === 8) return date;
+  return (
+    date +
+    Number(wall.slice(9, 11)) * 3600 +
+    Number(wall.slice(11, 13)) * 60 +
+    Number(wall.slice(13, 15))
+  );
+}
+
+/**
+ * The master `VEVENT` of a calendar: the first one without a `RECURRENCE-ID`,
+ * or the first one when every `VEVENT` carries one — `src/ical-rmw.mjs`'s
+ * `master()`. A calendar this module is called with always holds one
+ * (`describe` has already refused the object otherwise).
+ * @param {ICAL.Component} calendar
+ * @returns {ICAL.Component}
+ */
+function masterOf(calendar) {
+  const events = calendar.getAllSubcomponents('vevent');
+  return /** @type {ICAL.Component} */ (
+    events.find((event) => !event.hasProperty('recurrence-id')) ?? events[0]
+  );
+}
+
+/**
+ * A **floating** copy of one parsed object: every `VTIMEZONE` removed and every
+ * `TZID` parameter stripped, so `ical.js` reads each start as a wall clock with
+ * no zone to attach and expands on wall clocks alone.
+ *
+ * It is what makes the expansion independent of whether the object carries its
+ * own `VTIMEZONE`: with one embedded, the library attaches a real zone to a
+ * `TZID` start and then compares the floating `UNTIL` and the `Z` `RDATE`/
+ * `EXDATE` this API's objects carry against true instants — dropping an instance
+ * beside `UNTIL` in a zone behind UTC, placing a `Z` `RDATE` at the wrong wall
+ * clock and never matching a `Z` `EXDATE`.
+ *
+ * @param {ICAL.Component} calendar
+ * @returns {ICAL.Component}
+ */
+function floatingCopy(calendar) {
+  const working = new ICAL.Component(calendar.toJSON());
+  for (const vtimezone of working.getAllSubcomponents('vtimezone')) {
+    working.removeSubcomponent(vtimezone);
+  }
+  for (const event of working.getAllSubcomponents('vevent')) {
+    for (const property of event.getAllProperties()) {
+      property.removeParameter('tzid');
+    }
+  }
+  return working;
+}
+
+/**
+ * Rewrites a `RDATE`/`EXDATE` property of a zoned master in place: every value
+ * that names a `Z` instant becomes the wall clock the master's own zone reads
+ * for it, so a floating expansion places it where its instant is (an `RDATE`) or
+ * removes the instance it names (an `EXDATE`). A `VALUE=DATE` value names a day
+ * and is left alone.
+ * @param {ICAL.Property} property
+ * @param {string} tzid
+ */
+function toWallClocks(property, tzid) {
+  const values = property.getValues().map((value) => {
+    if (!(value instanceof ICAL.Time) || value.isDate) return value;
+    if (value.zone !== ICAL.Timezone.utcTimezone) return value;
+    return floatingTime(localOf(`${wallClockOf(value)}Z`, tzid));
+  });
+  property.setValues(values);
 }
 
 /** @typedef {{date?: string, utc?: string, local?: string, tzid?: string}} TimeShape */
@@ -397,6 +502,17 @@ function keyOfShape(shape, anchor, tz) {
   ) {
     return `T${shape.local}`;
   }
+  // A floating master reads its instances in the requested zone, and a
+  // `RECURRENCE-ID` that spells no zone names the same wall clock. Comparing
+  // the instant here would leave the master's instance behind for any `tz` but
+  // `UTC`, so it is the wall clock that matches.
+  if (
+    typeof shape.local === 'string' &&
+    shape.tzid === undefined &&
+    anchor.kind === 'floating'
+  ) {
+    return `T${shape.local}`;
+  }
   if (
     typeof shape.utc === 'string' &&
     anchor.kind === 'utc' &&
@@ -408,6 +524,9 @@ function keyOfShape(shape, anchor, tz) {
   if (instant === undefined) return undefined;
   if (anchor.kind === 'zoned') {
     return `T${localOf(instantString(instant), /** @type {string} */ (anchor.tzid))}`;
+  }
+  if (anchor.kind === 'floating') {
+    return `T${localOf(instantString(instant), tz)}`;
   }
   return `T${instantString(instant).slice(0, 15)}`;
 }
@@ -533,8 +652,7 @@ function expandObject(object, window) {
   const events = calendar.getAllSubcomponents('vevent');
   // `src/ical-rmw.mjs`'s `master()`: the first VEVENT without a `RECURRENCE-ID`,
   // or the first one when every VEVENT carries one.
-  const master =
-    events.find((event) => !event.hasProperty('recurrence-id')) ?? events[0];
+  const master = masterOf(calendar);
   const anchor = anchorOf(parsed.start);
   if (!isAnchor(anchor)) return unsupported(/** @type {any} */ (anchor).reason);
   const zone = /** @type {Anchor} */ (anchor);
@@ -577,13 +695,20 @@ function expandObject(object, window) {
   const duration = masterInterval.endInstant - masterInterval.startInstant;
   const masterWall = anchorWall(/** @type {TimeShape} */ (parsed.start), zone);
 
-  // A `UNTIL` beside a zone start is UTC, and the expansion compares wall
-  // clocks: convert it once, so the library stops at the right instance, and
-  // then test every instance against the instant as well (below).
+  // The floating working copy the library expands (see `floatingCopy`). It has
+  // no `VTIMEZONE` and no `TZID`, so `ical.js` iterates wall clocks only.
+  const working = floatingCopy(calendar);
+  const workingMaster = /** @type {ICAL.Component} */ (masterOf(working));
+
+  // A `UNTIL` beside a zone start is a UTC instant, and the expansion compares
+  // wall clocks: convert it once, so the library stops at the right instance,
+  // and then test every rule instance against the instant as well (below).
   const until = untilOf(parsed.rrule, zone);
   if (until !== undefined && zone.kind === 'zoned') {
     const converted = localOf(until, /** @type {string} */ (zone.tzid));
-    /** @type {ICAL.Property} */ (master.getFirstProperty('rrule')).setValue(
+    /** @type {ICAL.Property} */ (
+      workingMaster.getFirstProperty('rrule')
+    ).setValue(
       ICAL.Recur.fromString(
         /** @type {string} */ (parsed.rrule).replace(
           UNTIL_VALUE,
@@ -592,12 +717,40 @@ function expandObject(object, window) {
       ),
     );
   }
+  // A `Z` `RDATE`/`EXDATE` on a zoned master is an instant, and the floating
+  // expansion speaks wall clocks: rewrite it to the wall clock the master's own
+  // zone reads for it, and remember which wall clocks the `RDATE`s name, so an
+  // `RDATE` beside `UNTIL` is kept (the rule is what `UNTIL` bounds) and an
+  // `RDATE` that repeats a rule instance is that occurrence, not a second one.
+  /** @type {Set<string>} */
+  const rdateWalls = new Set();
+  if (zone.kind === 'zoned') {
+    for (const property of workingMaster.getAllProperties('rdate')) {
+      toWallClocks(property, /** @type {string} */ (zone.tzid));
+    }
+    for (const property of workingMaster.getAllProperties('exdate')) {
+      toWallClocks(property, /** @type {string} */ (zone.tzid));
+    }
+  }
+  for (const property of workingMaster.getAllProperties('rdate')) {
+    for (const value of property.getValues()) {
+      if (value instanceof ICAL.Time) rdateWalls.add(wallClockOf(value));
+    }
+  }
   const untilEpoch = until === undefined ? undefined : epochOf(until);
 
+  // The cost of an old series: an instance whose wall clock is more than two
+  // days (plus the event's own length) before the window can never overlap it,
+  // so the ICU work for it is skipped. `ical.js` keeps iterating, and two days
+  // is more than twice the widest offset, so nothing in the answer moves.
+  const cutoff = from - (2 * 86_400 + Math.max(0, duration));
+
+  /** @type {Set<string>} */
+  const emitted = new Set();
   let iterations = 0;
   let capped = false;
   try {
-    const iterator = new ICAL.Event(master).iterator();
+    const iterator = new ICAL.Event(workingMaster).iterator();
     let next = iterator.next();
     while (next) {
       iterations += 1;
@@ -606,6 +759,10 @@ function expandObject(object, window) {
         break;
       }
       const wall = wallClockOf(next);
+      if (proxyEpoch(wall) < cutoff) {
+        next = iterator.next();
+        continue;
+      }
       const instant =
         zone.kind === 'date'
           ? epochOf(instantOf(`${wall}T000000`, tz))
@@ -630,8 +787,16 @@ function expandObject(object, window) {
           wall,
           zone.kind === 'zoned' ? /** @type {string} */ (zone.tzid) : tz,
         );
-      const past = untilEpoch !== undefined && instant > untilEpoch;
-      if (keep && !past && !replaced.has(keyOfWall(wall, zone))) {
+      // `UNTIL` bounds the rule only: an `RDATE` past it stays. The instance
+      // test beside it is the RFC's boundary even where the library's own
+      // wall-clock comparison reads a different instant.
+      const past =
+        !rdateWalls.has(wall) &&
+        untilEpoch !== undefined &&
+        instant > untilEpoch;
+      const key = keyOfWall(wall, zone);
+      if (keep && !past && !replaced.has(key) && !emitted.has(wall)) {
+        emitted.add(wall);
         const interval =
           zone.kind === 'date'
             ? dateInterval(wall, duration, tz)

@@ -19,11 +19,13 @@
 // years of a minutely rule is told to ask for less rather than handed a slice it
 // cannot tell from the whole.
 //
-// **The CalDAV read is padded by one day each side.** `calendar-query` answers a
-// `time-range` filter with its own engine (`sabre/vobject`) and its own idea of
-// an occurrence, so the window this API asks for is wider than the window it
-// answers: an all-day event, and a zone offset up to ±14 h, must not fall out of
-// the service's filter. The exact filter is `src/occurrences.mjs`.
+// **The CalDAV read is the whole collection.** A `calendar-query` answers a
+// `time-range` filter with the service's own recurrence engine
+// (`sabre/vobject`), which expands every object it holds and fails the whole
+// report once one series passes its instance bound — so a single long series
+// would turn every window into a 502. The report therefore carries the
+// `VCALENDAR`/`VEVENT` filters alone, and the window is decided by
+// `src/occurrences.mjs`, the API's one authority.
 //
 // Roles: every member (`owner`, `editor` and `viewer`) reads, and a caller who
 // is not a member gets the 404 an unknown calendar gets — an id outside the
@@ -272,19 +274,6 @@ function epochOf(value) {
   return same ? milliseconds / 1000 : undefined;
 }
 
-/** @param {number} epochSeconds @param {number} days */
-function shifted(epochSeconds, days) {
-  const date = new Date((epochSeconds + days * 86_400) * 1000);
-  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(
-    2,
-    '0',
-  )}${String(date.getUTCDate()).padStart(2, '0')}T${String(
-    date.getUTCHours(),
-  ).padStart(2, '0')}${String(date.getUTCMinutes()).padStart(2, '0')}${String(
-    date.getUTCSeconds(),
-  ).padStart(2, '0')}Z`;
-}
-
 /**
  * The window one query names, or undefined when it is not a window this API
  * answers. `from` and `to` are required instants, `to` later than `from` and at
@@ -409,18 +398,15 @@ export function registerOccurrenceRoutes(
       const view = caldavFor(request, reply, user.id);
       if (!view) return undefined;
 
-      const from = epochOf(window.from);
-      const to = epochOf(window.to);
       /** @type {Array<{href: string, etag?: string | null, data: string}>} */
       let stored;
       try {
-        // One day of padding each side: the report's own engine answers the
-        // time-range filter, and an all-day day or a ±14 h offset must not fall
-        // outside it.
-        stored = await view.listObjects(calendarId, {
-          start: shifted(/** @type {number} */ (from), -1),
-          end: shifted(/** @type {number} */ (to), 1),
-        });
+        // The whole collection, with no `time-range`: a ranged report is
+        // answered by the service's own engine (`sabre/vobject`), which expands
+        // every series it holds and fails the whole report once one of them
+        // passes its instance bound — so one long series would take the entire
+        // calendar down to a 502. The exact filter is `src/occurrences.mjs`.
+        stored = await view.listObjects(calendarId);
       } catch (error) {
         sendCalDavProblem(reply, error, { instance: request.id });
         return undefined;

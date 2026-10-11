@@ -9,9 +9,9 @@
 //   * the window is validated before CalDAV is asked anything, and every way it
 //     can be wrong is the one fixed 422 — never a value of the request echoed
 //     back;
-//   * the padded window (`from - 1 day` .. `to + 1 day`) is what the CalDAV
-//     `calendar-query` is asked for, so the service's own engine cannot filter
-//     out an all-day day or a ±14 h offset;
+//   * the whole collection is read (no `time-range`), so the service's own
+//     recurrence engine never expands a series and the module's exact filter
+//     decides the window;
 //   * the answer is the expanded occurrences plus the objects that were left
 //     out, and it carries no content (INV-01, INV-07);
 //   * a window that would answer more occurrences than one answer may carry is
@@ -199,7 +199,7 @@ const occurrencesUrl = (
   /** @type {string} */ query,
 ) => `/calendars/${calendarId}/occurrences?${query}`;
 
-test('the window is expanded, and the CalDAV read is padded by a day each side', async () => {
+test('the window is expanded, and the whole collection is read', async () => {
   const { app, caldav, events, calendarId } = await setup();
   try {
     caldav.seed(
@@ -238,14 +238,15 @@ test('the window is expanded, and the CalDAV read is padded by a day each side',
     assert.equal(body.occurrences[0].override, false);
     assert.equal(body.occurrences[0].envelopeSha256, HASH);
 
-    // The report this API asked for is wider than the window it was asked for
-    // (E05-R05): the service's own engine answers its `time-range` filter.
+    // The report this API asks for carries no `time-range` (E05-R05): the
+    // service's own engine would expand every series it holds, and one long
+    // series would fail the whole report. The exact filter is the module's.
     const read = /** @type {any} */ (
       events.filter((entry) => entry.op === 'listObjects')
     );
     assert.equal(read.length, 1);
-    assert.equal(read[0].start, '20260105T000000Z');
-    assert.equal(read[0].end, '20260108T000000Z');
+    assert.equal(read[0].start, undefined);
+    assert.equal(read[0].end, undefined);
   } finally {
     await app.close();
   }

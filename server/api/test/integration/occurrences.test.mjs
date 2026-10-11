@@ -22,7 +22,14 @@
 //     generated `VTIMEZONE` — adds the `EXDATE` and the override `VEVENT` the
 //     API's own field set never writes (INV-05), puts that through the **live**
 //     guard as the caller, and reads the window that covers the override: it is
-//     reported by its own times, with the master instance it names gone.
+//     reported by its own times, with the master instance it names gone;
+//   * reads a decade-long daily series and the window it reaches in 2026: a
+//     `calendar-query` with a `time-range` would make the service's own engine
+//     expand it to its instance bound and fail the whole report, so the report
+//     carries no range and only the API's expansion decides;
+//   * reads a calendar that also holds an hourly series from 2020: it is
+//     `unsupported` with `too-many-instances` and the calendar's other events
+//     are answered as usual.
 //
 // The suite seeds its own users and calendar and removes them again, so it can
 // run twice in a row.
@@ -49,6 +56,19 @@ const AUDIENCE = 'project-id';
 const HASH = 'c'.repeat(64);
 /** The envelope hash the override VEVENT carries; opaque as well. */
 const OVERRIDE_HASH = 'd'.repeat(64);
+
+/**
+ * An envelope of `length` bytes with the header the API's create requires
+ * (first byte `1`, the epoch as a `uint32` at offset 1, at least 45 bytes) —
+ * `test/integration/events.test.mjs`'s own `envelopeOf`.
+ * @param {number} epoch @param {number} [length]
+ */
+function envelopeOf(epoch, length = 60) {
+  const bytes = Buffer.alloc(Math.max(length, 45), 0xab);
+  bytes[0] = 1;
+  bytes.writeUInt32BE(epoch, 1);
+  return bytes.toString('base64');
+}
 
 /** The subject this suite's user is identified by. */
 const RUN = randomUUID();
@@ -141,7 +161,7 @@ async function request(app, method, url, payload) {
 async function calendar(/** @type {import('fastify').FastifyInstance} */ app) {
   const response = await request(app, 'POST', '/calendars', {
     mode: 'private',
-    metaEnvelope: Buffer.alloc(60, 0xab).toString('base64'),
+    metaEnvelope: envelopeOf(1),
     metaEpoch: 1,
   });
   assert.equal(response.statusCode, 201, response.body);
@@ -296,12 +316,12 @@ test('a Berlin weekly and a UTC daily event across the fall-back, in one window'
         occurrence.recurrenceId.utc === '20261024T060000Z',
     );
     assert.equal(daily.length, 1);
-    assert.equal(daily[0].start.local, '20261024T080000Z');
+    assert.equal(daily[0].start.local, '20261024T080000');
     const after = body.occurrences.find(
       (/** @type {any} */ occurrence) =>
         occurrence.start.utc === '20261027T060000Z',
     );
-    assert.equal(after.start.local, '20261027T070000Z');
+    assert.equal(after.start.local, '20261027T070000');
   } finally {
     await app.close();
   }
@@ -365,6 +385,76 @@ test('a skeleton the API wrote, with an override added by hand, through the live
     });
     assert.equal(moved.envelopeSha256, OVERRIDE_HASH);
     assert.equal(body.occurrences[0].envelopeSha256, HASH);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a daily series from 2016 answers a 2026 window, whole-collection read', async () => {
+  const { app } = build();
+  try {
+    const calendarId = await calendar(app);
+    // An unbounded daily series a decade before the window: a `calendar-query`
+    // with a `time-range` makes the service expand it with `sabre/vobject`,
+    // which stops at 3,500 instances and fails the whole report — every other
+    // event included. The report carries no range (E05-R05), so the API's own
+    // expansion decides and the answer is 200.
+    await event(app, calendarId, {
+      start: { utc: '20161001T080000Z' },
+      end: { utc: '20161001T090000Z' },
+      rrule: 'FREQ=DAILY',
+    });
+
+    const response = await request(
+      app,
+      'GET',
+      `/calendars/${calendarId}/occurrences?from=20261001T000000Z&to=20261101T000000Z&tz=UTC`,
+    );
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.deepEqual(body.unsupported, []);
+    assert.equal(body.occurrences.length, 31);
+    assert.equal(body.occurrences[0].start.utc, '20261001T080000Z');
+    assert.equal(body.occurrences[30].start.utc, '20261031T080000Z');
+  } finally {
+    await app.close();
+  }
+});
+
+test('an hourly series from 2020 is unsupported, and the rest is answered', async () => {
+  const { app } = build();
+  try {
+    const calendarId = await calendar(app);
+    // ~56,000 instances separate 2020-01-01 from the window, more than the
+    // API's own bound: the object is reported `too-many-instances` and the
+    // calendar's other events are still answered.
+    const hourly = await event(app, calendarId, {
+      start: { utc: '20200101T000000Z' },
+      end: { utc: '20200101T010000Z' },
+      rrule: 'FREQ=HOURLY',
+    });
+    await event(app, calendarId, {
+      start: { utc: '20261001T080000Z' },
+      end: { utc: '20261001T090000Z' },
+      rrule: 'FREQ=DAILY;COUNT=2',
+    });
+
+    const response = await request(
+      app,
+      'GET',
+      `/calendars/${calendarId}/occurrences?from=20261001T000000Z&to=20261003T000000Z&tz=UTC`,
+    );
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.deepEqual(
+      body.unsupported.map((/** @type {any} */ entry) => entry.reason),
+      ['too-many-instances'],
+    );
+    assert.equal(body.unsupported[0].uid, hourly.uid);
+    assert.deepEqual(instants(response), [
+      '20261001T080000Z',
+      '20261002T080000Z',
+    ]);
   } finally {
     await app.close();
   }

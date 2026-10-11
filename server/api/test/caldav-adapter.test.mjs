@@ -763,6 +763,23 @@ test('listObjects asks for a calendar-query over the requested window', async ()
   assert.equal(calls[0].init.headers.get('depth'), '1');
 });
 
+test('listObjects without a range asks for the whole collection', async () => {
+  const { adapter, calls } = adapterFor(xml('<d:multistatus xmlns:d="DAV:"/>'));
+  await adapter.forUser(USER).listObjects(CALENDAR);
+  const body = String(calls[0].init.body);
+  // The component filter alone: no `time-range`, so the service's own engine
+  // never expands a series and the caller's expansion decides the window
+  // (E05-R05).
+  assert.ok(
+    body.includes('<c:calendar-query') || body.includes('<cal:calendar-query'),
+    body,
+  );
+  assert.ok(body.includes('name="VEVENT"'), body);
+  assert.ok(!body.includes('time-range'), body);
+  assert.equal(calls[0].init.headers.get('depth'), '1');
+  assert.equal(calls.length, 1);
+});
+
 test('listObjects accepts ISO instants and refuses anything else', async () => {
   const { adapter, calls } = adapterFor(xml('<d:multistatus xmlns:d="DAV:"/>'));
   const user = adapter.forUser(USER);
@@ -774,7 +791,7 @@ test('listObjects accepts ISO instants and refuses anything else', async () => {
   assert.ok(body.includes('start="20260101T000000Z"'), body);
   assert.ok(body.includes('end="20260201T000000Z"'), body);
   for (const range of [
-    undefined,
+    null,
     {},
     { start: '2026-01-01', end: '2026-02-01' },
     { start: 'x', end: 'y' },

@@ -509,11 +509,19 @@ one place a `RRULE` becomes instances for the API.
   stop inside the API's own bound are reported with a `reason` and contribute no
   occurrences. The rest of the window is answered as usual; a wrong expansion is
   never invented.
-- **The CalDAV read is wider than the window.** The `calendar-query` asks for
-  `from − 1 day` to `to + 1 day`, so an all-day day or a ±14 h offset cannot be
-  filtered out by the service's own recurrence engine; the exact filter is this
-  module's. The answer carries a `uid`, a `recurrenceId`, two times and an
-  envelope hash — never a `SUMMARY`, a description, a location or an attendee.
+- **The CalDAV read is the whole collection.** The `calendar-query` carries the
+  `VCALENDAR`/`VEVENT` filters alone: a `time-range` makes the service's own
+  recurrence engine expand every series it holds and fail the whole report once
+  one of them passes its instance bound, so a single long series would turn every
+  window into a `502`. The exact filter — the window included — is this module's.
+  The answer carries a `uid`, a `recurrenceId`, two times and an envelope hash —
+  never a `SUMMARY`, a description, a location or an attendee.
+- **`ical.js` iterates wall clocks, on a floating copy.** The object is expanded
+  with every `VTIMEZONE` and every `TZID` parameter removed, so a `Z` `RDATE` or
+  `EXDATE` is rewritten to the wall clock the master's own zone reads for it and
+  a `Z` `UNTIL` stops the rule at the RFC's instant — the answer is the same
+  whether or not the object embeds its `VTIMEZONE`. Every instant still comes
+  from `src/zones.mjs`.
 
 ## Changes
 
@@ -814,7 +822,14 @@ that starts before it, an `EXDATE` and an `RDATE`, the E15-R01 skeleton with its
 override, an override moved into and out of the window, one whose
 `RECURRENCE-ID` names nothing, the two rule families `ical.js` expands wrongly,
 the bound that reports `too-many-instances`, the pending ruling's reading, the
-sort order, determinism, and a canary that reaches the answer from nowhere.
+sort order, determinism, and a canary that reaches the answer from nowhere. It
+also holds the reading of an object that embeds its own `VTIMEZONE` to the same
+answer as one that does not: `UNTIL` equal to, one second before and one second
+after an instance in five zones, a `Z` `RDATE` and a `Z` `EXDATE` on a zoned
+master, one in a spring gap, an `RDATE` that repeats a rule instance, one past
+`UNTIL`, a floating master's override in a non-UTC viewing zone, an all-day
+event and an all-day override placed by the requested zone's midnights rather
+than UTC's, and the ICU-call count of an old daily series.
 `test/occurrences-dst.test.mjs` is the API's runner for E15-R02's table: every
 case read from the file, built with its zone's own `VTIMEZONE` so nothing is
 resolved through the library, and compared with `expected` — with `view-zone`
@@ -826,17 +841,22 @@ normalised to the golden's form and compared with E15-R03's own helpers, with th
 two families `RULINGS.md` names left out and their ruling required to name
 `vobject` as the correct engine. `test/occurrences-route.test.mjs` drives the
 operation through the real app against the in-memory stores: every malformed
-window as the one fixed `422` before the store or CalDAV is asked, the padded
-`calendar-query` range, the default zone, all three roles, the `unsupported`
-answer, the `window-too-large` refusal and the narrower window that fits, the
-404s, the `405` with `Allow`, and a canary from a hostile store, a hostile
-adapter and an unreadable object that reaches neither a body nor a log line.
+window as the one fixed `422` before the store or CalDAV is asked, the
+whole-collection `calendar-query` with no `time-range`, the default zone, all
+three roles, the `unsupported` answer, the `window-too-large` refusal and the
+narrower window that fits, the 404s, the `405` with `Allow`, and a canary from a
+hostile store, a hostile adapter and an unreadable object that reaches neither a
+body nor a log line.
 `test/integration/occurrences.test.mjs` (inside the stack, `make
 test-api-caldav`) creates a Berlin weekly event and a UTC daily one across the
 2026-10-25 fall-back through the API and asserts the window's instants and the
 viewer's wall clocks, then takes an object the API itself wrote, adds the
 `EXDATE` and the override `VEVENT` its own field set never writes, puts that
-through the **live** guard and reads the window that covers the override.
+through the **live** guard and reads the window that covers the override. It
+also reads a decade-long daily series whose 2026 window a `time-range` report
+would fail, and a calendar that also holds an hourly series from 2020, which is
+`unsupported` with `too-many-instances` while the rest of the calendar is
+answered.
 
 The E05-R10 suites also need nothing but Node. `test/problem.test.mjs` holds the
 problem table, the status normaliser and the CalDAV mapping (hostile body

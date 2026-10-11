@@ -441,10 +441,11 @@ export function createMemoryCalDavStore(seed = {}) {
          * service narrows the report with its own engine (`sabre/vobject`) and
          * this API's exact filter is `src/occurrences.mjs`, which the suites
          * exercise on its own — a double that narrowed with a second
-         * implementation would hide exactly that. The requested range is
-         * recorded, so a test can hold the padding the route asks CalDAV for.
+         * implementation would hide exactly that. A range is optional (the
+         * route sends none), and whatever it was given is recorded, so a test
+         * can hold that no `time-range` reaches the report.
          * @param {string} calendarId
-         * @param {{start: string, end: string}} range
+         * @param {{start: string, end: string}} [range]
          */
         async listObjects(calendarId, range) {
           events.push({
