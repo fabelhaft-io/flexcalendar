@@ -46,14 +46,15 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 2. **Run** it in the background, logging to the scratch directory, and tell the owner it started:
 
    ```sh
-   cd agent-team && npm run dev-team -- <ID> --paths <p1>,<p2> > <scratch>/<ID>.run<n>.log 2>&1
+   cd agent-team && BASE_BRANCH=<base> npm run dev-team -- <ID> --paths <p1>,<p2> > <scratch>/<ID>.run<n>.log 2>&1
    ```
 
+   - `<base>` is `main` (leave `BASE_BRANCH` out) unless the requirement stacks: then it is the branch `make next-ready` shows after "stack on". The coordinator cuts `feat/<ID>-<slug>` from it and merges it forward on reuse. The PR of a stacked requirement targets that branch (`gh pr create --base <base>`), and `main` is merged forward into the stack after each merge (`follow-ups.md` § Queue).
    - `--paths`: a trailing `/` grants a tree; anything else exactly one file. Root files are listed one by one (`Makefile`, `package.json`, `pnpm-lock.yaml`, `.gitignore`, …). Grant the narrowest set the requirement plausibly needs. The coordinator always refuses `.git`, `agent-team/`, `.claude/`, `.agents/` (this skill) and secrets files.
-   - The coordinator creates `feat/<ID>-<slug>` in `../calendar-flex-agent-<ID>`, cut from `main` and merged forward on reuse. It commits in-scope files only. Out-of-scope edits land in `agent-team/runs/<ID>/run-<n>/out-of-scope/`, which is the sign of a too-narrow `--paths`.
+   - The coordinator creates `feat/<ID>-<slug>` in `../calendar-flex-agent-<ID>`, cut from `BASE_BRANCH` (default `main`) and merged forward on reuse. It commits in-scope files only. Out-of-scope edits land in `agent-team/runs/<ID>/run-<n>/out-of-scope/`, which is the sign of a too-narrow `--paths`.
    - When `NEXT:` names two requirements, start both: each has its own worktree and run directory. Cut a stacked one from the branch `make next-ready` shows after "stack on". The `follow-ups: N` count on a row is the number of lines in `follow-ups.md` that name it: those are what the brief below must carry.
    - A BLOCKED exit (code 1) can mean a failed handoff schema, not a real blocker. The reason is in `agent-team/runs/<ID>/run-<n>/implementer-handoff-error.txt`, next to the agent's final text. Review the branch anyway.
-   - **Brief before run 1.** Follow-ups that belong to the requirement reach the implementer only through `docs/reviews/<ID>.md` on its branch, which the coordinator feeds into the prompt. So create the branch and worktree yourself (`git worktree add ../calendar-flex-agent-<ID> -b feat/<ID>-<slug> main`; the slug is the coordinator's: the requirement title lower-cased, runs of non-alphanumerics as `-`, at most 40 characters), commit the brief there as `doc(<ID>): brief before run 1`, and then run. Put in it: the follow-ups from `follow-ups.md`, facts you checked upstream (versions, peer ranges, whether a generator runs on the pinned toolchain), the design constraints you want, what the sandbox can't run and what to do about it (write everything, list the rest). The coordinator truncates the file at 12,000 characters (`MAX_FINDINGS_CHARS`), so keep the newest review and its fix requests at the top and older sections below.
+   - **Brief before run 1.** Follow-ups that belong to the requirement reach the implementer only through `docs/reviews/<ID>.md` on its branch, which the coordinator feeds into the prompt. So create the branch and worktree yourself (`git worktree add ../calendar-flex-agent-<ID> -b feat/<ID>-<slug> <base>`; the slug is the coordinator's: the requirement title lower-cased, runs of non-alphanumerics as `-`, at most 40 characters), commit the brief there as `doc(<ID>): brief before run 1`, and then run. Put in it: the follow-ups from `follow-ups.md`, facts you checked upstream (versions, peer ranges, whether a generator runs on the pinned toolchain), the design constraints you want, what the sandbox can't run and what to do about it (write everything, list the rest). The coordinator truncates the file at 12,000 characters (`MAX_FINDINGS_CHARS`), so keep the newest review and its fix requests at the top and older sections below.
 3. **Review** it in its worktree, by [`review-checklist.md`](review-checklist.md). Write `docs/reviews/<ID>.md`:
    - the verdict, the review number and the reviewed commit;
    - each criterion with its command and observed output;
@@ -78,7 +79,7 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 
 ## Running unattended
 
-When the owner asks for the loop to run on its own ("keep going", "run the queue"), repeat the loop until a stop condition holds, and say which one stopped you. Stop and tell the owner when:
+When the owner asks for the loop to run on its own ("keep going", "run the queue"), follow [`kickoff.md`](kickoff.md): it is the brief for that session, and it says what to do where this skill says "ask the owner". Repeat the loop until a stop condition holds, and say which one stopped you. Stop and tell the owner when:
 
 - `make next-ready` says `wait` because of the stack cap. Report which PRs wait for the owner's merge, then stop; don't keep polling for it.
 - It says `none`, or only "Needs judgment" entries are left.
