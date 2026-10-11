@@ -10,8 +10,34 @@
 // Every method can be made to fail (`fail('remove')`), because the interesting
 // paths of E05-R03 are the ones where a step breaks: a failing `MKCALENDAR`,
 // a failing compensation, a failing row delete after the collection is gone.
+//
+// It also refuses a `calendarId` that is not a UUID, the way Postgres does:
+// `calendars.id` is a `uuid` column and `'not-a-uuid'` raises `22P02`
+// (`invalid input syntax for type uuid`). Without that, a route that let such
+// an id reach the store would look fine against this fake and be a 500 in the
+// stack (review 1, fix 2).
 
 import { randomUUID } from 'node:crypto';
+
+/** Postgres' `invalid_text_representation` SQLSTATE, as `pg` raises it. */
+const INVALID_TEXT_REPRESENTATION = '22P02';
+
+/** The shape `calendars.id` holds: the canonical lowercase UUID. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Throws what Postgres throws for a `uuid` column given a value that is not a
+ * UUID, so a missing check in a route is a 500 here too.
+ * @param {unknown} calendarId
+ */
+function assertUuid(calendarId) {
+  if (typeof calendarId !== 'string' || !UUID.test(calendarId)) {
+    throw Object.assign(
+      new Error(`invalid input syntax for type uuid: ${String(calendarId)}`),
+      { code: INVALID_TEXT_REPRESENTATION },
+    );
+  }
+}
 
 /** @param {unknown} value */
 const iso = (value) => (value instanceof Date ? value.toISOString() : value);
@@ -117,6 +143,7 @@ export function createMemoryCalendarStore(seed = {}) {
 
     /** @param {string} calendarId @param {string} userId */
     async findMembership(calendarId, userId) {
+      assertUuid(calendarId);
       guard('findMembership');
       const row = calendars.get(calendarId);
       return row === undefined ? undefined : visible(row, userId);
@@ -157,6 +184,7 @@ export function createMemoryCalendarStore(seed = {}) {
       metaEnvelope,
       metaEpoch,
     }) {
+      assertUuid(calendarId);
       guard('replaceMeta');
       const row = calendars.get(calendarId);
       if (row === undefined || row.version !== expectedVersion)
@@ -171,6 +199,7 @@ export function createMemoryCalendarStore(seed = {}) {
 
     /** @param {string} calendarId */
     async remove(calendarId) {
+      assertUuid(calendarId);
       guard('remove');
       members.delete(calendarId);
       const removed = calendars.delete(calendarId);

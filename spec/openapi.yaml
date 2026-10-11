@@ -387,14 +387,13 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  # The `id` path parameter is declared on each operation instead of once for the
+  # whole path item: swagger_parser 1.45.0, the Dart generator E02-R07 pins,
+  # casts every path-item member to a map before it skips `parameters`, so a
+  # path-level list makes it die with a type error and `make gen` leaves
+  # `apps/mobile/lib/api/` empty without failing. Keep `id` first in each
+  # operation's list so the generated clients keep it as the leading argument.
   /calendars/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: The `calendars.id` uuid.
-        schema:
-          type: string
     patch:
       tags: [calendars]
       operationId: replaceCalendarMetadata
@@ -411,6 +410,12 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - name: id
+          in: path
+          required: true
+          description: The `calendars.id` uuid.
+          schema:
+            type: string
         - name: If-Match
           in: header
           required: true
@@ -567,6 +572,13 @@ paths:
         is already gone is not an error: the request wanted it gone.
       security:
         - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The `calendars.id` uuid.
+          schema:
+            type: string
       responses:
         '204':
           description: The collection and the calendar's rows are gone

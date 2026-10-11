@@ -353,6 +353,15 @@ test('create makes the collection with the fixed name, and only its owner sees i
 test('a refused envelope is a 422 and its marker reaches neither body nor log', async () => {
   const { app, capture } = build();
   try {
+    // This suite shares one database with the tests around it, so the assertion
+    // is that the two refusals below changed nothing — not that the owner has
+    // no calendar at all: an earlier test in this file created one.
+    const before = (
+      await verifier.query(
+        'SELECT count(*)::int AS n FROM public.calendars WHERE owner_id = $1',
+        [users.a],
+      )
+    ).rows[0].n;
     // The marker really is inside the envelope this request carries.
     const marked = envelopeOf(2, {
       length: 45 + CANARY.length + 4,
@@ -381,12 +390,14 @@ test('a refused envelope is a 422 and its marker reaches neither body nor log', 
 
     assert.ok(!capture.text().includes(CANARY), capture.text());
     assert.ok(!capture.text().includes(oversized));
-    // Neither refusal created anything.
-    const rows = await verifier.query(
+    // Neither refusal created anything: this suite shares the database with the
+    // tests around it, so what it can assert is that its two refusals changed
+    // nothing — not that the owner has no calendar at all.
+    const { rows } = await verifier.query(
       'SELECT count(*)::int AS n FROM public.calendars WHERE owner_id = $1',
       [users.a],
     );
-    assert.equal(rows.rows[0].n, 0);
+    assert.equal(rows[0].n, before);
   } finally {
     await app.close();
   }
@@ -512,6 +523,57 @@ test('a second user cannot rename or delete what they are not a member of', asyn
       .forUser(users.a)
       .listObjects(calendarId, RANGE);
     assert.ok(Array.isArray(stillThere));
+  } finally {
+    await app.close();
+  }
+});
+
+test('an id that is not a UUID is a 404, not the database error it would be', async () => {
+  const { app, capture } = build();
+  try {
+    // `calendars.id` is a `uuid` column: handed `not-a-uuid`, Postgres raises
+    // `22P02` (`invalid input syntax for type uuid`) and the route answered 500
+    // (review 1, fix 2). The route answers 404 for anything that is not the
+    // shape of an id, before the store is asked.
+    const before = (
+      await verifier.query(
+        'SELECT count(*)::int AS n FROM public.calendars WHERE owner_id = $1',
+        [users.a],
+      )
+    ).rows[0].n;
+    for (const [
+      method,
+      payload,
+      headers,
+    ] of /** @type {[string, unknown, Record<string, string>][]} */ ([
+      [
+        'PATCH',
+        { metaEnvelope: envelopeOf(2), metaEpoch: 2 },
+        { 'if-match': '"1"' },
+      ],
+      ['DELETE', undefined, {}],
+    ])) {
+      const response = await request(
+        app,
+        'a',
+        method,
+        '/calendars/not-a-uuid',
+        payload,
+        headers,
+      );
+      assert.equal(response.statusCode, 404, `${method}: ${response.body}`);
+      assert.equal(
+        response.json().type,
+        'https://flexcalendar.de/problems/not-found',
+      );
+      assert.ok(!capture.text().includes('22P02'));
+    }
+    // Nothing was deleted on the way to that 404, and nothing was created.
+    const after = await verifier.query(
+      'SELECT count(*)::int AS n FROM public.calendars WHERE owner_id = $1',
+      [users.a],
+    );
+    assert.equal(after.rows[0].n, before);
   } finally {
     await app.close();
   }

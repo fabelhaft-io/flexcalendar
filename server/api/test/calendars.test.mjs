@@ -16,6 +16,11 @@
 //   * delete removes the collection first and the rows second;
 //   * only the owner may rename or delete, and a non-member gets the same 404 an
 //     unknown id gets;
+//   * an id that is not a UUID is that same 404, decided before the store is
+//     asked, because Postgres raises `22P02` for it;
+//   * a subject the API has never seen goes through `resolveUser` on these
+//     routes too: a verified e-mail creates the `users` row, an unverified one
+//     is refused exactly as `GET /me` refuses it;
 //   * `If-Match` is required (428) and stale (412), and the id and the href are
 //     UUIDv4 (INV-03).
 
@@ -80,6 +85,64 @@ const usersStore = {
     throw new Error('first sight is not part of these tests');
   },
 };
+
+/**
+ * A `users` table with no rows, plus an IdP that answers userinfo for a subject
+ * it has not been asked about before: the two pieces a first-sight request
+ * needs (E05-R01). The fixed `usersStore` above cannot exercise that path —
+ * every subject it is handed already has a row, so a route that read the store
+ * itself instead of going through `resolveUser` would behave identically, and
+ * nothing would notice the missing first-sight insert or the missing
+ * `email_verified` refusal.
+ * @param {{emailVerified?: boolean}} [options]
+ */
+function firstSight({ emailVerified = true } = {}) {
+  /** @type {Map<string, {id: string, handle: string, email: string}>} */
+  const rows = new Map();
+  /** The subjects a `users` row was inserted for, in order. */
+  /** @type {string[]} */
+  const created = [];
+  /** The subjects userinfo was asked about, in order. */
+  /** @type {string[]} */
+  const asked = [];
+  return {
+    rows,
+    created,
+    asked,
+    store: {
+      /** @param {string} subject */
+      async findBySubject(subject) {
+        return rows.get(subject);
+      },
+      /** @param {{subject: string, handle: string, email: string}} profile */
+      async createFirstSight({ subject, handle, email }) {
+        created.push(subject);
+        const row = { id: randomUUID(), handle, email };
+        rows.set(subject, row);
+        return row;
+      },
+    },
+    oidc: {
+      /** @param {string} value */
+      async verify(value) {
+        const subject = String(value).split('.')[1];
+        if (!subject) throw new Error('malformed token');
+        return { sub: subject };
+      },
+      /** @param {string} value */
+      async userinfo(value) {
+        const subject = String(value).split('.')[1];
+        asked.push(subject);
+        return {
+          sub: subject,
+          email_verified: emailVerified,
+          preferred_username: `${subject}-handle`,
+          email: `${subject}@example.test`,
+        };
+      },
+    },
+  };
+}
 
 const audience = {
   async current() {
@@ -151,9 +214,13 @@ function captureLog() {
  * The app, with a memory store, a fake adapter and a captured log. `fail` is
  * applied to whichever side owns the method: a calendar-store method breaks the
  * store, `makeCalendar`/`deleteCalendar` break CalDAV.
- * @param {{fail?: Record<string, unknown>}} [options]
+ *
+ * `users` and `oidcClient` default to the fixed identities above. A test that
+ * needs a subject the API has never seen passes a `firstSight()` pair instead,
+ * which is the only way to see `resolveUser` create the row.
+ * @param {{fail?: Record<string, unknown>, users?: {findBySubject: Function, createFirstSight: Function}, oidcClient?: {verify: Function, userinfo: Function}}} [options]
  */
-function build({ fail = {} } = {}) {
+function build({ fail = {}, users = usersStore, oidcClient = oidc } = {}) {
   const capture = captureLog();
   /** @type {Record<string, unknown>[]} */
   const events = [];
@@ -172,9 +239,9 @@ function build({ fail = {} } = {}) {
       CALFLEX_OIDC_BASE_URL: ISSUER,
       CALFLEX_OIDC_AUDIENCE: AUDIENCE,
     }),
-    oidc,
+    oidc: oidcClient,
     audience,
-    store: usersStore,
+    store: users,
     calendars,
     caldav,
     logger: { stream: capture.stream },
@@ -893,6 +960,174 @@ test('a hostile store exception is a 500 problem, and the canary stays out of bo
 
     assert.ok(!capture.text().includes(CANARY), capture.text());
     assert.ok(capture.text().includes('"type":"Error"'));
+  } finally {
+    await app.close();
+  }
+});
+
+test('an id that is not a UUID is the 404 an unknown id gets, and the store is never asked', async () => {
+  const { app, calendars, events } = build();
+  try {
+    const meta = { metaEnvelope: envelopeOf(2), metaEpoch: 2 };
+    // Every one of these is a `22P02` against `calendars.id`, which is a
+    // `uuid` column: without the route's own check the fake store throws what
+    // Postgres throws and the answer was a 500 (review 1, fix 2). The last one
+    // is an existing id spelled differently — a `uuid` column would match it,
+    // this API does not mint that spelling, and a 404 is the honest answer.
+    const notIds = [
+      'not-a-uuid',
+      '42',
+      `${randomUUID()}-1`,
+      '11111111-1111-4111-8111-11111111111z',
+      randomUUID().toUpperCase(),
+    ];
+    for (const id of notIds) {
+      for (const [
+        method,
+        payload,
+        headers,
+      ] of /** @type {[string, unknown, Record<string, string>][]} */ ([
+        ['PATCH', meta, { 'if-match': '"1"' }],
+        ['DELETE', undefined, {}],
+      ])) {
+        const response = await call(app, {
+          method,
+          url: `/calendars/${id}`,
+          subject: 'owner',
+          headers,
+          payload,
+        });
+        assert.equal(
+          response.statusCode,
+          404,
+          `${method} ${id}: ${response.body}`,
+        );
+        assertProblem(response.json(), 'not-found');
+      }
+    }
+    // Nothing was stored, nothing was deleted and nothing reached CalDAV: the
+    // refusals were decided before the store's own `22P02` could be thrown.
+    assert.deepEqual(calendars.rows(), []);
+    assert.deepEqual(calendars.memberships(), []);
+    assert.deepEqual(opsOf(events), []);
+
+    // The same answer an id in the right shape but unknown gets (E03-R01): a
+    // malformed id is not distinguishable from one that exists nowhere.
+    const unknown = await call(app, {
+      method: 'DELETE',
+      url: `/calendars/${randomUUID()}`,
+      subject: 'owner',
+    });
+    assert.equal(unknown.statusCode, 404, unknown.body);
+    assertProblem(unknown.json(), 'not-found');
+  } finally {
+    await app.close();
+  }
+});
+
+test('a first-sight user is resolved on GET and POST /calendars, and is created once', async () => {
+  const users = firstSight();
+  const { app, calendars } = build({
+    users: users.store,
+    oidcClient: users.oidc,
+  });
+  try {
+    // The list, for a subject with no `users` row: an empty list, and the row
+    // that resolving the token inserted, from the issuer's userinfo.
+    const listed = await call(app, { url: '/calendars', subject: 'newcomer' });
+    assert.equal(listed.statusCode, 200, listed.body);
+    assert.deepEqual(listed.json(), { calendars: [] });
+    assert.deepEqual(users.created, ['newcomer']);
+    assert.deepEqual(users.asked, ['newcomer']);
+    const row = users.rows.get('newcomer');
+    assert.ok(row, 'the first-sight insert created no row');
+    assert.match(row.id, UUID_V4);
+    assert.equal(row.handle, 'newcomer-handle');
+    assert.equal(row.email, 'newcomer@example.test');
+
+    // The create, for the same subject: it is the same row (found, so no second
+    // insert and no second userinfo call) and the owner of the new calendar.
+    const created = await call(app, {
+      method: 'POST',
+      url: '/calendars',
+      subject: 'newcomer',
+      payload: { mode: 'private', metaEnvelope: envelopeOf(1), metaEpoch: 1 },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    assert.equal(calendars.rows()[0].ownerId, row.id);
+    assert.deepEqual(users.created, ['newcomer']);
+    assert.deepEqual(users.asked, ['newcomer']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an unverified e-mail is refused as GET /me refuses it, and creates no row', async () => {
+  const users = firstSight({ emailVerified: false });
+  const { app, calendars, events } = build({
+    users: users.store,
+    oidcClient: users.oidc,
+  });
+  try {
+    // `GET /me` first: the refusal the calendars routes have to reproduce,
+    // because they resolve the same identity through the same function.
+    const me = await call(app, { url: '/me', subject: 'unverified' });
+    assert.equal(me.statusCode, 403, me.body);
+    const reference = assertProblem(me.json(), 'forbidden');
+    assert.deepEqual(users.created, []);
+
+    for (const [
+      method,
+      url,
+      payload,
+      headers,
+    ] of /** @type {[string, string, unknown, Record<string, string>][]} */ ([
+      ['GET', '/calendars', undefined, {}],
+      [
+        'POST',
+        '/calendars',
+        { mode: 'private', metaEnvelope: envelopeOf(1), metaEpoch: 1 },
+        {},
+      ],
+      [
+        'PATCH',
+        `/calendars/${randomUUID()}`,
+        { metaEnvelope: envelopeOf(1), metaEpoch: 1 },
+        { 'if-match': '"1"' },
+      ],
+      ['DELETE', `/calendars/${randomUUID()}`, undefined, {}],
+    ])) {
+      const response = await call(app, {
+        method,
+        url,
+        subject: 'unverified',
+        headers,
+        payload,
+      });
+      assert.equal(
+        response.statusCode,
+        403,
+        `${method} ${url}: ${response.body}`,
+      );
+      const problem = assertProblem(response.json(), 'forbidden');
+      // The same document `GET /me` answered with, down to the fixed members:
+      // one refusal, one shape, whichever route asks.
+      assert.deepEqual(
+        { type: problem.type, title: problem.title, status: problem.status },
+        {
+          type: reference.type,
+          title: reference.title,
+          status: reference.status,
+        },
+        `${method} ${url}`,
+      );
+    }
+    // No row, no calendar and no CalDAV call: an unverified e-mail is refused
+    // before anything is written, exactly as it is for `GET /me`.
+    assert.deepEqual(users.created, []);
+    assert.equal(users.rows.size, 0);
+    assert.deepEqual(calendars.rows(), []);
+    assert.deepEqual(opsOf(events), []);
   } finally {
     await app.close();
   }

@@ -192,6 +192,11 @@ in `spec/openapi.yaml` first:
 - **Who may do what.** Only the owner renames, recolours or deletes. A member
   who is not the owner gets `403`; a caller who is not a member gets `404`, the
   same answer an id that exists nowhere gets (E03-R01).
+- **An id that is not a UUID is that same `404`**, and the route decides it
+  before the store is asked: `calendars.id` is a `uuid` column, so `not-a-uuid`
+  would raise `22P02` and turn a request whose real answer is "no such calendar"
+  into a `500`. Only the canonical lowercase form this API mints is accepted
+  (INV-03).
 - **The version** is the `version` column the E05-R03 migration adds
   (`integer NOT NULL DEFAULT 1`, `CHECK (version >= 1)`), and it is the `ETag`.
 
@@ -263,7 +268,7 @@ no `detail`; a `pg` unique violation never echoes the e-mail address it names.
 | `forbidden` | 403 | The issuer reports the e-mail as unverified, or the caller is a member of the calendar but not its owner |
 | `private-skeleton-only` | 403 | A Private write carried content; the `property` member names it |
 | `unmapped-collection` | 403 | The collection has no `calendars` row |
-| `not-found` | 404 | No such resource, path or method — or a calendar the caller is not a member of, which is deliberately the same answer (E03-R01) |
+| `not-found` | 404 | No such resource or path — or a calendar the caller is not a member of, which is deliberately the same answer (E03-R01) |
 | `method-not-allowed` | 405 | The method is not allowed on the path; `Allow` names the ones that are |
 | `conflict` | 409 | The handle or e-mail address is already taken |
 | `gone` | 410 | The resource is gone |

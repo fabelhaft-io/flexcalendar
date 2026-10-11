@@ -28,7 +28,9 @@
 // byte — reaches a response body or a log line. The route schemas deliberately
 // declare no request-body schema: a body that fails schema validation is a 400,
 // and the rules above must answer 422, so they run in the handlers against the
-// request's own fields.
+// request's own fields. The one path parameter is checked the other way round:
+// an `id` outside the shape of a `calendars.id` is the 404 an unknown id gets,
+// answered before the store is asked (E03-R01).
 //
 // Not here: anything that expands or writes an event (E05-R04), sharing (E06)
 // or a mode change (E13-R06, INV-10).
@@ -123,6 +125,20 @@ const META_MEMBERS = ['metaEnvelope', 'metaEpoch', 'name', 'color'];
 
 /** @param {number} version */
 const etagFor = (version) => `"${version}"`;
+
+/**
+ * The shape of a `calendars.id`: the canonical lowercase UUID this API mints
+ * (INV-03), hyphens and all. Nothing else can name a row — a client can only
+ * ever have read an id in this form — so an id outside it is answered as the
+ * 404 an unknown id gets, before the store is asked: Postgres raises `22P02`
+ * (`invalid input syntax for type uuid`) for anything else, and an unhandled
+ * `22P02` is a 500 for a request whose real answer is "no such calendar"
+ * (E03-R01). A `uuid` column would also accept an uppercased or hyphen-less
+ * spelling of an existing id; this API never mints one, and a 404 for a spelling
+ * of its own id that a client invented is the honest answer.
+ */
+const CALENDAR_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * A refusal every rule below shares: one status, one type, one body.
@@ -415,6 +431,12 @@ export function registerCalendarRoutes(
         return undefined;
       }
       const { id } = /** @type {{id: string}} */ (request.params);
+      // An id that cannot name a row is the 404 an id that names none gets,
+      // and it is decided here rather than in the store (E03-R01).
+      if (!CALENDAR_ID.test(id)) {
+        sendProblem(reply, 'not-found', { instance: request.id });
+        return undefined;
+      }
       // A calendar the caller is not a member of is a 404, the same answer an
       // id that exists nowhere gets (E03-R01). A member who is not the owner
       // may see it, so that one is a 403.
@@ -457,6 +479,13 @@ export function registerCalendarRoutes(
       const user = await authenticated(request, reply);
       if (!user) return undefined;
       const { id } = /** @type {{id: string}} */ (request.params);
+      // The same answer as in `PATCH`, and for the same reason: an id outside
+      // the shape of a `calendars.id` cannot name a row, so it is a 404 and
+      // never a query that would only raise Postgres' `22P02` (E03-R01).
+      if (!CALENDAR_ID.test(id)) {
+        sendProblem(reply, 'not-found', { instance: request.id });
+        return undefined;
+      }
       const membership = await calendars.findMembership(id, user.id);
       if (membership === undefined) {
         sendProblem(reply, 'not-found', { instance: request.id });
