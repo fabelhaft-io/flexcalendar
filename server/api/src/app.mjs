@@ -17,6 +17,10 @@
 // `If-Match`/`If-None-Match` forwarded to CalDAV, the raw object plus a parsed
 // view in every answer, and the current representation inside a 412.
 //
+// E05-R08 adds the delta route (`src/changes.mjs`): `sync-collection` proxied as
+// `GET /calendars/{calendarId}/changes`, with the API's own calendar-bound token
+// and a 410 for one the collection never reached.
+//
 // E05-R10 owns the error model and the observability hooks:
 //
 //   * Every error is an RFC 9457 problem document (`src/problem.mjs`), never
@@ -46,6 +50,7 @@ import {
 } from './auth.mjs';
 import { createCalDavAdapter } from './caldav/adapter.mjs';
 import { registerCalendarRoutes } from './calendars.mjs';
+import { registerChangeRoutes } from './changes.mjs';
 import { registerEventRoutes } from './events.mjs';
 import { readConfig } from './config.mjs';
 import { UnavailableError, createOidcClient } from './oidc.mjs';
@@ -168,6 +173,9 @@ const noCalendars = {
   async remove() {
     throw new Error('no database configured');
   },
+  async deletedUidsBetween() {
+    throw new Error('no database configured');
+  },
 };
 
 /**
@@ -175,7 +183,7 @@ const noCalendars = {
  * the delegation keys, so a service that cannot reach CalDAV still boots and
  * answers its readiness probe; the first request that needs CalDAV is the one
  * that gets the configuration error, as a problem document.
- * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function, putObject: Function, getObject: Function, deleteObject: Function}}}
+ * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function, putObject: Function, getObject: Function, deleteObject: Function, syncChanges: Function, currentSyncToken: Function}}}
  */
 function createLazyAdapter() {
   /** @type {ReturnType<typeof createCalDavAdapter> | undefined} */
@@ -233,8 +241,8 @@ function createRateLimitHook(app, options) {
  * @param {object} [options]
  * @param {ReturnType<typeof readConfig>} [options.config] defaults to the environment
  * @param {{findBySubject: Function, createFirstSight: Function}} [options.store]
- * @param {{listForMember: Function, findMembership: Function, createPrivate: Function, replaceMeta: Function, remove: Function}} [options.calendars]
- * @param {{forUser: any}} [options.caldav] the CalDAV adapter; built from the environment on first use, and typed where its methods are used (`src/calendars.mjs`, `src/events.mjs`)
+ * @param {{listForMember: Function, findMembership: Function, createPrivate: Function, replaceMeta: Function, remove: Function, deletedUidsBetween: (calendarId: string, from: string, to: string) => Promise<{uid: string}[]>}} [options.calendars]
+ * @param {{forUser: any}} [options.caldav] the CalDAV adapter; built from the environment on first use, and typed where its methods are used (`src/calendars.mjs`, `src/events.mjs`, `src/changes.mjs`)
  * @param {{verify: Function, userinfo: Function}} [options.oidc]
  * @param {{current: Function, refresh: Function}} [options.audience]
  * @param {import('fastify').onRouteHookHandler} [options.onRoute] used by the contract test
@@ -376,6 +384,7 @@ export function buildApp({
   registerAuthRoutes(app, dependencies);
   registerCalendarRoutes(app, dependencies);
   registerEventRoutes(app, dependencies);
+  registerChangeRoutes(app, dependencies);
 
   // An unknown path is a 404; a known path under a method it does not register
   // is a 405 with the methods it does (`Allow`), which is why this handler asks

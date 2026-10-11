@@ -144,6 +144,29 @@ export interface paths {
         patch: operations["updateEvent"];
         trace?: never;
     };
+    "/calendars/{calendarId}/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List what changed since a token
+         * @description The incremental sync our own clients use. With no `since`, the whole collection is reported as present objects — the initial load; with one, only what changed since that token, a tombstone for each deletion.
+         *     The answer is pointers, never content: a change is a `uid`, an `etag` and whether the object is gone. Fetch the object itself for its bytes. `etag` is absent on a tombstone, so a deletion can never be mistaken for a stale copy.
+         *     `since` is an opaque token only this API mints: it names a point in one calendar's history and never leaves it. A value that is not one of ours, one minted for another calendar, and one that names a point the collection has never reached are all the same 410 — the client reloads fully, which is the only safe reading of a cursor that may have been skipped over. The response never echoes the token it refused.
+         *     Roles are the reading roles: `owner`, `editor` and `viewer` all read, and a caller who is not a member gets the 404 an unknown id gets.
+         */
+        get: operations["listCalendarChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -284,6 +307,22 @@ export interface components {
             location?: null | string;
             /** @description The attendee addresses. Refused with 422 on a Private calendar (D-18). */
             attendees?: string[] | null;
+        };
+        /** @description One changed object. It carries no event content: fetch the object itself for that. */
+        Change: {
+            /** @description The `VEVENT` `UID`, read from the object the collection holds. A tombstone names the `uid` of the object that was removed. */
+            uid: string;
+            /** @description `true` for a tombstone — the object is gone, and the entry carries no `etag` — and `false` for an object the collection holds now. */
+            deleted: boolean;
+            /** @description The CalDAV `ETag` of a present object. Absent on a tombstone. */
+            etag?: string;
+        };
+        /** @description The changes since a token, and the token that stands for that point in the collection. With no `since`, the whole collection is reported as present objects. */
+        CalendarChanges: {
+            /** @description The sync token to send back as `since` next time. Bound to this calendar; another calendar answers 410 for it. */
+            token: string;
+            /** @description One entry per changed object, a tombstone for a deletion. Empty when nothing changed since `since`. */
+            changes: components["schemas"]["Change"][];
         };
         /** @description An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`. */
         Problem: {
@@ -1524,6 +1563,124 @@ export interface operations {
                 };
             };
             /** @description The identity provider or the CalDAV service could not be read, or the collection holds an object the API cannot describe */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCalendarChanges: {
+        parameters: {
+            query?: {
+                /** @description The `token` a previous answer to this operation returned, verbatim. Absent means the initial load, which reports the whole collection. */
+                since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The changes since `since`, and the token for them */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarChanges"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, which is also the answer for an id that exists nowhere */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `since` is not a token this calendar can be read from: it is not one this API minted, it was minted for another calendar, or it names a point the collection has never reached. The client reloads fully by asking again without `since`. The body never names the token. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
             502: {
                 headers: {
                     [name: string]: unknown;

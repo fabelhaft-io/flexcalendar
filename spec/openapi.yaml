@@ -1247,6 +1247,135 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  # E05-R08. The delta: `sync-collection` (RFC 6578) proxied for our own
+  # clients, which are the only callers that keep a cache to move forward. The
+  # path is `/changes`, under the same `{calendarId}` parameter as the events
+  # routes and for the same reason.
+  /calendars/{calendarId}/changes:
+    get:
+      tags: [events]
+      operationId: listCalendarChanges
+      summary: List what changed since a token
+      description: >-
+        The incremental sync our own clients use. With no `since`, the whole
+        collection is reported as present objects — the initial load; with one,
+        only what changed since that token, a tombstone for each deletion.
+
+        The answer is pointers, never content: a change is a `uid`, an `etag`
+        and whether the object is gone. Fetch the object itself for its bytes.
+        `etag` is absent on a tombstone, so a deletion can never be mistaken for
+        a stale copy.
+
+        `since` is an opaque token only this API mints: it names a point in one
+        calendar's history and never leaves it. A value that is not one of ours,
+        one minted for another calendar, and one that names a point the
+        collection has never reached are all the same 410 — the client reloads
+        fully, which is the only safe reading of a cursor that may have been
+        skipped over. The response never echoes the token it refused.
+
+        Roles are the reading roles: `owner`, `editor` and `viewer` all read,
+        and a caller who is not a member gets the 404 an unknown id gets.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: calendarId
+          in: path
+          required: true
+          description: The `calendars.id` uuid of the calendar.
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          description: >-
+            The `token` a previous answer to this operation returned, verbatim.
+            Absent means the initial load, which reports the whole collection.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The changes since `since`, and the token for them
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarChanges'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The issuer does not report the user's email as verified
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: >-
+            No calendar the caller is a member of has that id, which is also the
+            answer for an id that exists nowhere
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '410':
+          description: >-
+            `since` is not a token this calendar can be read from: it is not one
+            this API minted, it was minted for another calendar, or it names a
+            point the collection has never reached. The client reloads fully by
+            asking again without `since`. The body never names the token.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -1511,6 +1640,35 @@ components:
           description: 'The attendee addresses. Refused with 422 on a Private calendar (D-18).'
           items:
             type: string
+    Change:
+      type: object
+      description: 'One changed object. It carries no event content: fetch the object itself for that.'
+      required: [uid, deleted]
+      additionalProperties: false
+      properties:
+        uid:
+          type: string
+          description: The `VEVENT` `UID`, read from the object the collection holds. A tombstone names the `uid` of the object that was removed.
+        deleted:
+          type: boolean
+          description: '`true` for a tombstone — the object is gone, and the entry carries no `etag` — and `false` for an object the collection holds now.'
+        etag:
+          type: string
+          description: The CalDAV `ETag` of a present object. Absent on a tombstone.
+    CalendarChanges:
+      type: object
+      description: The changes since a token, and the token that stands for that point in the collection. With no `since`, the whole collection is reported as present objects.
+      required: [token, changes]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          description: The sync token to send back as `since` next time. Bound to this calendar; another calendar answers 410 for it.
+        changes:
+          type: array
+          description: One entry per changed object, a tombstone for a deletion. Empty when nothing changed since `since`.
+          items:
+            $ref: '#/components/schemas/Change'
     Problem:
       type: object
       description: An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`.

@@ -22,6 +22,8 @@ import {
   parsePreconditions,
   randomNonce,
   signedFetchFor,
+  syncTokenNumber,
+  syncTokenText,
 } from '../src/caldav/adapter.mjs';
 
 const ORIGIN = 'http://caldav-internal:8081';
@@ -830,6 +832,103 @@ test('syncChanges reports the sync token, changes and deletions', async () => {
     () => user.syncChanges(CALENDAR, /** @type {any} */ (42)),
     { name: 'CalDavError' },
   );
+});
+
+// --- currentSyncToken (E05-R08) -----------------------------------------------
+
+test("currentSyncToken reads the collection's own token with a depth-0 PROPFIND", async () => {
+  const multistatus = `<?xml version="1.0" encoding="utf-8"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/calendars/${USER}/${CALENDAR}/</d:href>
+    <d:propstat>
+      <d:prop><d:sync-token>http://sabre.io/ns/sync/12</d:sync-token></d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>`;
+  const { adapter, calls } = adapterFor(xml(multistatus));
+  const number = await adapter.forUser(USER).currentSyncToken(CALENDAR);
+  assert.equal(number, '12');
+  assert.equal(calls[0].init.method, 'PROPFIND');
+  assert.equal(calls[0].init.headers.get('depth'), '0');
+  assert.equal(calls[0].url.pathname, `/calendars/${USER}/${CALENDAR}/`);
+  assert.ok(String(calls[0].init.body).includes('sync-token'));
+
+  // A number beyond what a JS float holds exactly survives as a string.
+  const big = '999999999999999999';
+  /** @param {string} uri @param {string} [status] */
+  const propstat = (uri, status = 'HTTP/1.1 200 OK') =>
+    `<d:multistatus xmlns:d="DAV:"><d:response><d:href>/x</d:href><d:propstat><d:prop><d:sync-token>${uri}</d:sync-token></d:prop><d:status>${status}</d:status></d:propstat></d:response></d:multistatus>`;
+  const { adapter: wide } = adapterFor(
+    xml(propstat(`http://sabre.io/ns/sync/${big}`)),
+  );
+  assert.equal(await wide.forUser(USER).currentSyncToken(CALENDAR), big);
+
+  // A `207` the collection did not answer the property in is not a token, and
+  // a token of some other shape is not one either.
+  for (const body of [
+    '<d:multistatus xmlns:d="DAV:"/>',
+    propstat(NONCE),
+    propstat('http://sabre.io/ns/sync/007'),
+    propstat('http://sabre.io/ns/sync/7/nope'),
+  ]) {
+    const { adapter: narrow } = adapterFor(xml(body));
+    await assert.rejects(
+      () => narrow.forUser(USER).currentSyncToken(CALENDAR),
+      { name: 'CalDavError', kind: 'protocol' },
+    );
+  }
+
+  // A refusal of the collection keeps its meaning.
+  const { adapter: refused } = adapterFor(plain(403));
+  await assert.rejects(() => refused.forUser(USER).currentSyncToken(CALENDAR), {
+    name: 'CalDavError',
+    kind: 'forbidden',
+  });
+});
+
+test('the sync token helpers mint and read only the canonical form', () => {
+  assert.equal(syncTokenText('7'), 'http://sabre.io/ns/sync/7');
+  assert.equal(syncTokenText('0'), 'http://sabre.io/ns/sync/0');
+  assert.equal(syncTokenNumber('http://sabre.io/ns/sync/7'), '7');
+  assert.equal(
+    syncTokenNumber('http://sabre.io/ns/sync/999999999999999999'),
+    '999999999999999999',
+  );
+  for (const value of [
+    '7',
+    'http://sabre.io/ns/sync/',
+    'http://sabre.io/ns/sync/07',
+    'http://sabre.io/ns/sync/-1',
+    'http://sabre.io/ns/sync/x',
+    `http://sabre.io/ns/sync/7/`,
+    // One digit more than a signed 64-bit can hold: never a token of ours.
+    'http://sabre.io/ns/sync/92233720368547758070',
+    7,
+    undefined,
+    null,
+    {},
+  ]) {
+    assert.equal(syncTokenNumber(/** @type {any} */ (value)), undefined);
+  }
+  // A value the service would refuse is never built into a URI, so a client's
+  // own string cannot be forwarded by accident.
+  for (const value of [
+    '',
+    '07',
+    '-1',
+    '1e3',
+    '١٢',
+    '7 ',
+    '92233720368547758070',
+  ]) {
+    assert.throws(
+      () => syncTokenText(value),
+      { name: 'CalDavError', kind: 'invalid-token' },
+      value,
+    );
+  }
 });
 
 // --- status and error mapping -------------------------------------------------

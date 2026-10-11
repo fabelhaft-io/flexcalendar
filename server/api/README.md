@@ -32,6 +32,11 @@ and hit CalDAV directly (CLAUDE.md).
   to CalDAV. Every answer carries the raw `ical` and its `ETag` — what the
   offline cache keeps — beside a parsed view, and a write that lost a race is a
   `412` carrying the representation the collection holds now.
+- **Delta endpoint (E05-R08):** see [Changes](#changes). `sync-collection` on
+  `/calendars/{calendarId}/changes`, reduced to pointers: a `uid`, its `ETag` and
+  whether the object is gone, beside an opaque token the API mints for that
+  calendar. A token the collection never reached — malformed, another calendar's,
+  or ahead of it — is the fixed `410`, which tells the client to reload fully.
 - **Error model and observability (E05-R10):** see [Errors](#errors) and
   [Logging](#logging). Every error is an RFC 9457 problem document, every
   response carries a correlation ID, and no request-derived value — a path, a
@@ -372,6 +377,95 @@ iCalendar engine (D-01, ADR 0002) — and back:
   write), and a caller who is not a member gets the `404` an unknown calendar
   gets.
 
+## Changes
+
+One operation (`src/changes.mjs`), behind the bearer hook, declared in
+`spec/openapi.yaml` first: the delta our own clients sync from. E07's pings, the
+mobile app (Phase 3) and the web client (Phase 5) all read it, and it is the one
+place the API speaks WebDAV-Sync (RFC 6578).
+
+| Operation | Answer |
+|---|---|
+| `GET /calendars/{calendarId}/changes?since=<token>` | `200` with the changes and the new token; `404` for a calendar the caller is not a member of; `410` for a `since` this calendar cannot be read from |
+
+```json
+{
+  "token": "NmYxYzBhMmUtNmEwZS00YTJmLThhNGItMWQzYTVjN2U5ZjAxOjQ",
+  "changes": [
+    { "uid": "6f1c0a2e-6a0e-4a2f-8a4b-1d3a5c7e9f01", "deleted": false, "etag": "\"…\"" },
+    { "uid": "0b7d1e4f-2c3a-4d5e-8f90-1234567890ab", "deleted": true }
+  ]
+}
+```
+
+- **The answer is pointers, never content.** No `ical`, no `parsed`, no envelope:
+  a client fetches what it needs with `GET …/events/{uid}` (which E05-R05 will
+  window), and a tombstone carries no `etag` at all — not `null`, not the last
+  one — so a deletion cannot be mistaken for a stale copy.
+- **No `since` is the initial load:** the whole collection, every object
+  `deleted: false` with its `ETag`, and a token to carry into the next call. The
+  client caches nothing else (`docs/02` § Offline cache).
+- **One entry per object, not per write.** A create and the update that followed
+  it are one changed object with its current `ETag`; a create, an update and a
+  delete between two tokens answer three entries, the last a tombstone.
+
+### The token
+
+`token` is opaque and the client never builds one: base64url of
+`<calendars.id>:<n>`, where `<n>` is the number SabreDAV reported for the last
+change the client saw — the same number `public.caldav_changes.sync_token` holds
+(E03-R10), so E07 and the clients can read it as "changed up to". `since` is that
+same string, verbatim.
+
+`410` is the answer that means *reload fully*, and it is the fixed problem
+document with nothing of the request in it. It is sent for all three of:
+
+- a `since` that is not in the shape above at all (including an empty value);
+- a token minted for **another calendar** — checked before CalDAV is asked, so a
+  client-built string never reaches the service;
+- a token whose number the collection **has never reached**.
+
+That last check is the API's own, and it has to be: SabreDAV's PDO backend
+accepts any numeric token (`CalDAV\Backend\PDO::getChangesForCalendar` only runs
+`calendarchanges.synctoken >= n`) and echoes it back with an empty change set,
+and it does not tie a token to a collection either. Trusting it would let a
+client jump past every change between the collection's real position and the
+invented one. So the request is answered by asking the collection for its own
+current number — a `PROPFIND` of `{DAV:}sync-token` at depth 0, one round trip,
+and only when the change set came back empty (`adapter.currentSyncToken`); a
+request that has something to report never pays it — and a number beyond it is
+the `410`. **That `PROPFIND` can only refuse a token; it never moves the
+answer's.** The number an answer carries is the one the report itself returned,
+computed by SabreDAV together with the changes: the report and the read are two
+requests, and a write landing between them would otherwise hand the client a
+position past a change the report never mentioned. A `403` **without** a `cf:`
+precondition out of `sync-collection` is SabreDAV's `InvalidSyncToken` and
+becomes the same `410`; every other CalDAV failure keeps its meaning, and a
+CalDAV `401` stays the `502` of E03-R01.
+
+### The `uid` of a change
+
+For an object the collection holds, the `uid` is the `UID` **inside** the object
+(`src/ical-rmw.mjs`'s `parse` and `describe`) — the `VEVENT` is the authority
+(INV-01) — falling back to the object's name without `.ics` for something this
+API cannot read.
+
+A tombstone is reported by object name, so the name is all SabreDAV gives: this
+API names an object it wrote `<uid>.ics`, and a name that is a UUIDv4 therefore
+carries its own answer. A stock app (Phase 4) may name an object something else,
+and then only the `caldav_changes` outbox knows which `uid` the removed object
+held: `CalendarStore.deletedUidsBetween` reads the deleted rows of the window
+`(since, token]` (a `SELECT` the API role already holds — no grant is widened),
+and the entry is named from them **only when the window holds exactly one
+deletion**. Two candidates, or none, leave that entry out of the answer rather
+than guess: the client misses one `uid` and reloads fully, which is cheaper than
+deleting the wrong event locally. Until Phase 4 no object has such a name, so the
+outbox is never queried.
+
+Who reads: every member — `owner`, `editor` and `viewer`. A caller who is not a
+member, an id outside the canonical shape and an unknown calendar are all the
+same `404`, exactly as in E05-R03 and E05-R04.
+
 ## Errors
 
 Every error the API answers with is an **RFC 9457 problem document**:
@@ -519,6 +613,35 @@ runs the same operations against the real CalDAV service: create, read back byte
 for byte, a `412` with the current representation, a patch that bumps `SEQUENCE`
 and keeps the envelope hash, a delete, and the live guard refusing a content
 write with the property named and the marker absent.
+
+The E05-R08 suites need nothing but Node either. `test/changes.test.mjs` drives
+the route through the real app against the in-memory calendar store, the outbox
+rows of E03-R10 and the CalDAV double, whose `sync-collection` is modelled on
+SabreDAV's own — a numeric token per collection, no binding to the collection it
+came from, and an ahead number **accepted** — so "a token ahead of the collection
+is 410" is an assertion about the API's own check and not about a double that is
+stricter than the service. It covers the initial load, the token round trip, the
+create/update/delete window, every malformed and foreign token, SabreDAV's own
+refusal against a `403` that carries a precondition of ours, a write landing
+between the report and the `PROPFIND` that follows an empty one (the
+`beforeCurrentSyncToken` hook of the double, so the answer's token is the
+report's and the next poll still returns the change), the roles and the same 404s
+as the other routes, a tombstone that must not carry an `etag`, the outbox-named
+`uid` and the ambiguous window that leaves the entry out, and a canary that
+reaches neither a body nor a log line — with the initial load, a good token and a
+refused one all sent, and neither the token, nor the `<calendar id>:<n>` it
+decodes to, nor the SabreDAV token behind it in the captured log.
+`test/integration/changes.test.mjs` (inside the stack, `make test-api-caldav`)
+runs a create, an update and a delete between two tokens against the real CalDAV
+service, asserts each kind of rejected token is a `410` — with the problem bodies
+held to fixed assertions on `type`, `title`, `status` and `instance`, because the
+`api-test` image installs production dependencies only and the spec-parsing
+`test/support/problem.mjs` cannot be imported there — and pins the premise the
+API's own check rests on: the live service accepts a token ahead of the
+collection and echoes it. `test/integration-imports.test.mjs` reads the imports
+of every stack suite, transitively, and fails on a bare specifier that is not a
+production dependency: that is how a suite the `api-test` image cannot load is
+caught in the unit suite instead of at `make test-api-caldav`.
 
 The E05-R10 suites also need nothing but Node. `test/problem.test.mjs` holds the
 problem table, the status normaliser and the CalDAV mapping (hostile body
