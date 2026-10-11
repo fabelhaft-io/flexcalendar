@@ -1,6 +1,4 @@
 - **From the E03-R08 reviews, for later requirements** (R08 itself is in PR #54):
-  - **E05-R03:** the API inserts the `public.calendars` row and the owner's `calendar_members` row **before or together with** `MKCALENDAR`. A collection without them is invisible to everyone (404 for every method), and `MKCALENDAR` into the acting user's own home still works without them, so the order matters;
   - **E06:** a pending member must already be a `calendar_members` row to see the calendar; the role applies to the next request, read from the database every time;
   - **E03-R05 (Phase 4):** shares through Apple's extensions are refused with 403 (`ACL` and `share-resource`) until E06-R03 reconciles them into `calendar_members`;
-  - **E05-R10 / hardening:** a `REPORT` with an empty or malformed body is a 500 instead of a 400, on any path, because SabreDAV's XML `ParseException` is not a DAV exception and `Service::errorResponse` makes it a 500. Found by a hand probe, not caused by R08;
   - **E08:** the role is read outside the transaction that writes, so a downgrade in flight lets one already-authorized write finish. `calflex_caldav` has `SELECT` only on `calendar_members` and cannot take `FOR SHARE` on the row;
