@@ -73,9 +73,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # `verify-corpus` expands the recurrence corpus with sabre/vobject on the
+      # host (E15-R03), so this job needs the pinned PHP and the `server/caldav`
+      # dependencies, which the setup action installs for this component.
       - uses: ./.github/actions/setup
         with:
-          component: tooling
+          component: server-caldav
       - uses: ./.github/actions/stack
       - name: Cross-cutting Make gates (also on web-only and docs-only PRs)
         run: make verify-tooling check-stack test-seed verify-invariants verify-corpus
