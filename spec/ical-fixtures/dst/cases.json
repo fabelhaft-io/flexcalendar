@@ -1,0 +1,865 @@
+{
+  "note": "E15-R02 DST table. Engine-neutral: a runner builds the object from zone/kind/input and compares the UTC instants in expected. A daily-skipped case is contested: it carries \"ruling\": \"pending\" and, in alternative, the other § 3.3.10 reading, either of which a runner may match and must report. A view-zone case also pins expectedLocal, the wall clock its viewer in input.viewZone must show. See README.md.",
+  "cases": [
+    {
+      "id": "berlin-2026-spring-daily-existing",
+      "zone": "Europe/Berlin",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260327T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260327T080000Z", "20260328T080000Z", "20260329T070000Z", "20260330T070000Z", "20260331T070000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "berlin-2026-spring-daily-skipped",
+      "zone": "Europe/Berlin",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20260327T023000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260327T013000Z", "20260328T013000Z", "20260330T003000Z", "20260331T003000Z", "20260401T003000Z"],
+      "alternative": ["20260327T013000Z", "20260328T013000Z", "20260329T013000Z", "20260330T003000Z", "20260331T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "berlin-2026-spring-all-day",
+      "zone": "Europe/Berlin",
+      "kind": "all-day",
+      "input": {"date": "20260329", "viewZone": "Europe/Berlin"},
+      "expected": ["20260328T230000Z", "20260329T220000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "berlin-2026-spring-all-day-viewed",
+      "zone": "Europe/Berlin",
+      "kind": "all-day",
+      "input": {"date": "20260329", "viewZone": "America/New_York"},
+      "expected": ["20260329T040000Z", "20260330T040000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "berlin-2026-spring-skipped",
+      "zone": "Europe/Berlin",
+      "kind": "skipped",
+      "input": {"dtstart": "20260329T023000"},
+      "expected": ["20260329T013000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "berlin-2026-spring-view-zone",
+      "zone": "Europe/Berlin",
+      "kind": "view-zone",
+      "input": {"dtstart": "20260329T090000", "viewZone": "America/New_York"},
+      "expected": ["20260329T070000Z"],
+      "expectedLocal": "20260329T030000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "berlin-2026-fall-daily-existing",
+      "zone": "Europe/Berlin",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20261023T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20261023T070000Z", "20261024T070000Z", "20261025T080000Z", "20261026T080000Z", "20261027T080000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "berlin-2026-fall-all-day",
+      "zone": "Europe/Berlin",
+      "kind": "all-day",
+      "input": {"date": "20261025", "viewZone": "Europe/Berlin"},
+      "expected": ["20261024T220000Z", "20261025T230000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "berlin-2026-fall-repeated",
+      "zone": "Europe/Berlin",
+      "kind": "repeated",
+      "input": {"dtstart": "20261025T023000"},
+      "expected": ["20261025T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "berlin-2027-spring-daily-existing",
+      "zone": "Europe/Berlin",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270326T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270326T080000Z", "20270327T080000Z", "20270328T070000Z", "20270329T070000Z", "20270330T070000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "berlin-2027-spring-daily-skipped",
+      "zone": "Europe/Berlin",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20270326T023000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270326T013000Z", "20270327T013000Z", "20270329T003000Z", "20270330T003000Z", "20270331T003000Z"],
+      "alternative": ["20270326T013000Z", "20270327T013000Z", "20270328T013000Z", "20270329T003000Z", "20270330T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "berlin-2027-spring-all-day",
+      "zone": "Europe/Berlin",
+      "kind": "all-day",
+      "input": {"date": "20270328", "viewZone": "Europe/Berlin"},
+      "expected": ["20270327T230000Z", "20270328T220000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "berlin-2027-spring-all-day-viewed",
+      "zone": "Europe/Berlin",
+      "kind": "all-day",
+      "input": {"date": "20270328", "viewZone": "America/New_York"},
+      "expected": ["20270328T040000Z", "20270329T040000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "berlin-2027-spring-skipped",
+      "zone": "Europe/Berlin",
+      "kind": "skipped",
+      "input": {"dtstart": "20270328T023000"},
+      "expected": ["20270328T013000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "berlin-2027-spring-view-zone",
+      "zone": "Europe/Berlin",
+      "kind": "view-zone",
+      "input": {"dtstart": "20270328T090000", "viewZone": "America/New_York"},
+      "expected": ["20270328T070000Z"],
+      "expectedLocal": "20270328T030000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "berlin-2027-fall-daily-existing",
+      "zone": "Europe/Berlin",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20271029T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20271029T070000Z", "20271030T070000Z", "20271031T080000Z", "20271101T080000Z", "20271102T080000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "berlin-2027-fall-all-day",
+      "zone": "Europe/Berlin",
+      "kind": "all-day",
+      "input": {"date": "20271031", "viewZone": "Europe/Berlin"},
+      "expected": ["20271030T220000Z", "20271031T230000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "berlin-2027-fall-repeated",
+      "zone": "Europe/Berlin",
+      "kind": "repeated",
+      "input": {"dtstart": "20271031T023000"},
+      "expected": ["20271031T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "new-york-2026-spring-daily-existing",
+      "zone": "America/New_York",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260306T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260306T140000Z", "20260307T140000Z", "20260308T130000Z", "20260309T130000Z", "20260310T130000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "new-york-2026-spring-daily-skipped",
+      "zone": "America/New_York",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20260306T023000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260306T073000Z", "20260307T073000Z", "20260309T063000Z", "20260310T063000Z", "20260311T063000Z"],
+      "alternative": ["20260306T073000Z", "20260307T073000Z", "20260308T073000Z", "20260309T063000Z", "20260310T063000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "new-york-2026-spring-all-day",
+      "zone": "America/New_York",
+      "kind": "all-day",
+      "input": {"date": "20260308", "viewZone": "America/New_York"},
+      "expected": ["20260308T050000Z", "20260309T040000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "new-york-2026-spring-all-day-viewed",
+      "zone": "America/New_York",
+      "kind": "all-day",
+      "input": {"date": "20260308", "viewZone": "Europe/Berlin"},
+      "expected": ["20260307T230000Z", "20260308T230000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "new-york-2026-spring-skipped",
+      "zone": "America/New_York",
+      "kind": "skipped",
+      "input": {"dtstart": "20260308T023000"},
+      "expected": ["20260308T073000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "new-york-2026-spring-view-zone",
+      "zone": "America/New_York",
+      "kind": "view-zone",
+      "input": {"dtstart": "20260308T090000", "viewZone": "Europe/Berlin"},
+      "expected": ["20260308T130000Z"],
+      "expectedLocal": "20260308T140000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "new-york-2026-fall-daily-existing",
+      "zone": "America/New_York",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20261030T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20261030T130000Z", "20261031T130000Z", "20261101T140000Z", "20261102T140000Z", "20261103T140000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "new-york-2026-fall-all-day",
+      "zone": "America/New_York",
+      "kind": "all-day",
+      "input": {"date": "20261101", "viewZone": "America/New_York"},
+      "expected": ["20261101T040000Z", "20261102T050000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "new-york-2026-fall-repeated",
+      "zone": "America/New_York",
+      "kind": "repeated",
+      "input": {"dtstart": "20261101T013000"},
+      "expected": ["20261101T053000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "new-york-2027-spring-daily-existing",
+      "zone": "America/New_York",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270312T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270312T140000Z", "20270313T140000Z", "20270314T130000Z", "20270315T130000Z", "20270316T130000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "new-york-2027-spring-daily-skipped",
+      "zone": "America/New_York",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20270312T023000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270312T073000Z", "20270313T073000Z", "20270315T063000Z", "20270316T063000Z", "20270317T063000Z"],
+      "alternative": ["20270312T073000Z", "20270313T073000Z", "20270314T073000Z", "20270315T063000Z", "20270316T063000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "new-york-2027-spring-all-day",
+      "zone": "America/New_York",
+      "kind": "all-day",
+      "input": {"date": "20270314", "viewZone": "America/New_York"},
+      "expected": ["20270314T050000Z", "20270315T040000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "new-york-2027-spring-all-day-viewed",
+      "zone": "America/New_York",
+      "kind": "all-day",
+      "input": {"date": "20270314", "viewZone": "Europe/Berlin"},
+      "expected": ["20270313T230000Z", "20270314T230000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "new-york-2027-spring-skipped",
+      "zone": "America/New_York",
+      "kind": "skipped",
+      "input": {"dtstart": "20270314T023000"},
+      "expected": ["20270314T073000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "new-york-2027-spring-view-zone",
+      "zone": "America/New_York",
+      "kind": "view-zone",
+      "input": {"dtstart": "20270314T090000", "viewZone": "Europe/Berlin"},
+      "expected": ["20270314T130000Z"],
+      "expectedLocal": "20270314T140000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "new-york-2027-fall-daily-existing",
+      "zone": "America/New_York",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20271105T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20271105T130000Z", "20271106T130000Z", "20271107T140000Z", "20271108T140000Z", "20271109T140000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "new-york-2027-fall-all-day",
+      "zone": "America/New_York",
+      "kind": "all-day",
+      "input": {"date": "20271107", "viewZone": "America/New_York"},
+      "expected": ["20271107T040000Z", "20271108T050000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "new-york-2027-fall-repeated",
+      "zone": "America/New_York",
+      "kind": "repeated",
+      "input": {"dtstart": "20271107T013000"},
+      "expected": ["20271107T053000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "sao-paulo-2026-fall-daily-existing",
+      "zone": "America/Sao_Paulo",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260213T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260213T120000Z", "20260214T120000Z", "20260215T120000Z", "20260216T120000Z", "20260217T120000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sao-paulo-2026-fall-all-day",
+      "zone": "America/Sao_Paulo",
+      "kind": "all-day",
+      "input": {"date": "20260215", "viewZone": "America/Sao_Paulo"},
+      "expected": ["20260215T030000Z", "20260216T030000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sao-paulo-2026-fall-control",
+      "zone": "America/Sao_Paulo",
+      "kind": "control",
+      "input": {"dtstart": "20260215T003000"},
+      "expected": ["20260215T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "sao-paulo-2026-spring-daily-existing",
+      "zone": "America/Sao_Paulo",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20261030T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20261030T120000Z", "20261031T120000Z", "20261101T120000Z", "20261102T120000Z", "20261103T120000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sao-paulo-2026-spring-all-day",
+      "zone": "America/Sao_Paulo",
+      "kind": "all-day",
+      "input": {"date": "20261101", "viewZone": "America/Sao_Paulo"},
+      "expected": ["20261101T030000Z", "20261102T030000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sao-paulo-2026-spring-all-day-viewed",
+      "zone": "America/Sao_Paulo",
+      "kind": "all-day",
+      "input": {"date": "20261101", "viewZone": "America/New_York"},
+      "expected": ["20261101T040000Z", "20261102T050000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sao-paulo-2026-spring-control",
+      "zone": "America/Sao_Paulo",
+      "kind": "control",
+      "input": {"dtstart": "20261101T003000"},
+      "expected": ["20261101T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "sao-paulo-2026-spring-view-zone",
+      "zone": "America/Sao_Paulo",
+      "kind": "view-zone",
+      "input": {"dtstart": "20261101T090000", "viewZone": "America/New_York"},
+      "expected": ["20261101T120000Z"],
+      "expectedLocal": "20261101T070000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "sao-paulo-2027-fall-daily-existing",
+      "zone": "America/Sao_Paulo",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270219T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270219T120000Z", "20270220T120000Z", "20270221T120000Z", "20270222T120000Z", "20270223T120000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sao-paulo-2027-fall-all-day",
+      "zone": "America/Sao_Paulo",
+      "kind": "all-day",
+      "input": {"date": "20270221", "viewZone": "America/Sao_Paulo"},
+      "expected": ["20270221T030000Z", "20270222T030000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sao-paulo-2027-fall-control",
+      "zone": "America/Sao_Paulo",
+      "kind": "control",
+      "input": {"dtstart": "20270221T003000"},
+      "expected": ["20270221T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "sao-paulo-2027-spring-daily-existing",
+      "zone": "America/Sao_Paulo",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20271105T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20271105T120000Z", "20271106T120000Z", "20271107T120000Z", "20271108T120000Z", "20271109T120000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sao-paulo-2027-spring-all-day",
+      "zone": "America/Sao_Paulo",
+      "kind": "all-day",
+      "input": {"date": "20271107", "viewZone": "America/Sao_Paulo"},
+      "expected": ["20271107T030000Z", "20271108T030000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sao-paulo-2027-spring-all-day-viewed",
+      "zone": "America/Sao_Paulo",
+      "kind": "all-day",
+      "input": {"date": "20271107", "viewZone": "America/New_York"},
+      "expected": ["20271107T040000Z", "20271108T050000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sao-paulo-2027-spring-control",
+      "zone": "America/Sao_Paulo",
+      "kind": "control",
+      "input": {"dtstart": "20271107T003000"},
+      "expected": ["20271107T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "sao-paulo-2027-spring-view-zone",
+      "zone": "America/Sao_Paulo",
+      "kind": "view-zone",
+      "input": {"dtstart": "20271107T090000", "viewZone": "America/New_York"},
+      "expected": ["20271107T120000Z"],
+      "expectedLocal": "20271107T070000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "sydney-2026-fall-daily-existing",
+      "zone": "Australia/Sydney",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260403T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260402T220000Z", "20260403T220000Z", "20260404T230000Z", "20260405T230000Z", "20260406T230000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sydney-2026-fall-all-day",
+      "zone": "Australia/Sydney",
+      "kind": "all-day",
+      "input": {"date": "20260405", "viewZone": "Australia/Sydney"},
+      "expected": ["20260404T130000Z", "20260405T140000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sydney-2026-fall-repeated",
+      "zone": "Australia/Sydney",
+      "kind": "repeated",
+      "input": {"dtstart": "20260405T023000"},
+      "expected": ["20260404T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "sydney-2026-spring-daily-existing",
+      "zone": "Australia/Sydney",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20261002T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20261001T230000Z", "20261002T230000Z", "20261003T220000Z", "20261004T220000Z", "20261005T220000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sydney-2026-spring-daily-skipped",
+      "zone": "Australia/Sydney",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20261002T023000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20261001T163000Z", "20261002T163000Z", "20261004T153000Z", "20261005T153000Z", "20261006T153000Z"],
+      "alternative": ["20261001T163000Z", "20261002T163000Z", "20261003T163000Z", "20261004T153000Z", "20261005T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "sydney-2026-spring-all-day",
+      "zone": "Australia/Sydney",
+      "kind": "all-day",
+      "input": {"date": "20261004", "viewZone": "Australia/Sydney"},
+      "expected": ["20261003T140000Z", "20261004T130000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sydney-2026-spring-all-day-viewed",
+      "zone": "Australia/Sydney",
+      "kind": "all-day",
+      "input": {"date": "20261004", "viewZone": "Pacific/Chatham"},
+      "expected": ["20261003T101500Z", "20261004T101500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sydney-2026-spring-skipped",
+      "zone": "Australia/Sydney",
+      "kind": "skipped",
+      "input": {"dtstart": "20261004T023000"},
+      "expected": ["20261003T163000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "sydney-2026-spring-view-zone",
+      "zone": "Australia/Sydney",
+      "kind": "view-zone",
+      "input": {"dtstart": "20261004T090000", "viewZone": "Pacific/Chatham"},
+      "expected": ["20261003T220000Z"],
+      "expectedLocal": "20261004T114500",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "sydney-2027-fall-daily-existing",
+      "zone": "Australia/Sydney",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270402T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270401T220000Z", "20270402T220000Z", "20270403T230000Z", "20270404T230000Z", "20270405T230000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sydney-2027-fall-all-day",
+      "zone": "Australia/Sydney",
+      "kind": "all-day",
+      "input": {"date": "20270404", "viewZone": "Australia/Sydney"},
+      "expected": ["20270403T130000Z", "20270404T140000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sydney-2027-fall-repeated",
+      "zone": "Australia/Sydney",
+      "kind": "repeated",
+      "input": {"dtstart": "20270404T023000"},
+      "expected": ["20270403T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "sydney-2027-spring-daily-existing",
+      "zone": "Australia/Sydney",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20271001T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270930T230000Z", "20271001T230000Z", "20271002T220000Z", "20271003T220000Z", "20271004T220000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "sydney-2027-spring-daily-skipped",
+      "zone": "Australia/Sydney",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20271001T023000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270930T163000Z", "20271001T163000Z", "20271003T153000Z", "20271004T153000Z", "20271005T153000Z"],
+      "alternative": ["20270930T163000Z", "20271001T163000Z", "20271002T163000Z", "20271003T153000Z", "20271004T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "sydney-2027-spring-all-day",
+      "zone": "Australia/Sydney",
+      "kind": "all-day",
+      "input": {"date": "20271003", "viewZone": "Australia/Sydney"},
+      "expected": ["20271002T140000Z", "20271003T130000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sydney-2027-spring-all-day-viewed",
+      "zone": "Australia/Sydney",
+      "kind": "all-day",
+      "input": {"date": "20271003", "viewZone": "Pacific/Chatham"},
+      "expected": ["20271002T101500Z", "20271003T101500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "sydney-2027-spring-skipped",
+      "zone": "Australia/Sydney",
+      "kind": "skipped",
+      "input": {"dtstart": "20271003T023000"},
+      "expected": ["20271002T163000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "sydney-2027-spring-view-zone",
+      "zone": "Australia/Sydney",
+      "kind": "view-zone",
+      "input": {"dtstart": "20271003T090000", "viewZone": "Pacific/Chatham"},
+      "expected": ["20271002T220000Z"],
+      "expectedLocal": "20271003T114500",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "kolkata-2026-spring-daily-existing",
+      "zone": "Asia/Kolkata",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260327T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260327T033000Z", "20260328T033000Z", "20260329T033000Z", "20260330T033000Z", "20260331T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "kolkata-2026-spring-all-day",
+      "zone": "Asia/Kolkata",
+      "kind": "all-day",
+      "input": {"date": "20260329", "viewZone": "Asia/Kolkata"},
+      "expected": ["20260328T183000Z", "20260329T183000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "kolkata-2026-spring-all-day-viewed",
+      "zone": "Asia/Kolkata",
+      "kind": "all-day",
+      "input": {"date": "20260329", "viewZone": "Europe/Berlin"},
+      "expected": ["20260328T230000Z", "20260329T220000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "kolkata-2026-spring-control",
+      "zone": "Asia/Kolkata",
+      "kind": "control",
+      "input": {"dtstart": "20260329T023000"},
+      "expected": ["20260328T210000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "kolkata-2026-spring-view-zone",
+      "zone": "Asia/Kolkata",
+      "kind": "view-zone",
+      "input": {"dtstart": "20260329T090000", "viewZone": "Europe/Berlin"},
+      "expected": ["20260329T033000Z"],
+      "expectedLocal": "20260329T053000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "kolkata-2026-fall-daily-existing",
+      "zone": "Asia/Kolkata",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20261023T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20261023T033000Z", "20261024T033000Z", "20261025T033000Z", "20261026T033000Z", "20261027T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "kolkata-2026-fall-all-day",
+      "zone": "Asia/Kolkata",
+      "kind": "all-day",
+      "input": {"date": "20261025", "viewZone": "Asia/Kolkata"},
+      "expected": ["20261024T183000Z", "20261025T183000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "kolkata-2026-fall-control",
+      "zone": "Asia/Kolkata",
+      "kind": "control",
+      "input": {"dtstart": "20261025T023000"},
+      "expected": ["20261024T210000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "kolkata-2027-spring-daily-existing",
+      "zone": "Asia/Kolkata",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270326T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270326T033000Z", "20270327T033000Z", "20270328T033000Z", "20270329T033000Z", "20270330T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "kolkata-2027-spring-all-day",
+      "zone": "Asia/Kolkata",
+      "kind": "all-day",
+      "input": {"date": "20270328", "viewZone": "Asia/Kolkata"},
+      "expected": ["20270327T183000Z", "20270328T183000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "kolkata-2027-spring-all-day-viewed",
+      "zone": "Asia/Kolkata",
+      "kind": "all-day",
+      "input": {"date": "20270328", "viewZone": "Europe/Berlin"},
+      "expected": ["20270327T230000Z", "20270328T220000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "kolkata-2027-spring-control",
+      "zone": "Asia/Kolkata",
+      "kind": "control",
+      "input": {"dtstart": "20270328T023000"},
+      "expected": ["20270327T210000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "kolkata-2027-spring-view-zone",
+      "zone": "Asia/Kolkata",
+      "kind": "view-zone",
+      "input": {"dtstart": "20270328T090000", "viewZone": "Europe/Berlin"},
+      "expected": ["20270328T033000Z"],
+      "expectedLocal": "20270328T053000",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "kolkata-2027-fall-daily-existing",
+      "zone": "Asia/Kolkata",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20271029T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20271029T033000Z", "20271030T033000Z", "20271031T033000Z", "20271101T033000Z", "20271102T033000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "kolkata-2027-fall-all-day",
+      "zone": "Asia/Kolkata",
+      "kind": "all-day",
+      "input": {"date": "20271031", "viewZone": "Asia/Kolkata"},
+      "expected": ["20271030T183000Z", "20271031T183000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "kolkata-2027-fall-control",
+      "zone": "Asia/Kolkata",
+      "kind": "control",
+      "input": {"dtstart": "20271031T023000"},
+      "expected": ["20271030T210000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a zone with one offset all year resolves the local time to that single instant — nothing shifts on this date."}
+    },
+    {
+      "id": "chatham-2026-fall-daily-existing",
+      "zone": "Pacific/Chatham",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260403T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260402T191500Z", "20260403T191500Z", "20260404T201500Z", "20260405T201500Z", "20260406T201500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "chatham-2026-fall-all-day",
+      "zone": "Pacific/Chatham",
+      "kind": "all-day",
+      "input": {"date": "20260405", "viewZone": "Pacific/Chatham"},
+      "expected": ["20260404T101500Z", "20260405T111500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "chatham-2026-fall-repeated",
+      "zone": "Pacific/Chatham",
+      "kind": "repeated",
+      "input": {"dtstart": "20260405T031500"},
+      "expected": ["20260404T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "chatham-2026-spring-daily-existing",
+      "zone": "Pacific/Chatham",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20260925T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260924T201500Z", "20260925T201500Z", "20260926T191500Z", "20260927T191500Z", "20260928T191500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "chatham-2026-spring-daily-skipped",
+      "zone": "Pacific/Chatham",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20260925T031500", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20260924T143000Z", "20260925T143000Z", "20260927T133000Z", "20260928T133000Z", "20260929T133000Z"],
+      "alternative": ["20260924T143000Z", "20260925T143000Z", "20260926T143000Z", "20260927T133000Z", "20260928T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "chatham-2026-spring-all-day",
+      "zone": "Pacific/Chatham",
+      "kind": "all-day",
+      "input": {"date": "20260927", "viewZone": "Pacific/Chatham"},
+      "expected": ["20260926T111500Z", "20260927T101500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "chatham-2026-spring-all-day-viewed",
+      "zone": "Pacific/Chatham",
+      "kind": "all-day",
+      "input": {"date": "20260927", "viewZone": "Australia/Sydney"},
+      "expected": ["20260926T140000Z", "20260927T140000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "chatham-2026-spring-skipped",
+      "zone": "Pacific/Chatham",
+      "kind": "skipped",
+      "input": {"dtstart": "20260927T031500"},
+      "expected": ["20260926T143000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "chatham-2026-spring-view-zone",
+      "zone": "Pacific/Chatham",
+      "kind": "view-zone",
+      "input": {"dtstart": "20260927T090000", "viewZone": "Australia/Sydney"},
+      "expected": ["20260926T191500Z"],
+      "expectedLocal": "20260927T051500",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    },
+    {
+      "id": "chatham-2027-fall-daily-existing",
+      "zone": "Pacific/Chatham",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270402T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270401T191500Z", "20270402T191500Z", "20270403T201500Z", "20270404T201500Z", "20270405T201500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "chatham-2027-fall-all-day",
+      "zone": "Pacific/Chatham",
+      "kind": "all-day",
+      "input": {"date": "20270404", "viewZone": "Pacific/Chatham"},
+      "expected": ["20270403T101500Z", "20270404T111500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "chatham-2027-fall-repeated",
+      "zone": "Pacific/Chatham",
+      "kind": "repeated",
+      "input": {"dtstart": "20270404T031500"},
+      "expected": ["20270403T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that occurs more than once refers to the first occurrence, i.e. it still carries the pre-transition offset."}
+    },
+    {
+      "id": "chatham-2027-spring-daily-existing",
+      "zone": "Pacific/Chatham",
+      "kind": "daily-existing",
+      "input": {"dtstart": "20270924T090000", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270923T201500Z", "20270924T201500Z", "20270925T191500Z", "20270926T191500Z", "20270927T191500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.5.3", "rule": "RFC 5545 § 3.8.5.3: every instance keeps the local time of DTSTART, so each UTC instant follows the zone offset in force on that day."}
+    },
+    {
+      "id": "chatham-2027-spring-daily-skipped",
+      "zone": "Pacific/Chatham",
+      "kind": "daily-skipped",
+      "ruling": "pending",
+      "input": {"dtstart": "20270924T031500", "rrule": {"freq": "DAILY", "count": 5}},
+      "expected": ["20270923T143000Z", "20270924T143000Z", "20270926T133000Z", "20270927T133000Z", "20270928T133000Z"],
+      "alternative": ["20270923T143000Z", "20270924T143000Z", "20270925T143000Z", "20270926T133000Z", "20270927T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+    },
+    {
+      "id": "chatham-2027-spring-all-day",
+      "zone": "Pacific/Chatham",
+      "kind": "all-day",
+      "input": {"date": "20270926", "viewZone": "Pacific/Chatham"},
+      "expected": ["20270925T111500Z", "20270926T101500Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "chatham-2027-spring-all-day-viewed",
+      "zone": "Pacific/Chatham",
+      "kind": "all-day",
+      "input": {"date": "20270926", "viewZone": "Australia/Sydney"},
+      "expected": ["20270925T140000Z", "20270926T140000Z"],
+      "rfc": {"section": "RFC 5545 § 3.8.2.2", "rule": "RFC 5545 § 3.8.2.2 with § 3.3.4: a DATE is one calendar day whose exclusive end is the next midnight, and its instants exist only in a viewing zone."}
+    },
+    {
+      "id": "chatham-2027-spring-skipped",
+      "zone": "Pacific/Chatham",
+      "kind": "skipped",
+      "input": {"dtstart": "20270926T031500"},
+      "expected": ["20270925T143000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: a local time that does not occur is interpreted with the UTC offset before the gap, so the instant is the wall-clock reading minus the pre-transition offset."}
+    },
+    {
+      "id": "chatham-2027-spring-view-zone",
+      "zone": "Pacific/Chatham",
+      "kind": "view-zone",
+      "input": {"dtstart": "20270926T090000", "viewZone": "Australia/Sydney"},
+      "expected": ["20270925T191500Z"],
+      "expectedLocal": "20270926T051500",
+      "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
+    }
+  ]
+}
