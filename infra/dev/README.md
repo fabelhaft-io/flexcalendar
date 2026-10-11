@@ -68,7 +68,7 @@ Docker daemon, nothing runs as root on the host, and nothing writes a sysctl
 To trust the local CA on the host:
 
 ```sh
-CA="$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-dev_caddy-data)"
+CA="$(podman volume inspect --format '{{.Mountpoint}}' flexcalendar-dev_caddy-data)"
 curl --cacert "$CA/caddy/pki/authorities/local/root.crt" https://caldav.localhost:8443/
 ```
 
@@ -176,7 +176,7 @@ rootless Podman:
 
 ```sh
 make dev
-curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-dev_caddy-data)/caddy/pki/authorities/local/root.crt" \
+curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' flexcalendar-dev_caddy-data)/caddy/pki/authorities/local/root.crt" \
      https://caldav.localhost:8443/healthz
 curl … https://api.localhost:8443/healthz
 make seed && make seed     # the second run must create nothing
@@ -184,7 +184,7 @@ make seed && make seed     # the second run must create nothing
 # With a seeded stack, prove the audience handshake end to end:
 make migrate              # `users` exists only after the API's migrations
 TOKEN=$(make token USER=alice)
-curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-dev_caddy-data)/caddy/pki/authorities/local/root.crt" \
+curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' flexcalendar-dev_caddy-data)/caddy/pki/authorities/local/root.crt" \
      -H "Authorization: Bearer $TOKEN" https://api.localhost:8443/me
 # → 200 with { id, handle, email }; a second call must not create a second row.
 # A garbage token → 401. Before `make seed` → 503.

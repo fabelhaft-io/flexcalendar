@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// --- calendar-flex local stack: static checks (E02-R03) ----------------------
+// --- flexcalendar local stack: static checks (E02-R03) ----------------------
 //
 // `make check-stack` runs this. It checks the *definition* of the local stack,
 // not a running stack — `make dev` and `make seed` need rootless Podman and a

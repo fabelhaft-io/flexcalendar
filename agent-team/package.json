@@ -1,8 +1,8 @@
 {
-  "name": "calendar-flex-agent-team",
+  "name": "flexcalendar-agent-team",
   "version": "0.1.0",
   "private": true,
-  "description": "Mastra orchestrator that runs one implementer agent per calendar-flex requirement (docs/epics/) in a sandboxed worktree; a human-side reviewer reviews.",
+  "description": "Mastra orchestrator that runs one implementer agent per flexcalendar requirement (docs/epics/) in a sandboxed worktree; a human-side reviewer reviews.",
   "type": "module",
   "scripts": {
     "dev-team": "tsx src/cli.ts",

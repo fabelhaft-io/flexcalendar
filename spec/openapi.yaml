@@ -1,11 +1,11 @@
 # API contract: generated clients and Fastify schemas must agree with this file.
 openapi: 3.1.0
 info:
-  title: calendar-flex API
+  title: flexcalendar API
   version: 0.0.0
   license: { name: Apache-2.0, identifier: Apache-2.0 }
   description: >-
-    API contract for the calendar-flex REST facade. Every operation except the
+    API contract for the flexcalendar REST facade. Every operation except the
     readiness probe requires an OIDC access token from the D-03 IdP, sent as
     `Authorization: Bearer <JWT>` and validated locally against the IdP's
     JWKS: issuer, audience (the Zitadel project ID), expiry and not-before, and

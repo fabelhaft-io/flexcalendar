@@ -1,4 +1,4 @@
-# --- calendar-flex ------------------------------------------------------------------
+# --- flexcalendar ------------------------------------------------------------------
 #
 # One entry point for the monorepo (D-09). Today it owns the local stack of
 # E02-R03 and the verification gates of E02-R04. Component epics register
@@ -20,7 +20,7 @@ COMPOSE_FILE ?= infra/dev/compose.yaml
 COMPOSE ?= $(PODMAN_COMPOSE) --file $(COMPOSE_FILE)
 
 # One project name for `dev`, `seed` and the volumes they share.
-COMPOSE_PROJECT_NAME ?= calendar-flex-dev
+COMPOSE_PROJECT_NAME ?= flexcalendar-dev
 export COMPOSE_PROJECT_NAME
 
 .DEFAULT_GOAL := help
@@ -28,7 +28,7 @@ export COMPOSE_PROJECT_NAME
 .PHONY: help dev dev-build dev-down dev-logs dev-reset seed check-stack test-seed
 
 help: ## List the available targets
-	@printf 'calendar-flex targets:\n'
+	@printf 'flexcalendar targets:\n'
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
 		| sort -u \
 		| awk 'BEGIN {FS = ":.*## "}; {printf "  %-13s %s\n", $$1, $$2}'
@@ -108,7 +108,7 @@ test-zitadel: ## Unit-test the configuration runner and token helper without con
 .PHONY: gen gen-check
 
 gen: ## Regenerate TS and Dart API clients using the pinned tools
-	corepack pnpm --filter @calendar-flex/api-client run gen
+	corepack pnpm --filter @flexcalendar/api-client run gen
 	rm -rf apps/mobile/lib/api
 	cd apps/mobile && flutter pub get && dart run swagger_parser && dart run build_runner build && dart format lib/api
 

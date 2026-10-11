@@ -1,8 +1,8 @@
 {
-  "name": "@calendar-flex/api",
+  "name": "@flexcalendar/api",
   "version": "0.0.0",
   "private": true,
-  "description": "calendar-flex API: Node 24 LTS + TypeScript + Fastify REST facade over CalDAV (D-01). Every route but GET /healthz needs a Zitadel access token validated against its JWKS (E05-R01).",
+  "description": "flexcalendar API: Node 24 LTS + TypeScript + Fastify REST facade over CalDAV (D-01). Every route but GET /healthz needs a Zitadel access token validated against its JWKS (E05-R01).",
   "engines": {
     "node": ">=24.17.0 <25"
   },

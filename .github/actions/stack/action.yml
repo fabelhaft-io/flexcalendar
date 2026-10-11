@@ -35,9 +35,9 @@ runs:
         # Best-effort diagnostics must never replace the original failure.
         # Inspect only state/health, never Config.Env (bootstrap credentials).
         podman version || true
-        export COMPOSE_PROJECT_NAME=calendar-flex-dev
+        export COMPOSE_PROJECT_NAME=flexcalendar-dev
         podman compose --file infra/dev/compose.yaml ps -a || true
-        containers=$(podman ps -a --filter label=com.docker.compose.project=calendar-flex-dev --format '{{.ID}}' || true)
+        containers=$(podman ps -a --filter label=com.docker.compose.project=flexcalendar-dev --format '{{.ID}}' || true)
         for container in $containers; do
           state=$(podman inspect --format '{{.State.Status}}' "$container" || true)
           health=$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" || true)

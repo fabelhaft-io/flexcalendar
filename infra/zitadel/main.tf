@@ -2,7 +2,7 @@
 # not duplicated here. The same resources are applied in every environment.
 resource "zitadel_project" "calendar" {
   org_id                   = var.org_id
-  name                     = "calendar-flex"
+  name                     = "flexcalendar"
   project_role_assertion   = false
   project_role_check       = false
   has_project_check        = false
@@ -11,7 +11,7 @@ resource "zitadel_project" "calendar" {
 resource "zitadel_application_api" "api" {
   org_id           = var.org_id
   project_id       = zitadel_project.calendar.id
-  name             = "calendar-flex API"
+  name             = "flexcalendar API"
   auth_method_type = "API_AUTH_METHOD_TYPE_PRIVATE_KEY_JWT"
   # No application key or client secret: the API only validates user JWTs.
 }
@@ -40,7 +40,7 @@ resource "zitadel_application_oidc" "android" {
 resource "zitadel_machine_user" "token_helper" {
   count             = var.environment == "production" ? 0 : 1
   org_id            = var.org_id
-  name              = "calendar-flex test token helper"
+  name              = "flexcalendar test token helper"
   user_name         = "calflex-token-helper"
   description       = "Browserless test login; local and staging only"
   access_token_type = "ACCESS_TOKEN_TYPE_JWT"

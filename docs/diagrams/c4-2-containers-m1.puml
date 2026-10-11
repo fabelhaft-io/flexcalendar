@@ -11,7 +11,7 @@ title Containers at M1 — Android app with Private calendars
 
 Person(member, "Family member", "Has our Android app on every device they use.")
 
-System_Boundary(cf, "calendar-flex") {
+System_Boundary(cf, "flexcalendar") {
   Boundary(phone, "Android phone", "the only place plaintext exists") {
     Container(app, "Mobile app", "Flutter, Dart 3, Riverpod, dio, sodium_libs", "Calendar UI. Generates and holds keys, seals and opens envelopes, builds skeletons. Recovery code, device linking, invites by link or QR. Syncs on foreground, pull-to-refresh and every 15 min.", $tags="plaintext")
     ContainerDb(local, "On-device store", "Drift (SQLite) + Keystore-backed secure storage", "Skeleton iCalendar + ETag, decrypted payloads, FTS search index, offline outbox. Private keys.", $tags="plaintext")

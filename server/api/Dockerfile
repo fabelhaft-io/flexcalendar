@@ -1,4 +1,4 @@
-# --- calendar-flex API service: local development image (E02-R03) ------------
+# --- flexcalendar API service: local development image (E02-R03) ------------
 #
 # `make dev` builds this; production images are built in CI, pinned by digest
 # and owned by E08.
@@ -19,7 +19,7 @@ WORKDIR /repo
 # globs, plus this package's manifest.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY server/api/package.json server/api/
-RUN corepack pnpm install --frozen-lockfile --prod --filter @calendar-flex/api
+RUN corepack pnpm install --frozen-lockfile --prod --filter @flexcalendar/api
 
 # The CalDAV adapter's integration suite (`make test-api-caldav`). It has to run
 # inside the stack: the delegated listener has no published port, so nothing on

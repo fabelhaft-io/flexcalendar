@@ -79,7 +79,7 @@ function buildBwrapArgsWithDev(opts: {
  * points inside it too, because bwrap gives the process no home directory of its own.
  */
 export function agentCacheDir(): string {
-  const dir = path.join(os.homedir(), '.cache', 'calendar-flex-agent-team');
+  const dir = path.join(os.homedir(), '.cache', 'flexcalendar-agent-team');
   for (const sub of ['home', 'corepack', 'pnpm-store', 'npm', 'xdg', 'gradle', 'composer']) {
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
   }

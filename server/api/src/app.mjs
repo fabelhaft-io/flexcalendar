@@ -1,4 +1,4 @@
-// --- calendar-flex API service (E05-R01) ------------------------------------
+// --- flexcalendar API service (E05-R01) ------------------------------------
 //
 // A thin Fastify service that fronts CalDAV for our own clients (D-01). Every
 // route is declared here and in `spec/openapi.yaml`; the contract test proves

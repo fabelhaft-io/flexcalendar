@@ -8,13 +8,13 @@ LAYOUT_TOP_DOWN()
 AddElementTag("later", $borderStyle=DashedLine(), $borderThickness="2", $legendText="arrives after M1 (phase in name)")
 AddRelTag("later", $lineStyle=DashedLine(), $legendText="arrives after M1")
 
-title System context — calendar-flex (target; M1 is the solid part)
+title System context — flexcalendar (target; M1 is the solid part)
 
 Person(member, "Family member using our app", "Android from M1; iOS and web from Phase 5. Holds the keys to their Private calendars.")
 Person(stockUser, "Family member using a stock app [Phase 4]", "Apple Calendar, Samsung Calendar or Google Calendar. Sees Shared calendars only.", $tags="later")
 Person(subscriber, "Feed subscriber [Phase 4]", "For example a grandparent who subscribes to a read-only .ics feed.", $tags="later")
 
-System(calflex, "calendar-flex", "Shared calendar service. CalDAV is the source of truth. Private calendars are end-to-end encrypted; Shared calendars work in stock apps.")
+System(calflex, "flexcalendar", "Shared calendar service. CalDAV is the source of truth. Private calendars are end-to-end encrypted; Shared calendars work in stock apps.")
 
 System_Ext(stockApps, "Stock calendar apps [Phase 4]", "Apple Calendar (native CalDAV); Samsung and Google Calendar via DAVx⁵ or our sync adapter (Phase 6).", $tags="later")
 System_Ext(fcm, "Firebase Cloud Messaging [Phase 4]", "Delivers data-only change pings; relays to APNs on iOS.", $tags="later")

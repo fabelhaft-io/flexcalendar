@@ -1,6 +1,6 @@
 # agent-team
 
-A Mastra-based orchestrator that hands one calendar-flex requirement (`E<nn>-R<nn>` in
+A Mastra-based orchestrator that hands one flexcalendar requirement (`E<nn>-R<nn>` in
 `docs/epics/`) to an implementer agent inside a sandboxed git worktree. By default it stops after
 the implementer: a human-side reviewer runs the stack-dependent checks, writes
 `docs/reviews/<ID>.md`, and decides whether the branch goes back for a fix or becomes a PR. It
@@ -51,7 +51,7 @@ What a run does:
 1. Finds `### <ID> · …` in `docs/epics/` and builds the prompt: the requirement, the writable
    paths, the epic's header table and Goal, the `06` working agreement and `INV-*` table, the
    rows of every `D-*` it cites, and the docs the epic's Spec row names.
-2. Creates or reuses the worktree `../calendar-flex-agent-<ID>` on `feat/<ID>-<slug>`, cut from
+2. Creates or reuses the worktree `../flexcalendar-agent-<ID>` on `feat/<ID>-<slug>`, cut from
    `BASE_BRANCH` and merged forward on reuse. It refuses a dirty worktree.
 3. If `docs/reviews/<ID>.md` exists in the worktree, adds it to the prompt as the list of
    fixes to make.
@@ -87,11 +87,11 @@ Agent shell commands run under bubblewrap (`src/lib/sandbox.ts`):
   read-only, so `git status`/`diff`/`log` work and `add`/`commit` fail. Writes anywhere else
   never reach the host disk.
 - The environment holds only `PATH`, a private `HOME` and cache variables. No API keys.
-- `~/.cache/calendar-flex-agent-team/` is the one host path bound read-write: the corepack, pnpm
+- `~/.cache/flexcalendar-agent-team/` is the one host path bound read-write: the corepack, pnpm
   store, npm, Composer and Gradle caches, so pnpm (`corepack pnpm …`) isn't downloaded on every run.
 - **PHP and Composer** are on the sandbox's `PATH`, because the host has none
   (`src/lib/toolchains.ts`). The coordinator downloads a static PHP 8.4 CLI from static-php-cli
-  and the official `composer.phar` once, into `~/.cache/calendar-flex-agent-team-tools/`. It
+  and the official `composer.phar` once, into `~/.cache/flexcalendar-agent-team-tools/`. It
   checks both against pinned SHA-256 hashes on every run and binds the directory read-only. If
   they can't be provisioned (offline, a hash mismatch), the run continues and the agent is told
   that PHP is unavailable. To bump a version, change the URL and both hashes together.

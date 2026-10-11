@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run calendar-flex's implementation loop as orchestrator and reviewer — pick the next Ready requirement from the queue, hand it to the Mastra agent team in agent-team/, review the branch with runtime checks and negative controls, run fix cycles, and open the PR after a PASS. Use when the user says "/orchestrate", "continue Phase 1", "next requirement", or asks to run or review requirements with the Mastra team.
+description: Run flexcalendar's implementation loop as orchestrator and reviewer — pick the next Ready requirement from the queue, hand it to the Mastra agent team in agent-team/, review the branch with runtime checks and negative controls, run fix cycles, and open the PR after a PASS. Use when the user says "/orchestrate", "continue Phase 1", "next requirement", or asks to run or review requirements with the Mastra team.
 ---
 
 # /orchestrate — Claude Code

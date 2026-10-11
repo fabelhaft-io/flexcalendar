@@ -22,11 +22,11 @@ function branchExists(repoRoot: string, branch: string): boolean {
 
 /**
  * Creates (or reuses, for a resumed run) the requirement's worktree at
- * `../calendar-flex-agent-<ID>` on branch `feat/<ID>-<slug>` off `baseBranch`.
+ * `../flexcalendar-agent-<ID>` on branch `feat/<ID>-<slug>` off `baseBranch`.
  */
 export function ensureWorktree(repoRoot: string, requirementId: string, branchName: string, baseBranch: string): Worktree {
   const branch = `feat/${branchName}`;
-  const worktreePath = path.resolve(repoRoot, '..', `calendar-flex-agent-${requirementId}`);
+  const worktreePath = path.resolve(repoRoot, '..', `flexcalendar-agent-${requirementId}`);
 
   const existingWorktrees = git(['worktree', 'list', '--porcelain'], repoRoot);
   if (existingWorktrees.includes(`worktree ${worktreePath}\n`)) {
@@ -183,7 +183,7 @@ export function commitFiles(worktreePath: string, files: string[], message: stri
  */
 function runCounterPath(worktreePath: string): string {
   const gitDir = git(['rev-parse', '--absolute-git-dir'], worktreePath).trim();
-  return path.join(gitDir, 'calendar-flex-agent-runs');
+  return path.join(gitDir, 'flexcalendar-agent-runs');
 }
 
 export function readImplementerRuns(worktreePath: string): number {

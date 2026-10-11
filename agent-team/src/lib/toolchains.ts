@@ -108,7 +108,7 @@ let cached: Toolchains | null | undefined;
  */
 export function ensureToolchains(): Toolchains | null {
   if (cached !== undefined) return cached;
-  const root = path.join(os.homedir(), '.cache', 'calendar-flex-agent-team-tools');
+  const root = path.join(os.homedir(), '.cache', 'flexcalendar-agent-team-tools');
   const binDir = path.join(root, toolchainDirName());
   const php = path.join(binDir, 'php');
   const composerPhar = path.join(binDir, 'composer.phar');

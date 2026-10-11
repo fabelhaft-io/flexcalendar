@@ -1,4 +1,4 @@
-# --- calendar-flex local development stack (E02-R03) -------------------------
+# --- flexcalendar local development stack (E02-R03) -------------------------
 #
 # `make dev` starts this file; `make seed` loads infra/dev/seed/ into it.
 #
@@ -16,7 +16,7 @@
 # Image tags are tags, not digests: this is a development stack. Production
 # pins OCI images by digest and is owned by E08.
 
-name: calendar-flex-dev
+name: flexcalendar-dev
 
 services:
   # Postgres holds every durable state in one cluster (D-11): Zitadel's
@@ -65,7 +65,7 @@ services:
   # APIs and the console.
   #
   # `start-from-init` creates the schema and, on the first start, the
-  # `calendar-flex` organisation with its admin, the login client the UI
+  # `flexcalendar` organisation with its admin, the login client the UI
   # container needs, and the seeding service account whose PAT is written to
   # the shared volume for `make seed`.
   zitadel-api:
@@ -94,12 +94,12 @@ services:
       # First instance: the org, its admin and the two service accounts. The
       # human admin is `make dev`'s login for the console; the seed machine
       # user is what `make seed` authenticates with.
-      ZITADEL_FIRSTINSTANCE_ORG_NAME: calendar-flex
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: flexcalendar
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${CALFLEX_ZITADEL_ADMIN_USER:-calflex-admin}
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${CALFLEX_ZITADEL_ADMIN_PASSWORD:-Development1!}
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
       ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: calflex-seed
-      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: calendar-flex dev seed
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: flexcalendar dev seed
       ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
       ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/seed.pat
       ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
