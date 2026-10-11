@@ -9,12 +9,15 @@
 
 *
 
-# server/api/Dockerfile: the workspace manifests, then the service source.
+# server/api/Dockerfile: the workspace manifests, then the service source. The
+# `test` target also takes server/api/test/ and the CalDAV service's signing
+# vectors, which are already let through by the `!server/caldav` entry below.
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !server/api/package.json
 !server/api/src
+!server/api/test
 !server/api/migrate.config.json
 !server/api/migrations
 !server/api/sabredav
