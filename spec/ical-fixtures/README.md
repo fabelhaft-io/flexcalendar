@@ -13,3 +13,21 @@
   written ruling in `RULINGS.md` citing the RFC section.
 - Fixtures are test data only: no product code, no secrets and no real user
   data.
+
+## `rrule/` — differential recurrence corpus (E15-R03)
+
+`rrule/` is the recurrence half of this tree, and it is owned by E15-R03 rather
+than E15-R01. It holds one `.ics` per hard `RRULE` and is expanded over one fixed
+five-year window by both engines — `ical.js` in `server/api` and
+`sabre/vobject` in `server/caldav` — so a disagreement between them is caught
+and must be resolved by a ruling, never by dropping or weakening a fixture.
+`rrule/README.md` documents the fixtures, their RFC sources, the window and the
+normalisation; `make verify-corpus` runs the comparison.
+
+`RULINGS.md` is the single source of truth for every accepted disagreement. Its
+machine-readable block is read by both component suites and by
+`infra/scripts/corpus-compare.mjs`: a disagreement without a ruling fails the
+corpus gate, a ruling that no longer describes a real disagreement fails too,
+and an engine that is *known* wrong is pinned to exactly that deviation (so
+fixing it fails until the ruling is updated). A fixture here never carries real
+user data, and never changes to make two engines agree.

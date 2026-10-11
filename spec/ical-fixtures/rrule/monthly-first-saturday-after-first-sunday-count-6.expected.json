@@ -1,0 +1,12 @@
+{
+  "fixture": "monthly-first-saturday-after-first-sunday-count-6",
+  "occurrences": [
+    "20260110T090000Z",
+    "20260207T090000Z",
+    "20260307T090000Z",
+    "20260411T090000Z",
+    "20260509T090000Z",
+    "20260613T090000Z"
+  ],
+  "overrides": []
+}

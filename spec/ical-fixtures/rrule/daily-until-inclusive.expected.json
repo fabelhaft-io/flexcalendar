@@ -1,0 +1,11 @@
+{
+  "fixture": "daily-until-inclusive",
+  "occurrences": [
+    "20260105T090000Z",
+    "20260106T090000Z",
+    "20260107T090000Z",
+    "20260108T090000Z",
+    "20260109T090000Z"
+  ],
+  "overrides": []
+}

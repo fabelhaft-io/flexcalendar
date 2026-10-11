@@ -1,0 +1,10 @@
+{
+  "fixture": "weekly-interval-2-wkst-mo-count-4",
+  "occurrences": [
+    "20260106T090000Z",
+    "20260111T090000Z",
+    "20260120T090000Z",
+    "20260125T090000Z"
+  ],
+  "overrides": []
+}
