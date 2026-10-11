@@ -23,6 +23,10 @@ cp .env.example .env   # set AGENT_MODEL and the matching provider API key
 - The API key for that provider: `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
   Only the coordinator process reads it; agent shell commands run with a minimal environment.
 - `REPO_ROOT` (default: `agent-team/..`) and `BASE_BRANCH` (default: `main`).
+- `AGENT_MAX_STEPS` (default: 300, an integer from 1 to 1000): the most model turns one implementer
+  or reviewer run may take. It is a loop guard. A run that reaches it ends as `BLOCKED` without a
+  handoff, with its work committed, and the coordinator says so in the log. The previous fixed 150
+  was too few for a requirement that adds a module, a Compose service and their tests.
 
 Requires Linux with `bwrap` for the sandbox. Elsewhere the harness warns and runs shell commands
 unsandboxed.

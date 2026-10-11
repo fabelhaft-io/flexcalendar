@@ -36,6 +36,24 @@ function resolveModel(roleEnvVar: string): string {
   return value;
 }
 
+/**
+ * The most model turns one implementer or reviewer run may take. 150 was too few for a requirement
+ * that adds a service module, a Compose service and their tests: two such runs ended without a
+ * handoff (E03-R08, E05-R02). It stays a loop guard, not a target.
+ */
+export const DEFAULT_MAX_STEPS = 300;
+const MAX_STEPS_CEILING = 1000;
+
+/** `AGENT_MAX_STEPS`, or the default. A bad value fails the run before it starts, like a bad model id. */
+export function parseMaxSteps(value: string | undefined): number {
+  if (value === undefined || value.trim() === '') return DEFAULT_MAX_STEPS;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_STEPS_CEILING) {
+    throw new Error(`AGENT_MAX_STEPS="${value}" must be an integer from 1 to ${MAX_STEPS_CEILING}.`);
+  }
+  return parsed;
+}
+
 export interface AgentTeamConfig {
   repoRoot: string;
   baseBranch: string;
