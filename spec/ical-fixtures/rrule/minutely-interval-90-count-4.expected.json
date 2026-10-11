@@ -1,0 +1,10 @@
+{
+  "fixture": "minutely-interval-90-count-4",
+  "occurrences": [
+    "20260102T090000Z",
+    "20260102T103000Z",
+    "20260102T120000Z",
+    "20260102T133000Z"
+  ],
+  "overrides": []
+}

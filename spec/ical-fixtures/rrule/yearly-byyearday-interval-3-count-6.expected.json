@@ -1,0 +1,12 @@
+{
+  "fixture": "yearly-byyearday-interval-3-count-6",
+  "occurrences": [
+    "20260101T090000Z",
+    "20260410T090000Z",
+    "20260719T090000Z",
+    "20290101T090000Z",
+    "20290410T090000Z",
+    "20290719T090000Z"
+  ],
+  "overrides": []
+}
