@@ -1,0 +1,5 @@
+# Source — `microsoft-windows-zone-name.ics`
+
+- **Imitates:** an Exchange/Outlook writer that puts a Windows time-zone name in `TZID` (`W. Europe Standard Time`) with the matching `VTIMEZONE` in the same object, plus the `X-MICROSOFT-CDO-*` / `X-MICROSOFT-DISALLOW-COUNTER` properties Exchange adds.
+- **Public document:** `[MS-OXCICAL]` (*iCalendar to Meeting Request/Response Object Conversion Protocol*), Microsoft Open Specifications, Exchange Server Protocols — the protocol document for Exchange's iCalendar handling. The `TZID` values Outlook writes are Microsoft's Windows time-zone identifiers: the mapping of `W. Europe Standard Time` to `Europe/Berlin` is in CLDR, `common/supplemental/windowsZones.xml`, `territory="001"`, and the `+01:00`/`+02:00` offsets with last-Sunday DST transitions the `VTIMEZONE` below reproduces are that zone's. **Imitates the documented format, not a capture.**
+- **Invented:** the UID (the shape of an Outlook global ID, with made-up bytes), the times, the location text and the `PRODID` version string.
