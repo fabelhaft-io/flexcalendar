@@ -18,6 +18,7 @@ export const PROBLEM_MEMBERS = [
   'status',
   'instance',
   'property',
+  'current',
 ];
 
 /** The `Problem` schema as the contract declares it, straight from the spec. */
@@ -28,12 +29,16 @@ export const specProblemSchema = parse(
   ),
 ).components.schemas.Problem;
 
-/** @param {unknown} value @param {string} type */
+/** @param {unknown} value @param {string | string[]} type @returns {boolean} */
 function isType(value, type) {
+  // A schema may name a union of types (`type: [object, "null"]`, which the
+  // `Problem` schema's `current` member of E05-R04 uses for a nullable member).
+  if (Array.isArray(type)) return type.some((one) => isType(value, one));
   if (type === 'array') return Array.isArray(value);
   if (type === 'integer') return Number.isInteger(value);
   if (type === 'object')
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (type === 'null') return value === null;
   return typeof value === type;
 }
 

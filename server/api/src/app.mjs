@@ -13,6 +13,10 @@
 // path, unregistered method" into a 405 with `Allow` instead of Fastify's 404
 // (`src/allow.mjs`).
 //
+// E05-R04 adds the events routes (`src/events.mjs`): single-object CRUD with
+// `If-Match`/`If-None-Match` forwarded to CalDAV, the raw object plus a parsed
+// view in every answer, and the current representation inside a 412.
+//
 // E05-R10 owns the error model and the observability hooks:
 //
 //   * Every error is an RFC 9457 problem document (`src/problem.mjs`), never
@@ -40,6 +44,7 @@ import {
 } from './auth.mjs';
 import { createCalDavAdapter } from './caldav/adapter.mjs';
 import { registerCalendarRoutes } from './calendars.mjs';
+import { registerEventRoutes } from './events.mjs';
 import { readConfig } from './config.mjs';
 import { UnavailableError, createOidcClient } from './oidc.mjs';
 import { problemForStatus, problemResponse, sendProblem } from './problem.mjs';
@@ -168,7 +173,7 @@ const noCalendars = {
  * the delegation keys, so a service that cannot reach CalDAV still boots and
  * answers its readiness probe; the first request that needs CalDAV is the one
  * that gets the configuration error, as a problem document.
- * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function}}}
+ * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function, putObject: Function, getObject: Function, deleteObject: Function}}}
  */
 function createLazyAdapter() {
   /** @type {ReturnType<typeof createCalDavAdapter> | undefined} */
@@ -227,7 +232,7 @@ function createRateLimitHook(app, options) {
  * @param {ReturnType<typeof readConfig>} [options.config] defaults to the environment
  * @param {{findBySubject: Function, createFirstSight: Function}} [options.store]
  * @param {{listForMember: Function, findMembership: Function, createPrivate: Function, replaceMeta: Function, remove: Function}} [options.calendars]
- * @param {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function}}} [options.caldav] the adapter; built from the environment on first use
+ * @param {{forUser: any}} [options.caldav] the CalDAV adapter; built from the environment on first use, and typed where its methods are used (`src/calendars.mjs`, `src/events.mjs`)
  * @param {{verify: Function, userinfo: Function}} [options.oidc]
  * @param {{current: Function, refresh: Function}} [options.audience]
  * @param {import('fastify').onRouteHookHandler} [options.onRoute] used by the contract test
@@ -245,6 +250,11 @@ export function buildApp({
 } = {}) {
   const app = Fastify({
     logger: loggerOptions(config.logLevel, logger),
+    // The longest path parameter this service has a rule for. A `uid` of up to
+    // `calendarobjects.uid`'s `VARCHAR(200)` (E03-R10) has to reach the route,
+    // so it gets the 404 an unknown one gets instead of the router's own 414;
+    // anything longer is still refused before a handler runs.
+    routerOptions: { maxParamLength: 200 },
     // The correlation ID is ours: an inbound `X-Request-Id` is believed only
     // when it is already exactly a lowercase v4 UUID (log injection).
     requestIdHeader: false,
@@ -346,6 +356,7 @@ export function buildApp({
 
   registerAuthRoutes(app, dependencies);
   registerCalendarRoutes(app, dependencies);
+  registerEventRoutes(app, dependencies);
 
   // An unknown path is a 404; a known path under a method it does not register
   // is a 405 with the methods it does (`Allow`), which is why this handler asks

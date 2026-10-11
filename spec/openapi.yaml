@@ -659,6 +659,583 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  # E05-R04. The calendar parameter is `calendarId`, not `id`: these paths carry
+  # a `uid` beside it, and a generated client that took both as `id` would not
+  # compile. Each operation declares its own parameters, for the reason given
+  # above `/calendars/{id}`.
+  /calendars/{calendarId}/events:
+    post:
+      tags: [events]
+      operationId: createEvent
+      summary: Create an event
+      description: >-
+        The client sends fields, never iCalendar: the API mints the `UID`
+        (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object
+        with `ical.js` and writes it with `If-None-Match: *`, so two creates
+        cannot overwrite each other and a client can never write `EXDATE` or
+        `RECURRENCE-ID` (INV-05). The object name is `<uid>.ics`.
+
+        The answer carries the raw iCalendar object (`ical`, byte for byte), the
+        CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of
+        the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003),
+        so the object is a skeleton: `summary`, `description`, `location` and
+        `attendees` are refused with 422 (they arrive with Shared calendars) and
+        `envelopeSha256` is required, because a Private `VEVENT` carries exactly
+        one `X-CALFLEX-ENVELOPE-SHA256` (E03-R09, D-18).
+
+        The request body is validated by the route rather than by a schema: a
+        schema-refused body is a 400, and every rule above must answer 422.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: calendarId
+          in: path
+          required: true
+          description: The `calendars.id` uuid of the calendar to write into.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreate'
+      responses:
+        '201':
+          description: The event was created
+          headers:
+            Location:
+              description: The created event's path, `/calendars/{calendarId}/events/{uid}`.
+              schema:
+                type: string
+            ETag:
+              description: The created object's CalDAV `ETag`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400':
+          description: >-
+            The request body is not well-formed JSON. A body that parses but is
+            not a JSON object is a 422, not a 400
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            The issuer does not report the user's email as verified, or the
+            caller is a member of the calendar but cannot write into it (its
+            role is `viewer`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: >-
+            The `UID` this request minted already names an object in the
+            collection. A fresh UUIDv4 colliding can only mean another create
+            won; the client retries
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: The request body is larger than the service accepts
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: The request body's media type is not supported
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            A rule of the operation was broken: the body is not a JSON object;
+            `start` is absent, or is not exactly one of `date`/`utc`, or names a
+            time that does not exist; `end`, `rrule` or `alarm` is not a value
+            the API can write; `envelopeSha256` is absent or is not 64 lowercase
+            hex digits; a content field (`summary`, `description`, `location`,
+            `attendees`) was sent for a Private calendar; or the body carries a
+            member the operation does not take — `uid`, `exdate` and
+            `recurrenceId` included, which the API owns (INV-05). The body never
+            names a value.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /calendars/{calendarId}/events/{uid}:
+    get:
+      tags: [events]
+      operationId: readEvent
+      summary: Read one event
+      description: >-
+        Answers the object as the collection stores it — `ical` byte for byte,
+        the CalDAV `ETag` (also the `ETag` header) and the parsed view of the
+        master `VEVENT` — which is what a client caches as the canonical record
+        (`docs/02` § Offline cache). An object with several `VEVENT`s (a master
+        beside its overrides) is read whole; `parsed` describes the master and
+        the `ical` carries the rest.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: calendarId
+          in: path
+          required: true
+          description: The `calendars.id` uuid of the calendar.
+          schema:
+            type: string
+        - name: uid
+          in: path
+          required: true
+          description: >-
+            The event's `UID`, a lowercase UUIDv4, exactly as the create
+            answered it. Any other shape names no object and is a 404.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The stored object and its parsed view
+          headers:
+            ETag:
+              description: The object's CalDAV `ETag`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The issuer does not report the user's email as verified
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: >-
+            No calendar the caller is a member of has that id, or it holds no
+            event under that `uid`, which is also the answer for an id or a
+            `uid` that exists nowhere
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            The identity provider or the CalDAV service could not be read, or
+            the collection holds an object the API cannot describe
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    patch:
+      tags: [events]
+      operationId: updateEvent
+      summary: Change an event
+      description: >-
+        The client sends the fields it wants changed and the `If-Match` it read.
+        The API reads the stored object, applies the change with `ical.js`,
+        bumps `SEQUENCE` and `DTSTAMP`, and `PUT`s with the same `If-Match`,
+        which CalDAV checks — so a write that lost a race is a 412 and never an
+        overwrite. The 412 carries the current representation in the problem's
+        `current` member, and nothing of the request that lost.
+
+        `rrule`, `uid`, `exdate` and `recurrenceId` are refused with 422: an
+        edit to a recurring event is an intent (E05-R06/R07), and a client never
+        writes the recurrence itself (INV-05). A member that is `null` removes
+        the property it names. Everything the change did not touch — an
+        override, a `VTIMEZONE`, an `X-` property — comes back unchanged
+        (INV-02). On a Private calendar the content fields are a 422 (D-18).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: calendarId
+          in: path
+          required: true
+          description: The `calendars.id` uuid of the calendar.
+          schema:
+            type: string
+        - name: uid
+          in: path
+          required: true
+          description: The event's `UID`, a lowercase UUIDv4.
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          required: true
+          description: >-
+            The object's `ETag`, as the read answered it. A list of validators
+            and `*` are allowed; the store decides which of them matches.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdate'
+      responses:
+        '200':
+          description: The object as it now stands
+          headers:
+            ETag:
+              description: The object's new CalDAV `ETag`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400':
+          description: >-
+            The request body is not well-formed JSON. A body that parses but is
+            not a JSON object is a 422, not a 400
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            The issuer does not report the user's email as verified, or the
+            caller is a member of the calendar but cannot write into it (its
+            role is `viewer`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: >-
+            No calendar the caller is a member of has that id, or it holds no
+            event under that `uid`
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '412':
+          description: >-
+            The `If-Match` names an object the collection no longer holds: the
+            change was made against a stale read. `current` carries the
+            representation the collection holds now, and nothing of this request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: The request body is larger than the service accepts
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: The request body's media type is not supported
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            A rule of the operation was broken: the body is not a JSON object;
+            `rrule`, `uid`, `exdate` or `recurrenceId` was sent, which the API
+            owns (INV-05); a field is not a value the API can write; a content
+            field was sent for a Private calendar; or the body carries a member
+            the operation does not take. The body never names a value.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '428':
+          description: >-
+            The write carries no `If-Match`, so there is no version to be
+            optimistic against
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            The identity provider or the CalDAV service could not be read, or
+            the collection holds an object the API cannot describe
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    delete:
+      tags: [events]
+      operationId: deleteEvent
+      summary: Delete an event
+      description: >-
+        Removes the object from the collection, conditioned on the `If-Match`
+        the client read: a `DELETE` with a stale validator is a 412 and the
+        object stays. The answer is 204 with no body. A `uid` the collection
+        does not hold is a 404, whatever the validator says — Sabre looks the
+        object up before it checks a precondition.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: calendarId
+          in: path
+          required: true
+          description: The `calendars.id` uuid of the calendar.
+          schema:
+            type: string
+        - name: uid
+          in: path
+          required: true
+          description: The event's `UID`, a lowercase UUIDv4.
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          required: true
+          description: >-
+            The object's `ETag`, as the read answered it. A list of validators
+            and `*` are allowed; the store decides which of them matches.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: The object is gone
+          content: {}
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            The issuer does not report the user's email as verified, or the
+            caller is a member of the calendar but cannot write into it (its
+            role is `viewer`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: >-
+            No calendar the caller is a member of has that id, or it holds no
+            event under that `uid`
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '412':
+          description: >-
+            The `If-Match` names an object the collection no longer holds, so
+            nothing was deleted. `current` carries the representation the
+            collection holds now
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '428':
+          description: >-
+            The delete carries no `If-Match`, so there is no version to be
+            optimistic against
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -796,6 +1373,133 @@ components:
           description: >-
             The CCK epoch the replacing envelope's header carries, in the same
             range as on create.
+    EventTime:
+      type: ['null', object]
+      description: 'One event time. A write sends exactly one member: `date` (an all-day VALUE=DATE, `YYYY-MM-DD`) or `utc` (an instant, `YYYYMMDDTHHMMSSZ`). A read also answers `local` — the wall clock the object spells — with `tzid` beside it when the property names a zone; the API never converts a TZID time (E05-R09 owns zones). `null` when the object carries no such property.'
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          description: 'An all-day date, `YYYY-MM-DD`.'
+        utc:
+          type: string
+          description: 'A UTC instant, `YYYYMMDDTHHMMSSZ`.'
+        tzid:
+          type: string
+          description: 'The `TZID` the stored property names, unchanged.'
+        local:
+          type: string
+          description: 'The wall clock the stored property spells, `YYYYMMDDTHHMMSS`.'
+    EventAlarm:
+      type: ['null', object]
+      description: 'The reminder: an ISO 8601 duration trigger, e.g. `-PT15M` for fifteen minutes before the start. `null` in a write removes it, and `null` in a read means the object carries none. The action and description are fixed (`ACTION:DISPLAY`, `DESCRIPTION:Reminder`).'
+      additionalProperties: false
+      required: [trigger]
+      properties:
+        trigger:
+          type: string
+          description: 'An ISO 8601 duration, e.g. `-PT15M`.'
+    EventParsed:
+      type: object
+      description: 'The master VEVENT, parsed. No content and no override list: the raw `ical` beside it is the whole object.'
+      required: [uid, start, end, rrule, alarm, sequence, envelopeSha256]
+      additionalProperties: false
+      properties:
+        uid:
+          type: string
+          description: The master VEVENT `UID`, exactly as stored.
+        start:
+          $ref: '#/components/schemas/EventTime'
+        end:
+          $ref: '#/components/schemas/EventTime'
+        rrule:
+          type: ['null', string]
+          description: 'The master `RRULE`, or null. Never written by a client.'
+        alarm:
+          $ref: '#/components/schemas/EventAlarm'
+        sequence:
+          type: integer
+          description: 'The master `SEQUENCE`; 0 when the object carries none.'
+        envelopeSha256:
+          type: ['null', string]
+          description: 'The `X-CALFLEX-ENVELOPE-SHA256` of the master VEVENT, 64 lowercase hex digits, or null when it carries none (a Shared calendar object).'
+    Event:
+      type: object
+      description: 'One event: the raw iCalendar object the CalDAV collection stores (`ical`, byte for byte) and its `ETag`, plus a parsed convenience view. On a Private calendar the object is the skeleton, and the content lives in the sidecar (E13-R02).'
+      required: [uid, etag, ical, parsed]
+      additionalProperties: false
+      properties:
+        uid:
+          type: string
+          description: The `UID` of the stored object.
+        etag:
+          type: ['null', string]
+          description: 'The CalDAV `ETag`, quoted, or null when the store answered without one.'
+        ical:
+          type: string
+          description: 'The stored iCalendar object, byte for byte.'
+        parsed:
+          $ref: '#/components/schemas/EventParsed'
+    EventCreate:
+      type: object
+      description: 'A create request. `start` is required; the API mints the `UID` and the `DTSTAMP`. On a Private calendar the content fields (`summary`, `description`, `location`, `attendees`) are a 422 and `envelopeSha256` is required — a Private object is a skeleton and the content lives in the sidecar (D-18, E03-R09). Any other member is a 422 as well.'
+      additionalProperties: false
+      required: [start]
+      properties:
+        start:
+          $ref: '#/components/schemas/EventTime'
+        end:
+          $ref: '#/components/schemas/EventTime'
+        rrule:
+          type: ['null', string]
+          description: 'The recurrence rule, validated by `ical.js`. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.'
+        alarm:
+          $ref: '#/components/schemas/EventAlarm'
+        envelopeSha256:
+          type: ['null', string]
+          description: 'The SHA-256 of the sealed content envelope, 64 lowercase hex digits. A Private VEVENT carries exactly one (E03-R09).'
+        summary:
+          type: ['null', string]
+          description: 'The title. Refused with 422 on a Private calendar (D-18); Shared calendars take one from Phase 4.'
+        description:
+          type: ['null', string]
+          description: 'The description. Refused with 422 on a Private calendar (D-18).'
+        location:
+          type: ['null', string]
+          description: 'The location. Refused with 422 on a Private calendar (D-18).'
+        attendees:
+          type: ['array', 'null']
+          description: 'The attendee addresses. Refused with 422 on a Private calendar (D-18).'
+          items:
+            type: string
+    EventUpdate:
+      type: object
+      description: 'A patch request: the same fields as a create, minus `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. `uid`, `rrule`, `exdate` and `recurrenceId` are a 422 — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18).'
+      additionalProperties: false
+      properties:
+        start:
+          $ref: '#/components/schemas/EventTime'
+        end:
+          $ref: '#/components/schemas/EventTime'
+        alarm:
+          $ref: '#/components/schemas/EventAlarm'
+        envelopeSha256:
+          type: ['null', string]
+          description: 'The SHA-256 of the re-sealed content envelope, 64 lowercase hex digits. A Private VEVENT carries exactly one (E03-R09).'
+        summary:
+          type: ['null', string]
+          description: 'The title. Refused with 422 on a Private calendar (D-18).'
+        description:
+          type: ['null', string]
+          description: 'The description. Refused with 422 on a Private calendar (D-18).'
+        location:
+          type: ['null', string]
+          description: 'The location. Refused with 422 on a Private calendar (D-18).'
+        attendees:
+          type: ['array', 'null']
+          description: 'The attendee addresses. Refused with 422 on a Private calendar (D-18).'
+          items:
+            type: string
     Problem:
       type: object
       description: An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`.
@@ -812,3 +1516,5 @@ components:
           type: string
         property:
           type: string
+        current:
+          $ref: '#/components/schemas/Event'

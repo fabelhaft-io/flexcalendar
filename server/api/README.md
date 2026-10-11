@@ -27,6 +27,11 @@ and hit CalDAV directly (CLAUDE.md).
   name and colour exist only inside the envelope the client seals (D-18): the
   API checks its header and its size, stores it opaquely, and never opens one
   (INV-07).
+- **Events API (E05-R04):** see [Events](#events). Single-object CRUD on
+  `/calendars/{calendarId}/events/{uid}` with the caller's `If-Match` forwarded
+  to CalDAV. Every answer carries the raw `ical` and its `ETag` — what the
+  offline cache keeps — beside a parsed view, and a write that lost a race is a
+  `412` carrying the representation the collection holds now.
 - **Error model and observability (E05-R10):** see [Errors](#errors) and
   [Logging](#logging). Every error is an RFC 9457 problem document, every
   response carries a correlation ID, and no request-derived value — a path, a
@@ -231,10 +236,107 @@ in `spec/openapi.yaml` first:
   a `502` like every other unreadable upstream answer. A `401` there would sign a
   correctly authenticated client out (E03-R01, `src/problem.mjs`).
 
+## Events
+
+Four operations (`src/events.mjs`), all behind the bearer hook, all declared in
+`spec/openapi.yaml` first:
+
+| Operation | Answer |
+|---|---|
+| `POST /calendars/{calendarId}/events` | `201` with `Location` and `ETag`, and the created object |
+| `GET /calendars/{calendarId}/events/{uid}` | `200` with the stored object |
+| `PATCH /calendars/{calendarId}/events/{uid}` | `200`; needs `If-Match`, bumps `SEQUENCE` and `DTSTAMP` |
+| `DELETE /calendars/{calendarId}/events/{uid}` | `204`; needs `If-Match` |
+
+The object's name in CalDAV is `<uid>.ics`, and `uid` is the path parameter:
+only a canonical lowercase UUIDv4 can name one (INV-03), so anything else is the
+`404` an unknown `uid` gets, decided before CalDAV is asked — and a `uid` over
+`calendarobjects.uid`'s `VARCHAR(200)` never reaches it either (E03-R10). The
+router's `maxParamLength` is raised to 200 for that reason: a `uid` of that
+length gets this API's `404`, not the router's own `414`.
+
+### What an answer carries
+
+```json
+{
+  "uid": "6f1c0a2e-6a0e-4a2f-8a4b-1d3a5c7e9f01",
+  "etag": "\"…\"",
+  "ical": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n…",
+  "parsed": {
+    "uid": "6f1c0a2e-6a0e-4a2f-8a4b-1d3a5c7e9f01",
+    "start": { "utc": "20261014T090000Z" },
+    "end": { "utc": "20261014T100000Z" },
+    "rrule": null,
+    "alarm": { "trigger": "-PT15M" },
+    "sequence": 0,
+    "envelopeSha256": "ef2d…"
+  }
+}
+```
+
+- **`ical` is the stored text, byte for byte**, and `etag` is CalDAV's — also on
+  the response as `ETag`. Together they are what a client caches as the canonical
+  record (`docs/02` § Offline cache). On a Private calendar the object is the
+  skeleton and the content is sealed in the sidecar (E13-R02).
+- **`parsed` is the master `VEVENT` and nothing else**: no content, no override
+  list, no third-party property. A time is `{date}` (`YYYY-MM-DD`, all-day),
+  `{utc}` (`YYYYMMDDTHHMMSSZ`) or `{local}`, with the `tzid` beside it when the
+  stored property names a zone. A `TZID` time is reported as the wall clock the
+  object spells and is **never converted**: `ical.js` carries no zone database
+  and E05-R09 owns zone handling.
+- **An object with overrides** is read whole and its master is `parsed`; a
+  `PATCH` of the master leaves every override component untouched (INV-02).
+
+### Create and update: the client sends fields, the API writes the iCalendar
+
+The body is a field set, never iCalendar: `start` (required on create), `end`,
+`rrule` (create only), `alarm: {trigger}`, `envelopeSha256`, and the Phase-4
+content fields `summary`, `description`, `location` and `attendees`.
+`src/ical-rmw.mjs` turns those into the object with `ical.js` — the API's single
+iCalendar engine (D-01, ADR 0002) — and back:
+
+- **`UID`, `DTSTAMP`, `PRODID` are ours.** The `UID` is `crypto.randomUUID()`
+  (INV-03), the `DTSTAMP` is the moment of the write in UTC, and a client can
+  never send a `UID`, an `EXDATE` or a `RECURRENCE-ID` at all (INV-05): an edit
+  to a recurring event is an intent (E05-R06/R07), not a rule.
+- **A time is `{date}` or `{utc}`, exactly one of the two.** A `TZID` write is a
+  `422` until E05-R09 lands (INV-04); a stored `TZID` time is read and
+  round-tripped untouched. An impossible date (`2026-02-30`) is refused rather
+  than rolled forward, and so is an instant that is not `YYYYMMDDTHHMMSSZ`.
+- **Every value is parsed, never pasted.** An `rrule` is checked against
+  `ICAL.Recur` (an unknown `FREQ` is refused), an `alarm` trigger against
+  `ICAL.Duration`, an envelope hash against 64 lowercase hex digits, and a text
+  value against the control characters `ical.js` writes through unescaped — a
+  carriage return above all, which would end a content line and let a value add
+  a property of its own. Nothing a client sends reaches the text verbatim.
+- **`If-Match` is required** on an update and on a delete (`428` without it) and
+  is forwarded to CalDAV unchanged — including a list of validators or `*`. The
+  store decides whether it still matches, which is why a stale read cannot
+  overwrite a newer write. An update bumps `SEQUENCE` and `DTSTAMP`
+  (RFC 5545 § 3.8.7.4).
+- **A `412` answers with the current representation** in the problem's `current`
+  member, so the client re-reads, reapplies and retries; the request that lost
+  the race is never in the body. `current` is the representation a `GET` would
+  answer with, which on a Private calendar is the skeleton. An object that has
+  vanished by the time the answer is assembled is answered without `current`.
+- **`PATCH` is a read-modify-write of the stored object**: `GET`, apply, `PUT`
+  with the caller's `If-Match`. Everything the change did not name — an
+  override, a `VTIMEZONE`, an `X-` property, a parameter — survives it untouched
+  (INV-02), which `test/ical-rmw.test.mjs` holds against the whole
+  `spec/ical-fixtures/` corpus (E15-R01).
+- **A Private calendar stores skeletons** (ADR 0003, E03-R09): the content fields
+  are a `422` — the content is sealed in the sidecar under the CCK (D-18) — and
+  `envelopeSha256` is required, because a Private `VEVENT` carries exactly one
+  `X-CALFLEX-ENVELOPE-SHA256`. The write guard behind the API would refuse such a
+  write anyway, and E05-R02's suite shows it doing so; a value it refuses is
+  named by property only, never echoed.
+- **Who may do what.** `owner` and `editor` write, `viewer` reads (`403` on a
+  write), and a caller who is not a member gets the `404` an unknown calendar
+  gets.
+
 ## Errors
 
 Every error the API answers with is an **RFC 9457 problem document**:
-
 ```http
 Content-Type: application/problem+json
 ```
@@ -255,11 +357,14 @@ on the status line; `instance` is `urn:uuid:<the request correlation ID>`.
 
 **Nothing in a body is derived from the request or from an exception.** No path,
 no query value, no header, no validation message, no `pg` message, no CalDAV
-body. The one extension member is `property`: the offending property name a
+body. Two extension members exist. `property` is the offending property name a
 Private-skeleton write was refused for (`SUMMARY`, `X-CALFLEX-ENVELOPE-SHA256`,
 `UNLISTED`), never its value — and only because the CalDAV adapter already
-reduced it to that name (E03-R09). A validation failure is a `bad-request` with
-no `detail`; a `pg` unique violation never echoes the e-mail address it names.
+reduced it to that name (E03-R09). `current` is the representation the store
+holds when a write lost a race (E05-R04), which is exactly what a `GET` of that
+object answers with: the stored object, never the request that lost. A validation
+failure is a `bad-request` with no `detail`; a `pg` unique violation never echoes
+the e-mail address it names.
 
 | `type` (after `/problems/`) | Status | Meaning |
 |---|---|---|
@@ -270,16 +375,16 @@ no `detail`; a `pg` unique violation never echoes the e-mail address it names.
 | `unmapped-collection` | 403 | The collection has no `calendars` row |
 | `not-found` | 404 | No such resource or path — or a calendar the caller is not a member of, which is deliberately the same answer (E03-R01) |
 | `method-not-allowed` | 405 | The method is not allowed on the path; `Allow` names the ones that are |
-| `conflict` | 409 | The handle or e-mail address is already taken |
+| `conflict` | 409 | The handle or e-mail address is already taken, or the `UID` a create minted is already in the collection |
 | `gone` | 410 | The resource is gone |
-| `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed, a stale calendar version included |
+| `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed, a stale calendar version or a stale event `ETag` included; an event write carries the current representation in `current` (E05-R04) |
 | `payload-too-large` | 413 | The body exceeds the service's limit |
 | `unsupported-media-type` | 415 | The body's media type is not accepted |
 | `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04) |
-| `precondition-required` | 428 | A rename carried no `If-Match`, so there is no version to be optimistic against (E05-R03) |
+| `precondition-required` | 428 | A write carried no `If-Match`, so there is no version to be optimistic against (E05-R03, E05-R04) |
 | `rate-limited` | 429 | Over `CALFLEX_RATE_LIMIT_MAX`; `Retry-After` is set |
 | `internal-error` | 500 | Ours to fix; the body says nothing more |
-| `bad-gateway` | 502 | CalDAV or the IdP could not be read; a CalDAV `401` included, which is never the caller's `401` |
+| `bad-gateway` | 502 | CalDAV or the IdP could not be read; a CalDAV `401` included, which is never the caller's `401` — and an event object the API cannot describe (E05-R04) |
 | `unavailable` | 503 | Not configured, or the IdP's keys are unusable |
 | `upstream-timeout` | 504 | A CalDAV call ran past its deadline |
 
@@ -349,6 +454,28 @@ the compensation in both failure orders, the `405` and the hostile-exception
 canary. `test/calendars-db.test.mjs` needs Podman: it holds the create
 transaction, its rollback, the committed-before-`MKCALENDAR` row, the version
 and the cascade against the real schema.
+
+The E05-R04 suites need nothing but Node either. `test/ical-rmw.test.mjs` is the
+read-modify-write module against the round-trip corpus of E15-R01: a no-op patch
+of **every** fixture, and then a patch of a known field per fixture whose
+difference set is written out (a value-only `DTSTAMP` change is exactly one
+violation, a `DTSTART` change one — or two for a `TZID` fixture, which also loses
+the zone parameter it names). Two deliberately lossy and additive round trips are
+there as the control, so the suite is not one that has only ever been seen to
+pass. `test/events.test.mjs` drives the four routes through the real app against
+the in-memory calendar store and the CalDAV double in
+`test/support/caldav-store.mjs`, which runs the **Private write guard** of
+E03-R09 on every `PUT` — so a `201` is also the claim that the object the API
+builds is a skeleton the guard accepts. It covers the create refusals (one fixed
+`422` each, none reaching CalDAV), the roles, the UUIDv4 `UID` (INV-03), the
+`If-Match` (428/412 and a lost update), the guard's refusal mapped to
+`private-skeleton-only`, a collection holding an object the API cannot describe,
+and a canary that reaches neither a body nor a log line.
+`test/integration/events.test.mjs` (inside the stack, `make test-api-caldav`)
+runs the same operations against the real CalDAV service: create, read back byte
+for byte, a `412` with the current representation, a patch that bumps `SEQUENCE`
+and keeps the envelope hash, a delete, and the live guard refusing a content
+write with the property named and the marker absent.
 
 The E05-R10 suites also need nothing but Node. `test/problem.test.mjs` holds the
 problem table, the status normaliser and the CalDAV mapping (hostile body

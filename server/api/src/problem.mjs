@@ -13,6 +13,8 @@
 // Event content must never reach a body, a log line or an error message
 // (INV-01, INV-07).
 
+import { eventSchema } from './event-schema.mjs';
+
 /** The media type of every error body the API sends. */
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
 
@@ -64,7 +66,10 @@ export const PROBLEM_TYPES = {
  * schema of every error status, `spec/openapi.yaml` declares the identical
  * document, and the contract test holds the two together. `property` is the
  * one extension member: the offending property name a Private-skeleton write
- * was refused for, never its value (E03-R09).
+ * was refused for, never its value (E03-R09). `current` is the second, and
+ * E05-R04's: the representation the store holds when a write lost a race, so a
+ * 412 can hand back what to reapply the change to (RFC 9110 § 13.1.1). It is
+ * the stored object, never the rejected request.
  */
 export const problemSchema = {
   type: 'object',
@@ -78,6 +83,7 @@ export const problemSchema = {
     status: { type: 'integer' },
     instance: { type: 'string' },
     property: { type: 'string' },
+    current: eventSchema,
   },
 };
 
@@ -103,12 +109,12 @@ export function problemType(slug) {
  * The problem document for a kind. `property` is copied only when the caller
  * passes one, so a refusal cannot carry an empty extension member.
  * @param {string} slug
- * @param {{instance?: string, property?: string}} [options]
+ * @param {{instance?: string, property?: string, current?: unknown}} [options]
  */
-export function problemBody(slug, { instance, property } = {}) {
+export function problemBody(slug, { instance, property, current } = {}) {
   const entry = PROBLEM_TYPES[slug];
   if (entry === undefined) throw new Error(`unknown problem type: ${slug}`);
-  /** @type {{type: string, title: string, status: number, instance: string, property?: string}} */
+  /** @type {{type: string, title: string, status: number, instance: string, property?: string, current?: unknown}} */
   const body = {
     type: problemType(slug),
     title: entry.title,
@@ -116,6 +122,7 @@ export function problemBody(slug, { instance, property } = {}) {
     instance: `urn:uuid:${instance ?? NIL_UUID}`,
   };
   if (property !== undefined) body.property = property;
+  if (current !== undefined) body.current = current;
   return body;
 }
 
@@ -138,7 +145,7 @@ export function problemResponse() {
  * (`WWW-Authenticate`, `Retry-After`) are left alone.
  * @param {import('fastify').FastifyReply} reply
  * @param {string} slug
- * @param {{instance?: string, property?: string}} [options]
+ * @param {{instance?: string, property?: string, current?: unknown}} [options]
  */
 export function sendProblem(reply, slug, options = {}) {
   const entry = PROBLEM_TYPES[slug];
