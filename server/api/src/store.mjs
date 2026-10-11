@@ -9,8 +9,28 @@
 // This module is the only place that talks to `public.users`. The API role
 // (`calflex_api`) already holds the DML grant (`E04-R02`).
 
+import pg from 'pg';
+
 /** The columns `GET /me` answers with. */
 const COLUMNS = 'id, handle, email';
+
+/**
+ * The API's connection pool. `pg.Pool` emits `error` when a pooled client
+ * fails while idle — a Postgres restart, a connection the network dropped.
+ * An `error` event with no listener is an unhandled exception, so without one
+ * the pool takes the process down with it; nothing is logged, because a pool
+ * error carries host and user, and E05-R10 owns logging. The pool replaces the
+ * broken client on the next query by itself.
+ * @param {{connectionString?: string, connectionTimeoutMillis?: number}} [options]
+ */
+export function createPool({
+  connectionString,
+  connectionTimeoutMillis = 5000,
+} = {}) {
+  const pool = new pg.Pool({ connectionString, connectionTimeoutMillis });
+  pool.on('error', () => {});
+  return pool;
+}
 
 /**
  * @param {{query: (text: string, values?: unknown[]) => Promise<{rows: any[]}>}} pool

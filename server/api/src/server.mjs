@@ -11,18 +11,15 @@
 // audience (CALFLEX_OIDC_AUDIENCE, or the file `zitadel-config apply` writes);
 // without them the service answers 503 rather than accepting a request.
 
-import pg from 'pg';
 import { buildApp } from './app.mjs';
 import { readConfig } from './config.mjs';
-import { createUserStore } from './store.mjs';
+import { createPool, createUserStore } from './store.mjs';
 
 const config = readConfig();
-// `pg.Pool` connects lazily, so a stack whose Postgres is not up yet still
-// boots and keeps answering its readiness probe.
-const pool = new pg.Pool({
-  connectionString: config.databaseUrl,
-  connectionTimeoutMillis: 5000,
-});
+// `createPool` connects lazily, so a stack whose Postgres is not up yet still
+// boots and keeps answering its readiness probe, and an idle client the
+// database drops is handled by the pool rather than by an unhandled `error`.
+const pool = createPool({ connectionString: config.databaseUrl });
 const app = buildApp({ config, store: createUserStore(pool) });
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';

@@ -11,7 +11,10 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { startIdp } from './support/idp.mjs';
@@ -19,18 +22,21 @@ import { startIdp } from './support/idp.mjs';
 const apiDirectory = fileURLToPath(new URL('..', import.meta.url));
 
 /**
+ * The path is sent verbatim, never through `new URL(path, base)`: `//healthz`
+ * would become a protocol-relative URL to host `healthz`, and the point of
+ * those cases is what the API does with the raw request-target.
  * @param {string} base
  * @param {string} path
  * @param {{method?: string, headers?: Record<string, string | string[]>}} [options]
  */
 function request(base, path, { method = 'GET', headers = {} } = {}) {
-  const url = new URL(path, base);
+  const url = new URL(base);
   return new Promise((resolve, reject) => {
     const sent = http.request(
       {
         host: url.hostname,
         port: url.port,
-        path: `${url.pathname}${url.search}`,
+        path,
         method,
         headers,
       },
@@ -90,14 +96,20 @@ async function startApi(t, env) {
   return { baseUrl, stderr: () => stderr };
 }
 
-/** @param {import('node:test').TestContext} t @param {{audience?: string}} [options] */
-async function startStack(t, { audience = 'project-id' } = {}) {
+/**
+ * @param {import('node:test').TestContext} t
+ * @param {{audience?: string, env?: Record<string, string>}} [options]
+ */
+async function startStack(t, { audience = 'project-id', env = {} } = {}) {
   const idp = await startIdp();
   t.after(() => idp.close());
   const api = await startApi(t, {
     CALFLEX_OIDC_ISSUER: idp.issuer,
     CALFLEX_OIDC_BASE_URL: idp.baseUrl,
-    CALFLEX_OIDC_AUDIENCE: audience,
+    // `audience: ''` leaves the variable empty, which `readConfig` trims to
+    // "unset": the API then has no audience until the file says so.
+    ...(audience === undefined ? {} : { CALFLEX_OIDC_AUDIENCE: audience }),
+    ...env,
   });
   return {
     idp,
@@ -388,4 +400,235 @@ test('the health probe is exempt for GET and HEAD, and nothing else is', async (
   });
   assert.equal(unknownRouteWithToken.status, 404);
   assert.equal(idp.calls.userinfo, 0);
+});
+
+test('the exemption is the exact path, never a prefix or a normalised spelling', async (t) => {
+  const { call } = await startStack(t);
+  for (const path of [
+    '/healthz/',
+    '/healthz/x',
+    '//healthz',
+    '/healthz;x',
+    '/HEALTHZ',
+    '/health',
+    '/healthz/..',
+    '/healthzz',
+  ]) {
+    const response = await call(path);
+    assert.equal(response.status, 401, `${path}: ${response.body}`);
+    refused(response);
+  }
+  // A query string does not change the path, so the probe still answers.
+  const withQuery = await call('/healthz?x=1');
+  assert.equal(withQuery.status, 200, withQuery.body);
+  assert.deepEqual(JSON.parse(withQuery.body), {
+    status: 'ok',
+    service: 'api',
+  });
+});
+
+test('the bearer scheme is case-insensitive, and only that scheme is read', async (t) => {
+  const { idp, call } = await startStack(t);
+  for (const scheme of ['bearer', 'BEARER', 'BeArEr']) {
+    const response = await call('/me', {
+      headers: { authorization: `${scheme} ${idp.token()}` },
+    });
+    assert.equal(response.status, 200, `${scheme}: ${response.body}`);
+  }
+  const other = await call('/me', {
+    headers: { authorization: `Token ${idp.token()}` },
+  });
+  refused(other);
+});
+
+test('a malformed or opaque token never reaches the identity provider', async (t) => {
+  // A fresh API and a fresh stub: no request of any kind may be made for a
+  // token that is not three base64url segments of a bounded length. An opaque
+  // token is refused, never introspected.
+  const { idp, call } = await startStack(t);
+  const headers = [
+    'Bearer not-a-jwt',
+    'Bearer a.b',
+    'Bearer a.b.c.d',
+    'Bearer a.b.c=',
+    `Bearer ${Buffer.alloc(32, 3).toString('base64url')}`,
+    `Bearer a.a.${'a'.repeat(9000)}`,
+    `Bearer ${'x'.repeat(9000)}`,
+    'Bearer \u00e4.\u00f6.\u00fc',
+    `Bearer ${'a'.repeat(9000)}.b.c`,
+    'Basic YWxpY2U6c2VjcmV0',
+    'Bearer',
+    'Bearer ',
+  ];
+  for (const header of headers) {
+    const response = await call('/me', { headers: { authorization: header } });
+    assert.equal(
+      response.status,
+      401,
+      `${header.slice(0, 24)}: ${response.body}`,
+    );
+    refused(response);
+    const token = header.slice(7);
+    if (token)
+      assert.ok(
+        !response.body.includes(token),
+        'the response echoed the token',
+      );
+  }
+  assert.equal(idp.calls.discovery, 0, 'discovery was called');
+  assert.equal(idp.calls.jwks, 0, 'the JWKS was fetched');
+  assert.equal(idp.calls.userinfo, 0, 'userinfo was called');
+  assert.deepEqual(idp.requests, []);
+});
+
+test('expiry, not-before and the subject are bounded, with a five-second tolerance', async (t) => {
+  const { idp, call } = await startStack(t);
+  const now = () => Math.floor(Date.now() / 1000);
+  const accepted = new Set([
+    'expires in 2 seconds',
+    'not before 2 seconds ahead',
+    'a 255-character subject',
+  ]);
+  const cases = {
+    'expired 30 seconds ago': idp.token({ exp: now() - 30 }),
+    'expires in 2 seconds': idp.token({ exp: now() + 2 }),
+    'not before 30 seconds ahead': idp.token({ nbf: now() + 30 }),
+    'not before 2 seconds ahead': idp.token({ nbf: now() + 2 }),
+    'no expiry': idp.token({ exp: undefined }),
+    'no not-before': idp.token({ nbf: undefined }),
+    'a 255-character subject': idp.token({ sub: 's'.repeat(255) }),
+    'a 256-character subject': idp.token({ sub: 's'.repeat(256) }),
+  };
+  for (const [name, token] of Object.entries(cases)) {
+    const response = await call('/me', { headers: bearer(token) });
+    if (accepted.has(name)) {
+      assert.equal(response.status, 200, `${name}: ${response.body}`);
+      continue;
+    }
+    assert.equal(response.status, 401, `${name}: ${response.body}`);
+    refused(response);
+  }
+});
+
+test('an identity provider outage is a 503 without cached keys, and harmless with them', async (t) => {
+  const { idp, call } = await startStack(t);
+  const token = idp.token();
+  const accepted = await call('/me', { headers: bearer(token) });
+  assert.equal(accepted.status, 200, accepted.body);
+
+  // From here the IdP is gone: discovery, JWKS and userinfo all refuse.
+  await idp.close();
+
+  // Cached keys keep working, and no refetch is needed inside the TTL.
+  const cached = await call('/me', { headers: bearer(token) });
+  assert.equal(cached.status, 200, cached.body);
+
+  // An unknown kid needs the JWKS, finds nothing, and is a plain 401 — an
+  // outage must not turn a bad token into a 503 once keys are cached.
+  const unknown = await call('/me', {
+    headers: bearer(idp.token({}, { key: idp.unknownKey('not-served') })),
+  });
+  assert.equal(unknown.status, 401, unknown.body);
+  refused(unknown);
+});
+
+test('with no cached keys an outage is a 503, never an accepted request', async (t) => {
+  // The IdP is closed before the API ever starts: it has nothing cached.
+  const idp = await startIdp();
+  const { issuer, baseUrl, audience } = idp;
+  const token = idp.token();
+  await idp.close();
+  const api = await startApi(t, {
+    CALFLEX_OIDC_ISSUER: issuer,
+    CALFLEX_OIDC_BASE_URL: baseUrl,
+    CALFLEX_OIDC_AUDIENCE: audience,
+  });
+  const response = await request(api.baseUrl, '/me', {
+    headers: bearer(token),
+  });
+  assert.equal(response.status, 503, response.body);
+  assert.deepEqual(JSON.parse(response.body), { error: 'unavailable' });
+});
+
+test('an audience file that changes after boot is picked up without a restart', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'calflex-audience-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const target = path.join(directory, 'audience');
+  await writeFile(target, 'stale-project\n');
+
+  const { idp, call } = await startStack(t, {
+    // No explicit audience: the API has to take it from the file alone.
+    audience: '',
+    env: { CALFLEX_OIDC_AUDIENCE_FILE: target },
+  });
+
+  // The file's value is the configured audience, so it is accepted.
+  const stale = await call('/me', {
+    headers: bearer(idp.token({ aud: 'stale-project' })),
+  });
+  assert.equal(stale.status, 200, stale.body);
+
+  // `zitadel-config apply` rewrites the file. The API re-reads it on the next
+  // audience mismatch — no restart, no container recreate.
+  await writeFile(target, 'project-id\n');
+  const fresh = await call('/me', { headers: bearer(idp.token()) });
+  assert.equal(fresh.status, 200, fresh.body);
+
+  // …and the audience that was replaced is refused from then on.
+  const replaced = await call('/me', {
+    headers: bearer(idp.token({ aud: 'stale-project' })),
+  });
+  assert.equal(replaced.status, 401, replaced.body);
+  refused(replaced);
+});
+
+test('a blank or missing handle or email from userinfo is a 502 and creates nothing', async (t) => {
+  const { idp, api, call } = await startStack(t);
+  const cases = {
+    'a blank handle': {
+      sub: 'blank-handle',
+      email_verified: true,
+      preferred_username: '   ',
+      email: 'blank-handle@example.test',
+    },
+    'a missing handle': {
+      sub: 'missing-handle',
+      email_verified: true,
+      email: 'missing-handle@example.test',
+    },
+    'a blank email': {
+      sub: 'blank-email',
+      email_verified: true,
+      preferred_username: 'blank-email',
+      email: '\t\n',
+    },
+    'a missing email': {
+      sub: 'missing-email',
+      email_verified: true,
+      preferred_username: 'missing-email',
+    },
+  };
+  for (const [name, userinfo] of Object.entries(cases)) {
+    idp.setUserinfo(userinfo);
+    const response = await call('/me', {
+      headers: bearer(idp.token({ sub: userinfo.sub })),
+    });
+    assert.equal(response.status, 502, `${name}: ${response.body}`);
+    assert.deepEqual(JSON.parse(response.body), { error: 'bad_gateway' });
+  }
+
+  // No row was created for any of them: a later well-formed first sight for the
+  // same subject still runs, and succeeds.
+  idp.setUserinfo({
+    sub: 'blank-handle',
+    email_verified: true,
+    preferred_username: 'now-valid',
+    email: 'now-valid@example.test',
+  });
+  const retried = await call('/me', {
+    headers: bearer(idp.token({ sub: 'blank-handle' })),
+  });
+  assert.equal(retried.status, 200, retried.body);
+  assert.equal(JSON.parse(retried.body).handle, 'now-valid');
+  assert.equal(api.stderr(), '');
 });

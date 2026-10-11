@@ -12,7 +12,7 @@ const allowed = [];
 const normalize = (path) => path.replace(/:([^/]+)/g, '{$1}');
 /**
  * @typedef {{method: string, url: string, config?: {bearerAuth?: boolean}, schema?: {response?: Record<string, unknown>}}} Route
- * @typedef {{responses: Record<string, {content: Record<string, {schema: unknown}>}>, security?: {bearerAuth: unknown}[]}} Operation
+ * @typedef {{tags?: string[], responses: Record<string, {content: Record<string, {schema: unknown}>}>, security?: {bearerAuth: unknown}[]}} Operation
  * @typedef {Record<string, Record<string, Operation>>} Paths
  */
 /**
@@ -38,6 +38,12 @@ function compare(routes, paths, exemptions = allowed, documentSecurity = []) {
     if (exemptions.includes(path)) continue;
     const operation = paths[path]?.[route.method.toLowerCase()];
     assert.ok(operation, `route missing from spec: ${route.method} ${path}`);
+    // Every operation is filed under at least one tag: the generated clients and
+    // the docs group by them, and an untagged operation silently lands nowhere.
+    assert.ok(
+      Array.isArray(operation.tags) && operation.tags.length > 0,
+      `operation has no tag: ${route.method} ${path}`,
+    );
     // The route's auth requirement and the spec's must agree, in both
     // directions: a route without the hook must not be documented as
     // protected, and a documented `bearerAuth` operation must be hooked.
@@ -143,6 +149,7 @@ const error = {
   properties: { error: { type: 'string' } },
 };
 const operation = {
+  tags: ['health'],
   responses: { 200: { content: { 'application/json': { schema: health } } } },
   security: [],
 };
@@ -215,6 +222,19 @@ test('the auth requirement is compared in both directions', () => {
       ),
     /auth requirement differs: GET \/healthz/,
   );
+});
+test('an operation without a tag fails', () => {
+  // `'health'` is not a tag list at all; the check must refuse it too.
+  for (const tags of /** @type {any[]} */ ([undefined, [], 'health'])) {
+    assert.throws(
+      () =>
+        compare([route], { '/healthz': { get: { ...operation, tags } } }, []),
+      /operation has no tag: GET \/healthz/,
+      `tags ${JSON.stringify(tags)} was accepted`,
+    );
+  }
+  // The real document is checked the same way: removing `tags` from `/me` in
+  // `spec/openapi.yaml` fails the first test in this file.
 });
 for (const [name, schema] of Object.entries({
   type: { ...health, type: 'string' },

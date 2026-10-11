@@ -117,7 +117,13 @@ needs `Authorization: Bearer <JWT>`** from Zitadel and is refused with `401`
 without one. The only product route so far is `GET /me`, which maps the
 token's `sub` to a `users` row and creates it on first sight from Zitadel's
 userinfo (`handle` = `preferred_username`, `email` = `email`, both only when
-`email_verified` is true).
+`email_verified` is true). For the seeded users `preferred_username` is the
+plain login name — `alice`, not `alice@example.test` — so a first `GET /me`
+for `alice` answers `handle: "alice"`, `email: "alice@example.test"`.
+
+Run `make migrate` before the first `GET /me`: `users` comes from the API's own
+migrations (E04-R01) and `make dev` does not apply them. Without them the route
+fails against a missing table instead of creating a row.
 
 The audience such a token must carry is the Zitadel **project ID**, which only
 `zitadel-config apply` knows. It therefore travels through the named volume
@@ -129,6 +135,12 @@ accepted — and the API picks the file up without a restart once it appears.
 
 An IdP outage does not lock the API out: validated keys are cached for ten
 minutes, and a rotated key is picked up from the JWKS without a restart.
+
+A token from `make token USER=alice` is a real access token whose Zitadel
+session lives for five minutes, so send the first-sight request for a subject
+that has no row yet inside that window; a subject that already has a `users`
+row never calls userinfo at all. See
+[the Zitadel configuration](../zitadel/README.md) for what the helper does.
 
 ## Checking this directory
 
@@ -157,6 +169,7 @@ curl … https://api.localhost:8443/healthz
 make seed && make seed     # the second run must create nothing
 
 # With a seeded stack, prove the audience handshake end to end:
+make migrate              # `users` exists only after the API's migrations
 TOKEN=$(make token USER=alice)
 curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-dev_caddy-data)/caddy/pki/authorities/local/root.crt" \
      -H "Authorization: Bearer $TOKEN" https://api.localhost:8443/me
