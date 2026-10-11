@@ -46,8 +46,19 @@ Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
   [`docs/reviews/<ID>.md`](docs/reviews/) on the branch. A `BLOCKED` verdict
   goes back to the implementer on that same branch, for at most two fix
   cycles; after a `PASS` the reviewer pushes the branch and opens the PR.
-  **Only a human merges**, and an `agent+review` PR additionally needs human
-  approval (rule 7).
+  **Only a human merges**: the owner merges the PR, or arms auto-merge on it
+  (`gh pr merge --auto --squash`), which lands it once the required checks
+  pass. Agents never run `gh pr merge`. An `agent+review` PR (rule 7) is
+  opened with that label, and the required **Human approval** check fails
+  until a human has reviewed it and removed the label, so auto-merge cannot
+  land it early.
+- **Rules on `main`.** A ruleset allows changes only through a PR, with the
+  **Verify required** check green and a squash merge. It blocks force-push and
+  deletion and asks for no approving review, because the owner opens and
+  merges their own PRs and GitHub does not let anyone approve their own PR.
+  It does not require the branch to be up to date: that would re-run a
+  nine-minute verification after every merge. Use "Update branch" or merge
+  `main` forward when a PR conflicts.
 
 ## Commit style
 
@@ -84,7 +95,10 @@ Agent-Status: DONE
   body is required when the reason is not self-evident.
 - **Footers**: after a blank line, `Key: value` — `Closes: #<pr-or-issue>`,
   `Co-Authored-By: Name <email>` when someone else co-authored. Signed-off-by
-  is not required. Never write event content (`SUMMARY`, `DESCRIPTION`,
+  is not required, and commits are not cryptographically signed: this
+  repository's local git config sets `commit.gpgsign=false` (run `git config
+  --local commit.gpgsign false` in a fresh clone), so no commit waits on a
+  signing agent. Never write event content (`SUMMARY`, `DESCRIPTION`,
   `LOCATION`, attendees, envelope bytes) into a commit message: commit
   messages end up in logs and in review tooling. This is the "no event content
   in logs" rule in
