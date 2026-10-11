@@ -20,7 +20,10 @@ const tsdavStatic = () => [
   'error',
   {
     patterns: [
-      { group: ['tsdav', 'tsdav/*', 'tsdav/**'], message: ONLY_ADAPTER_MESSAGE },
+      {
+        group: ['tsdav', 'tsdav/*', 'tsdav/**'],
+        message: ONLY_ADAPTER_MESSAGE,
+      },
     ],
   },
 ];

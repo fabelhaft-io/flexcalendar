@@ -11,6 +11,7 @@ import { test } from 'node:test';
 
 import {
   CalDavError,
+  PRECONDITION_SCAN_LIMIT_BYTES,
   PRIVATE_CALENDAR_DISPLAY_NAME,
   PRINCIPAL_HEADER,
   createCalDavAdapter,
@@ -19,6 +20,7 @@ import {
   parseDelegationKeys,
   parsePreconditions,
   randomNonce,
+  signedFetchFor,
 } from '../src/caldav/adapter.mjs';
 
 const ORIGIN = 'http://caldav-internal:8081';
@@ -327,6 +329,37 @@ test('a fresh nonce and timestamp go out with every request', async () => {
   }
 });
 
+test('a default adapter mints its own nonce: 22 base64url characters, never twice', async () => {
+  /** @type {string[]} */
+  const nonces = [];
+  for (let round = 0; round < 2; round += 1) {
+    // No `now` and no `nonce` are injected here: these are the defaults.
+    const { calls, transport } = record(xml('<d:mkcol xmlns:d="DAV:"/>', 201));
+    const adapter = createCalDavAdapter({
+      origin: ORIGIN,
+      keys: DELEGATION_KEYS,
+      fetch: transport,
+    });
+    const user = adapter.forUser(USER);
+    await user.makeCalendar(CALENDAR);
+    await user.makeCalendar(CALENDAR);
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      const parsed = fields(call.init.headers.get(PRINCIPAL_HEADER));
+      assert.match(parsed.n, /^[A-Za-z0-9_-]{22}$/);
+      assert.equal(Buffer.from(parsed.n, 'base64url').length, 16);
+      assert.equal(
+        Buffer.from(parsed.n, 'base64url').toString('base64url'),
+        parsed.n,
+      );
+      assert.match(parsed.t, /^\d{10}$/);
+      nonces.push(parsed.n);
+    }
+  }
+  assert.equal(nonces.length, 4);
+  assert.equal(new Set(nonces).size, nonces.length);
+});
+
 test('the signed target is the path and query URL serialisation produces', () => {
   assert.equal(
     delegationTarget(new URL(`${ORIGIN}/principals/`)),
@@ -370,6 +403,64 @@ test('every request is signed for the user it was created for', async () => {
     String(calls[1].url),
     new RegExp(`^${ORIGIN}/calendars/${OTHER_USER}/`),
   );
+});
+
+test('the signed fetch refuses a foreign origin and resolves a relative target', async () => {
+  const { calls, transport } = record(plain(200, 'ok'));
+  const signed = signedFetchFor({
+    origin: new URL(ORIGIN),
+    principal: USER,
+    keyId: KEY_ID,
+    key: KEY,
+    transport,
+    now: () => TIMESTAMP * 1000,
+    nonce: () => NONCE,
+    limit: 1024,
+    timeout: 1000,
+  });
+
+  // A relative target is resolved against the origin, sent as such, and the
+  // header signs exactly that target and the upper-cased method.
+  const response = await signed('/calendars/x/?a=1', { method: 'get' });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(String(calls[0].url), `${ORIGIN}/calendars/x/?a=1`);
+  assert.equal(calls[0].init.method, 'GET');
+  assert.equal(
+    calls[0].init.headers.get(PRINCIPAL_HEADER),
+    delegationHeader({
+      keyId: KEY_ID,
+      key: KEY,
+      principal: USER,
+      method: 'GET',
+      target: '/calendars/x/?a=1',
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    }),
+  );
+
+  // An absolute target on the same origin is accepted too.
+  await signed(new URL(`${ORIGIN}/principals/`));
+  assert.equal(String(calls[1].url), `${ORIGIN}/principals/`);
+  assert.equal(calls[1].init.method, 'GET');
+
+  // Another origin is refused before it is signed or sent.
+  for (const target of [
+    'http://elsewhere.invalid/calendars/',
+    'https://caldav-internal:8081/calendars/',
+    'http://caldav-internal:8082/calendars/',
+  ]) {
+    await assert.rejects(
+      () => signed(target, { method: 'GET' }),
+      (/** @type {CalDavError} */ error) => {
+        assert.ok(error instanceof CalDavError, target);
+        assert.equal(error.kind, 'invalid-target');
+        assert.ok(!error.message.includes(target), error.message);
+        return true;
+      },
+    );
+  }
+  assert.equal(calls.length, 2, 'a foreign target is never sent');
 });
 
 // --- path safety -------------------------------------------------------------
@@ -451,16 +542,32 @@ test('makeCalendar sends MKCALENDAR with the fixed Private display name', async 
   const result = await adapter.forUser(USER).makeCalendar(CALENDAR);
   assert.equal(result.status, 201);
   assert.equal(calls[0].init.method, 'MKCALENDAR');
+  // The display name is spelled out here, not read from the constant: D-18's
+  // write guard allows this one literal, so a changed constant must fail here.
+  assert.equal(PRIVATE_CALENDAR_DISPLAY_NAME, 'Private calendar');
   const body = String(calls[0].init.body);
   assert.ok(
-    body.includes(
-      `<d:displayname>${PRIVATE_CALENDAR_DISPLAY_NAME}</d:displayname>`,
-    ),
+    body.includes('<d:displayname>Private calendar</d:displayname>'),
+    body,
   );
   assert.equal(
     body.split('<d:displayname>').length,
     2,
     'only the display name is sent',
+  );
+  // …and nothing else: the whole request is that one property.
+  assert.equal(
+    body,
+    [
+      '<?xml version="1.0" encoding="utf-8"?>',
+      '<c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:ca="http://apple.com/ns/ical/">',
+      '  <d:set>',
+      '    <d:prop>',
+      '      <d:displayname>Private calendar</d:displayname>',
+      '    </d:prop>',
+      '  </d:set>',
+      '</c:mkcalendar>',
+    ].join('\n'),
   );
 });
 
@@ -787,6 +894,40 @@ test('parsePreconditions reads only well-formed cf: names out of a DAV:error', (
   ]);
 });
 
+test('parsePreconditions reads a bounded, linear amount of a hostile body', () => {
+  assert.equal(PRECONDITION_SCAN_LIMIT_BYTES, 16 * 1024);
+  /** @param {string} unit @param {number} [bytes] */
+  const repeated = (unit, bytes = 4 * 1024 * 1024) =>
+    Buffer.from(unit.repeat(Math.ceil(bytes / unit.length)).slice(0, bytes));
+  // Both shapes are 4 MiB of an unfinished tag; neither may cost more than the
+  // 16 KiB that is read, whatever the response cap allowed through.
+  for (const unit of ['<a ', '<a x="']) {
+    const started = performance.now();
+    assert.deepEqual(parsePreconditions(repeated(unit)), []);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 500, `${JSON.stringify(unit)} took ${elapsed} ms`);
+  }
+  const caldav = 'xmlns:cf="https://flexcalendar.de/ns/caldav"';
+  const document =
+    `<d:error xmlns:d="DAV:"><cf:private-skeleton-only ${caldav}>` +
+    '<cf:name>SUMMARY</cf:name></cf:private-skeleton-only></d:error>';
+  // A document behind the limit is not read at all.
+  assert.deepEqual(
+    parsePreconditions(
+      Buffer.from(`${' '.repeat(PRECONDITION_SCAN_LIMIT_BYTES)}${document}`),
+    ),
+    [],
+  );
+  // Junk behind a real precondition document, inside the limit, does not stop
+  // it — an unfinished tag after the last one just ends the scan.
+  const body = Buffer.from(`${document}\n${'<'.repeat(64)}not a tag`);
+  assert.ok(body.length < PRECONDITION_SCAN_LIMIT_BYTES);
+  assert.deepEqual(parsePreconditions(body), [
+    'cf:private-skeleton-only',
+    'SUMMARY',
+  ]);
+});
+
 test('a hostile body never reaches the error', async () => {
   const marker = 'CALFLEX_BODY_MARKER_0123456789';
   const bodies = [
@@ -823,12 +964,10 @@ test('a tsdav protocol failure becomes a body-free error', async () => {
   );
   await assert.rejects(
     () =>
-      adapter
-        .forUser(USER)
-        .listObjects(CALENDAR, {
-          start: '20260101T000000Z',
-          end: '20260201T000000Z',
-        }),
+      adapter.forUser(USER).listObjects(CALENDAR, {
+        start: '20260101T000000Z',
+        end: '20260201T000000Z',
+      }),
     (/** @type {CalDavError} */ error) => {
       assert.equal(error.kind, 'protocol');
       assert.ok(!error.message.includes(marker));

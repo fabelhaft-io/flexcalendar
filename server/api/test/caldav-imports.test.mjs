@@ -58,10 +58,13 @@ test('the repository ESLint forbids importing tsdav outside the adapter', async 
       (await readFile(eslintCli, 'utf8')).length > 0,
     'the workspace ESLint devDependency must be installed to run this gate',
   );
-  const directory = await mkdtemp(path.join(api, 'test', 'lint-probe-'));
-  /** @param {string} name @param {string} code @returns {Promise<string>} */
-  const probe = async (name, code) => {
-    const file = path.join(directory, name);
+  const directories = {
+    src: await mkdtemp(path.join(api, 'src', 'lint-probe-')),
+    test: await mkdtemp(path.join(api, 'test', 'lint-probe-')),
+  };
+  /** @param {'src' | 'test'} where @param {string} name @param {string} code @returns {Promise<string>} */
+  const probe = async (where, name, code) => {
+    const file = path.join(directories[where], name);
     await writeFile(file, code);
     return file;
   };
@@ -90,11 +93,23 @@ test('the repository ESLint forbids importing tsdav outside the adapter', async 
       ],
     ];
     const files = new Map();
-    for (const [name, code] of cases) files.set(name, await probe(name, code));
+    for (const [name, code] of cases)
+      files.set(name, await probe('test', name, code));
+    // The exemption is that one file, not a directory: the same import inside
+    // `src/`, next to the adapter, is an error like the one under `test/`.
+    files.set(
+      'service.mjs',
+      await probe(
+        'src',
+        'offending.mjs',
+        "import { DAVClient } from 'tsdav';\nexport const x = DAVClient;\n",
+      ),
+    );
     // A file with no tsdav import is the control: the rule is not a blanket ban.
     files.set(
       'control.mjs',
       await probe(
+        'test',
         'control.mjs',
         "import { readFile } from 'node:fs/promises';\nexport const x = readFile;\n",
       ),
@@ -116,6 +131,9 @@ test('the repository ESLint forbids importing tsdav outside the adapter', async 
     assert.deepEqual(ruleIds(reportFor('dynamic.mjs').messages), [
       'no-restricted-syntax',
     ]);
+    assert.deepEqual(ruleIds(reportFor('service.mjs').messages), [
+      'no-restricted-imports',
+    ]);
     // A computed specifier is not a static import; it is caught by review, not
     // by this rule, and that limit is recorded here rather than implied.
     assert.deepEqual(ruleIds(reportFor('computed.mjs').messages), []);
@@ -125,13 +143,16 @@ test('the repository ESLint forbids importing tsdav outside the adapter', async 
     assert.deepEqual(adapterReport.messages, []);
     assert.equal(reportFor('static.mjs').errorCount, 1);
     assert.equal(reportFor('dynamic.mjs').errorCount, 1);
+    assert.equal(reportFor('service.mjs').errorCount, 1);
     assert.match(String(reportFor('static.mjs').messages[0]?.message), /tsdav/);
     assert.match(
       String(reportFor('static.mjs').messages[0]?.message),
       /E05-R02/,
     );
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    for (const directory of Object.values(directories)) {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 });
 

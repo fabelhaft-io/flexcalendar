@@ -52,6 +52,13 @@ export const FLEXCALDAV_NAMESPACE = 'https://flexcalendar.de/ns/caldav';
 /** Hard response cap, so a hostile or broken listener cannot exhaust the API. */
 export const RESPONSE_LIMIT_BYTES = 4 * 1024 * 1024;
 
+/**
+ * `parsePreconditions` reads at most this much of a response body. A `DAV:error`
+ * from the CalDAV service is a few hundred bytes, and the only cost that grows
+ * with the body would be paid by an attacker, so the rest is never scanned.
+ */
+export const PRECONDITION_SCAN_LIMIT_BYTES = 16 * 1024;
+
 /** Per-request deadline. A signed request is never retried. */
 export const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -231,23 +238,157 @@ function assertCalDavTime(value, label) {
 }
 
 /**
+ * @param {number} code
+ * @returns {boolean}
+ */
+function isNameStart(code) {
+  return (
+    (code >= 0x41 && code <= 0x5a) || // A-Z
+    (code >= 0x61 && code <= 0x7a) || // a-z
+    code === 0x5f // _
+  );
+}
+
+/**
+ * @param {number} code
+ * @returns {boolean}
+ */
+function isNamePart(code) {
+  return (
+    isNameStart(code) ||
+    (code >= 0x30 && code <= 0x39) || // 0-9
+    code === 0x2e || // .
+    code === 0x2d || // -
+    code === 0x3a // :
+  );
+}
+
+/**
+ * @param {number} code
+ * @returns {boolean}
+ */
+function isSpace(code) {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
+}
+
+/**
+ * The `name="value"` (or `name='value'`) pairs of one tag's attribute text, in
+ * one forward pass. The scan never backtracks or re-reads a character, so a
+ * hostile attribute list costs its own length and no more.
+ *
+ * @param {string} text
+ * @returns {[string, string][]}
+ */
+function attributePairs(text) {
+  /** @type {[string, string][]} */
+  const pairs = [];
+  const length = text.length;
+  let index = 0;
+  while (index < length) {
+    if (isSpace(text.charCodeAt(index)) || text.charCodeAt(index) === 0x2f) {
+      index += 1;
+      continue;
+    }
+    const nameStart = index;
+    while (index < length) {
+      const code = text.charCodeAt(index);
+      if (isSpace(code) || code === 0x3d) break;
+      index += 1;
+    }
+    const name = text.slice(nameStart, index);
+    while (index < length && isSpace(text.charCodeAt(index))) index += 1;
+    if (text.charCodeAt(index) !== 0x3d) continue;
+    index += 1;
+    while (index < length && isSpace(text.charCodeAt(index))) index += 1;
+    const quote = text.charCodeAt(index);
+    if (quote !== 0x22 && quote !== 0x27) continue;
+    index += 1;
+    const valueStart = index;
+    while (index < length && text.charCodeAt(index) !== quote) index += 1;
+    if (name !== '') pairs.push([name, text.slice(valueStart, index)]);
+    if (index < length) index += 1;
+  }
+  return pairs;
+}
+
+/**
+ * The tags of a document, in one forward pass: `<name …>`, `</name>` and
+ * `<name … />`. An XML prologue, a comment, text and any `<` that does not open
+ * a tag are skipped. The scan advances monotonically and never re-reads a
+ * character, so a body of angle brackets costs its own length; a tag that is
+ * never closed ends the scan, because everything behind it is inside it.
+ *
+ * @param {string} xml
+ * @returns {{start: number, end: number, closing: boolean, name: string, attributes: string, selfClosing: boolean}[]}
+ */
+function tagsOf(xml) {
+  /** @type {{start: number, end: number, closing: boolean, name: string, attributes: string, selfClosing: boolean}[]} */
+  const tags = [];
+  const length = xml.length;
+  let index = 0;
+  for (;;) {
+    const start = xml.indexOf('<', index);
+    if (start === -1) return tags;
+    let cursor = start + 1;
+    const closing = xml.charCodeAt(cursor) === 0x2f;
+    if (closing) cursor += 1;
+    const nameStart = cursor;
+    if (cursor < length && isNameStart(xml.charCodeAt(cursor))) {
+      cursor += 1;
+      while (cursor < length && isNamePart(xml.charCodeAt(cursor))) cursor += 1;
+    }
+    if (cursor === nameStart) {
+      index = start + 1;
+      continue;
+    }
+    const attributesStart = cursor;
+    let quote = 0;
+    let end = -1;
+    while (cursor < length) {
+      const code = xml.charCodeAt(cursor);
+      if (quote !== 0) {
+        if (code === quote) quote = 0;
+      } else if (code === 0x22 || code === 0x27) {
+        quote = code;
+      } else if (code === 0x3e) {
+        end = cursor;
+        break;
+      }
+      cursor += 1;
+    }
+    if (end === -1) return tags;
+    const attributes = xml.slice(attributesStart, end);
+    tags.push({
+      start,
+      end,
+      closing,
+      name: xml.slice(nameStart, attributesStart),
+      attributes,
+      // `<name …/>`: the slash is the last character before the `>`.
+      selfClosing: attributes.endsWith('/'),
+    });
+    index = end + 1;
+  }
+}
+
+/**
  * Extracts the `cf:` precondition element names from a `DAV:error` body.
  *
- * The scan is intentionally narrow: it only reports elements in the CalDAV
- * service's namespace, only when the root element is `{DAV:}error`, and it
- * resolves namespace prefixes properly instead of trusting the `cf:` prefix.
+ * The scan is intentionally narrow: it reads at most
+ * `PRECONDITION_SCAN_LIMIT_BYTES` of the body, it only reports elements in the
+ * CalDAV service's namespace, only when the root element is `{DAV:}error`, and
+ * it resolves namespace prefixes properly instead of trusting the `cf:` prefix.
  * Element local names and `cf:name`'s text are both held to their grammars, so
  * a body cannot smuggle free text, an attribute value or event content out
- * through the error.
+ * through the error. It is linear in the length of what it reads: a body of
+ * angle brackets is hostile traffic, not a reason to burn the API's event loop.
  *
  * @param {Buffer} body
  * @returns {string[]}
  */
 export function parsePreconditions(body) {
-  const xml = body.toString('utf8');
+  const xml = body.subarray(0, PRECONDITION_SCAN_LIMIT_BYTES).toString('utf8');
   if (xml === '') return [];
-  const tag =
-    /<(\/?)([A-Za-z_][A-Za-z0-9._:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g;
   /** @type {{prefix: string, local: string, namespace: string, text: string}[]} */
   const elements = [];
   /** @type {{prefix: string, local: string, namespace: string, text: string}[]} */
@@ -261,28 +402,23 @@ export function parsePreconditions(body) {
   ];
   let root = null;
   let cursor = 0;
-  let match;
-  while ((match = tag.exec(xml)) !== null) {
+  for (const tag of tagsOf(xml)) {
     if (stack.length > 0)
-      stack[stack.length - 1].text += xml.slice(cursor, match.index);
-    cursor = tag.lastIndex;
-    const closing = match[1] === '/';
-    const name = match[2];
-    const separator = name.indexOf(':');
-    const prefix = separator === -1 ? '' : name.slice(0, separator);
-    const local = separator === -1 ? name : name.slice(separator + 1);
-    if (closing) {
+      stack[stack.length - 1].text += xml.slice(cursor, tag.start);
+    cursor = tag.end + 1;
+    const separator = tag.name.indexOf(':');
+    const prefix = separator === -1 ? '' : tag.name.slice(0, separator);
+    const local = separator === -1 ? tag.name : tag.name.slice(separator + 1);
+    if (tag.closing) {
       const open = stack.pop();
       if (open === undefined) return [];
       if (open.prefix !== prefix || open.local !== local) return [];
       continue;
     }
-    const inherited = namespaces[namespaces.length - 1];
-    const scope = new Map(inherited);
-    for (const declaration of match[3].matchAll(
-      /xmlns(?::([A-Za-z_][A-Za-z0-9._-]*))?\s*=\s*(?:"([^"]*)"|'([^']*)')/g,
-    )) {
-      scope.set(declaration[1] ?? '', declaration[2] ?? declaration[3] ?? '');
+    const scope = new Map(namespaces[namespaces.length - 1]);
+    for (const [name, value] of attributePairs(tag.attributes)) {
+      if (name === 'xmlns') scope.set('', value);
+      else if (name.startsWith('xmlns:')) scope.set(name.slice(6), value);
     }
     const element = {
       prefix,
@@ -292,7 +428,7 @@ export function parsePreconditions(body) {
     };
     elements.push(element);
     if (root === null) root = element;
-    if (match[4] !== '/') {
+    if (!tag.selfClosing) {
       stack.push(element);
       namespaces.push(scope);
     }
@@ -431,12 +567,15 @@ function asCalDavError(error) {
 /**
  * The D-05-authenticated `fetch` the tsdav calls are given. A fresh nonce and
  * timestamp are minted per request and the header signs the URL this function
- * sends — `pathname` and `search` are taken from the same `URL` object.
+ * sends — `pathname` and `search` are taken from the same `URL` object. A
+ * relative target is resolved against the configured origin; anything whose
+ * origin is not that origin is refused before it is signed or sent. Exported so
+ * the tests can reach both of those decisions directly.
  *
  * @param {{origin: URL, principal: string, keyId: string, key: Buffer, transport: typeof fetch, now: () => number, nonce: () => string, limit: number, timeout: number}} config
  * @returns {typeof fetch}
  */
-function signedFetchFor(config) {
+export function signedFetchFor(config) {
   const {
     origin,
     principal,
@@ -696,6 +835,11 @@ export function createCalDavAdapter(config = {}) {
          * instants (`20260101T000000Z`); ISO 8601 instants are accepted too.
          * The returned `href`s are the server's paths, unchanged.
          *
+         * `data` is the `calendar-data` an XML report carries it in, so it is
+         * **LF-normalised**: the service strips the `\r` bytes out of the value
+         * so they cannot disturb the XML. `getObject` is the call that returns
+         * an object's stored bytes exactly.
+         *
          * @param {string} calendarId
          * @param {{start: string, end: string}} range
          */
@@ -746,6 +890,10 @@ export function createCalDavAdapter(config = {}) {
          * ETag and, when the object is present, its iCalendar data. A report's
          * own node for the collection (Sabre answers a truncated sync with one)
          * is not a change and is left out.
+         *
+         * Like `listObjects`, `data` is the `calendar-data` of an XML report and
+         * is therefore **LF-normalised** (the service strips the `\r` bytes);
+         * `getObject` returns an object's stored bytes exactly.
          *
          * @param {string} calendarId
          * @param {string} [token]

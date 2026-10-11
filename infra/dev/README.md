@@ -250,3 +250,12 @@ and `403` with `cf:private-skeleton-only` when a content property is smuggled
 in. It joins the `delegation` network, because the internal listener has no
 published port. The adapter's container-free unit tests are part of
 `make verify-server-api`.
+
+A report's `calendar-data` is **LF-normalised**: SabreDAV strips the `\r` bytes
+out of the value it puts into the multistatus XML, so `listObjects` and
+`syncChanges` return data with `\n` where the object has `\r\n`. A plain `GET`
+does not go through the XML, so `getObject` returns the stored bytes exactly —
+that is the call for a route that hands the raw `ical` on. The adapter says
+both on the methods themselves, and the suite asserts both halves: each report
+against the object's bytes with CRLF folded to LF, and `getObject` against the
+exact CRLF bytes that were written.
