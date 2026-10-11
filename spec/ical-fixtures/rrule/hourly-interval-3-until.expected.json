@@ -1,0 +1,5 @@
+{
+  "fixture": "hourly-interval-3-until",
+  "occurrences": ["20260102T090000Z", "20260102T120000Z", "20260102T150000Z"],
+  "overrides": []
+}

@@ -1,0 +1,16 @@
+{
+  "fixture": "overrides-moved-recurrence-id",
+  "occurrences": [
+    "20260203T090000Z",
+    "20260210T090000Z",
+    "20260224T090000Z",
+    "20260303T090000Z",
+    "20260310T090000Z"
+  ],
+  "overrides": [
+    {
+      "start": "20260218T150000Z",
+      "replaces": "20260217T090000Z"
+    }
+  ]
+}

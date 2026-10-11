@@ -1,0 +1,10 @@
+{
+  "fixture": "count-with-exdate",
+  "occurrences": [
+    "20260302T090000Z",
+    "20260303T090000Z",
+    "20260305T090000Z",
+    "20260306T090000Z"
+  ],
+  "overrides": []
+}

@@ -1,0 +1,15 @@
+{
+  "fixture": "overrides-exdate-and-moved",
+  "occurrences": [
+    "20260401T090000Z",
+    "20260402T090000Z",
+    "20260404T090000Z",
+    "20260406T090000Z"
+  ],
+  "overrides": [
+    {
+      "start": "20260406T140000Z",
+      "replaces": "20260405T090000Z"
+    }
+  ]
+}

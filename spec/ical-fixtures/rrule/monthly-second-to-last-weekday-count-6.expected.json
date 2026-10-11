@@ -1,0 +1,12 @@
+{
+  "fixture": "monthly-second-to-last-weekday-count-6",
+  "occurrences": [
+    "20260129T090000Z",
+    "20260226T090000Z",
+    "20260330T090000Z",
+    "20260429T090000Z",
+    "20260528T090000Z",
+    "20260629T090000Z"
+  ],
+  "overrides": []
+}

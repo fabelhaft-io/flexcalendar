@@ -1,0 +1,11 @@
+{
+  "fixture": "yearly-byweekno-20-monday-count-5",
+  "occurrences": [
+    "20260511T090000Z",
+    "20270517T090000Z",
+    "20280515T090000Z",
+    "20290514T090000Z",
+    "20300513T090000Z"
+  ],
+  "overrides": []
+}
