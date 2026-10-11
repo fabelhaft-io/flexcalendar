@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildApp } from '../src/app.mjs';
+import { readConfig } from '../src/config.mjs';
 import { createUserStore } from '../src/store.mjs';
 import { fresh, migrate } from './support/postgres.mjs';
 
@@ -40,7 +41,10 @@ async function withApp(run) {
       },
     };
     const app = buildApp({
-      config: { issuer: 'https://auth.example.test' },
+      config: {
+        ...readConfig({}),
+        issuer: 'https://auth.example.test',
+      },
       store: createUserStore(client),
       oidc,
       audience: {

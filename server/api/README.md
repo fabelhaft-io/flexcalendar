@@ -74,12 +74,27 @@ and hit CalDAV directly (CLAUDE.md).
   the CalDAV service has none. No server-side crypto is added.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.
 
-## Authentication
+## Authentication and rate limiting
 
 Every route except `GET`/`HEAD /healthz` — unknown routes and unknown methods
-included — goes through one `onRequest` hook (`src/auth.mjs`) before any route
-handler runs:
+included — goes through two global `onRequest` hooks before any route handler
+runs: the rate limiter first (`src/app.mjs`), then the bearer hook
+(`src/auth.mjs`). The order is the point: an unauthenticated flood is counted
+before a single token is verified, and a request over its limit never reaches
+the JWKS cache or the IdP.
 
+- **Rate limit.** One in-memory bucket per client address,
+  `CALFLEX_RATE_LIMIT_MAX` requests per `CALFLEX_RATE_LIMIT_WINDOW_SECONDS`
+  (300 per 60 s by default), at most 10,000 keys. A refused request is `429`
+  with `Retry-After` and the fixed body `{"error":"rate_limited"}` — no
+  counter, address or key. The API's error handler passes that body through
+  instead of `request_failed`. `GET`/`HEAD /healthz` is allow-listed, so a
+  client over its limit cannot make the container look unhealthy. On an
+  unknown path the limiter runs too, because the bearer hook runs there.
+  Because the limit is per client address, the API must be told where to read
+  that address: `CALFLEX_TRUSTED_PROXY_HOPS`. The in-memory store is a single
+  process's; a second API instance would need a shared store before it could
+  enforce one limit across both.
 - **The token.** Exactly one `Authorization: Bearer <JWT>` header, scheme
   case-insensitive, at most 8 KiB, three base64url segments. Nothing is read
   from the query string, and an opaque token is a 401 **before any network
@@ -121,6 +136,12 @@ handler runs:
 | `CALFLEX_OIDC_AUDIENCE` | The expected `aud` (the Zitadel project ID). Wins over the file. |
 | `CALFLEX_OIDC_AUDIENCE_FILE` | File whose trimmed first line is the audience. Read lazily, and re-read after an audience mismatch at most once per 5 s. Neither present: 503 on every protected route, never accepted. |
 | `CALFLEX_DATABASE_URL` | `public.users` for the first sight. `calflex_api`. |
+| `CALFLEX_RATE_LIMIT_MAX` | Requests allowed per client address and window. Whole number ≥ 1, default `300`. |
+| `CALFLEX_RATE_LIMIT_WINDOW_SECONDS` | Length of the rate-limit window. Whole number ≥ 1, default `60`. |
+| `CALFLEX_TRUSTED_PROXY_HOPS` | How many proxies sit in front of the API, i.e. how many `X-Forwarded-For` hops are believed. Whole number ≥ 0, default `0` — the socket address is the client and `X-Forwarded-For` is ignored. `1` behind Caddy (the local stack sets it). Set too high, a client picks its own bucket with a header; left at `0` behind the proxy, every client shares Caddy's bucket. |
+
+A rate-limit or proxy-hop value that is not a whole number at or above its
+floor stops the service at startup instead of falling back to a default.
 
 `GET /healthz` touches none of them and stays database-free.
 
@@ -128,8 +149,12 @@ handler runs:
 
 `node --test test/*.test.mjs`. The auth suite that needs no containers
 (`test/auth.test.mjs`, `test/audience.test.mjs`, `test/contract.test.mjs`,
-`test/health.test.mjs`) drives a real HTTP server against the stub identity
-provider in `test/support/idp.mjs`, whose tokens are signed by keys it serves
-as its own JWKS — never by Zitadel. `test/auth-db.test.mjs` needs the same
-rootless Podman as the migration tests, and exercises `public.users` through
+`test/health.test.mjs`, `test/rate-limit.test.mjs`) drives a real HTTP server
+against the stub identity provider in `test/support/idp.mjs`, whose tokens are
+signed by keys it serves as its own JWKS — never by Zitadel.
+`test/rate-limit.test.mjs` uses `inject` with a counting verifier: it proves
+the limiter's hook is counted before `verify` runs, that a new window resets
+the bucket, and that `CALFLEX_TRUSTED_PROXY_HOPS` decides whether
+`X-Forwarded-For` is believed. `test/auth-db.test.mjs` needs the same rootless
+Podman as the migration tests, and exercises `public.users` through
 `test/support/postgres.mjs`.
