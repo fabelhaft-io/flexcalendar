@@ -44,6 +44,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calendars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's calendars
+         * @description Every calendar the caller is a member of, oldest first. A calendar the caller cannot see is not listed, and a Private calendar's name and colour are inside `metaEnvelope` — the API never opens one (D-18).
+         */
+        get: operations["listCalendars"];
+        put?: never;
+        /**
+         * Create a calendar
+         * @description Requires an explicit `mode`; there is no default (ADR 0001). Until Phase 4 only `private` is accepted (ADR 0003), and a Private calendar is created with `metaEnvelope` and `metaEpoch` instead of a plaintext `name` or `color` (D-18). The API checks the envelope's header (version `0x01`, the CCK epoch that `metaEpoch` names, at least the 45 bytes of fixed fields) and its size (at most 4096 bytes), stores it opaquely, and gives the CalDAV collection the fixed display name `Private calendar` (E03-R09). The `calendars` row and the owner's `calendar_members` row are committed before the collection is made, and removed again if that fails. Every rule of this list is a 422, never a 400.
+         *     The request body is validated by the route rather than by a schema: a schema-refused body is a 400, and the rules above must answer 422.
+         */
+        post: operations["createCalendar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendars/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a calendar
+         * @description Removes the CalDAV collection and every row the calendar owns; the membership row cascades from the `calendars` row. Only the owner may do it; a member who is not the owner gets a 403, and a caller who is not a member a 404, exactly like an id that exists nowhere. A collection that is already gone is not an error: the request wanted it gone.
+         */
+        delete: operations["deleteCalendar"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename or recolour a calendar
+         * @description A rename and a recolour are one act: both replace the sealed `metaEnvelope` and the `metaEpoch` it names. The request must carry `If-Match` with the version it read; a version that has moved on is a 412, a missing `If-Match` a 428, and the CalDAV collection keeps the fixed display name `Private calendar` whatever the envelope holds (D-18). Only the owner may do it; a member who is not the owner gets a 403, and a caller who is not a member a 404, exactly like an id that exists nowhere.
+         */
+        patch: operations["replaceCalendarMetadata"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -60,6 +109,56 @@ export interface components {
             id: string;
             handle: string;
             email: string;
+        };
+        /** @description One calendar the caller is a member of. A Private calendar carries its sealed metadata envelope; the API never opens it (D-18). */
+        Calendar: {
+            /** @description The `calendars.id` uuid, which is also the CalDAV collection href. */
+            id: string;
+            /** @description The calendar mode. Until Phase 4 every calendar is `private` (ADR 0003). */
+            mode: string;
+            /** @description The caller's role in `calendar_members`: `owner`, `editor` or `viewer`. */
+            role: string;
+            /** @description The optimistic-concurrency version; also the `ETag`. */
+            version: number;
+            /** @description A Private calendar's client-sealed metadata envelope, standard base64. Opaque to the API. */
+            metaEnvelope: string;
+            /** @description The CCK epoch inside the envelope's header. */
+            metaEpoch: number;
+            /** @description When the calendar was created, ISO 8601. */
+            createdAt: string;
+            /** @description When the calendar last changed, ISO 8601. */
+            updatedAt: string;
+        };
+        /** @description The calendars the caller is a member of. */
+        CalendarList: {
+            /** @description Oldest first. A Private calendar the caller cannot see is not listed. */
+            calendars: components["schemas"]["Calendar"][];
+        };
+        /** @description A create request. `mode` is required and has no default (ADR 0001); until Phase 4 only `private` is accepted (ADR 0003). A Private calendar takes `metaEnvelope` and `metaEpoch` and no plaintext `name` or `color` (D-18). The API answers 422 for every rule of this list; a member the operation does not take is a 422 too. */
+        CalendarCreate: {
+            /** @description The calendar mode. Until Phase 4, `private` is the only accepted value. */
+            mode?: string;
+            /**
+             * Format: byte
+             * @description The client-sealed metadata envelope (version `0x01`, the CCK epoch as a big-endian uint32, a 24-byte nonce, ciphertext and a 16-byte tag), standard base64, at most 4096 bytes.
+             */
+            metaEnvelope?: string;
+            /** @description The CCK epoch the envelope's header carries. The header field is a uint32, but the API accepts only what `calendars.meta_epoch` holds (an `integer`); anything above it is a 422, never a database error. */
+            metaEpoch?: number;
+            /** @description A plaintext display name. Refused with 422 on a Private calendar (D-18); Shared calendars take one from Phase 4. */
+            name?: string;
+            /** @description A plaintext colour. Refused with 422 on a Private calendar (D-18); Shared calendars take one from Phase 4. */
+            color?: string;
+        };
+        /** @description A rename or recolour: it replaces the sealed envelope and the epoch it names, and it carries no plaintext `name` or `color` — those are a 422 on a Private calendar (D-18), and so is any other member, `mode` included. */
+        CalendarMeta: {
+            /**
+             * Format: byte
+             * @description The replacing metadata envelope, in the same layout and encoding as on create.
+             */
+            metaEnvelope?: string;
+            /** @description The CCK epoch the replacing envelope's header carries, in the same range as on create. */
+            metaEpoch?: number;
         };
         /** @description An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`. */
         Problem: {
@@ -94,6 +193,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -219,6 +327,538 @@ export interface operations {
             };
             /** @description No audience is configured yet, or the issuer has no usable signing keys */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCalendars: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The calendars the caller is a member of */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarList"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The user's handle or email address is already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalendarCreate"];
+            };
+        };
+        responses: {
+            /** @description The calendar and its CalDAV collection were created */
+            201: {
+                headers: {
+                    /** @description The created calendar's path, `/calendars/{id}`. */
+                    Location?: string;
+                    /** @description The created calendar's version, quoted. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Calendar"];
+                };
+            };
+            /** @description The request body is not well-formed JSON. A body that parses but is not a JSON object is a 422, not a 400 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The user's handle or email address is already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than the service accepts */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's media type is not supported */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A rule of the operation was broken: the body is not a JSON object; `mode` is absent; `mode` is not `private`; `metaEnvelope` or `metaEpoch` is absent or not an envelope this service stores (a bad version byte, an epoch that disagrees with the header, more than 4096 bytes, or an encoding that is not standard base64); a plaintext `name` or `color` was sent for a Private calendar; or the body carries a member the operation does not take. The body never names a value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure; the calendar row is not left behind */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `calendars.id` uuid. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The collection and the calendar's rows are gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified, or the caller is a member of the calendar but not its owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, which is also the answer for an id that exists nowhere */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The user's handle or email address is already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure; the collection is already gone, so a retry completes the delete */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replaceCalendarMetadata: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The version the client read, quoted; `*` accepts any version. */
+                "If-Match": string;
+            };
+            path: {
+                /** @description The `calendars.id` uuid. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalendarMeta"];
+            };
+        };
+        responses: {
+            /** @description The calendar's metadata was replaced */
+            200: {
+                headers: {
+                    /** @description The calendar's new version, quoted. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Calendar"];
+                };
+            };
+            /** @description The request body is not well-formed JSON. A body that parses but is not a JSON object is a 422, not a 400 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified, or the caller is a member of the calendar but not its owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, which is also the answer for an id that exists nowhere */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The user's handle or email address is already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The `If-Match` version is not the calendar's current version */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than the service accepts */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's media type is not supported */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A rule of the operation was broken: the body is not a JSON object; `metaEnvelope` or `metaEpoch` is absent or not an envelope this service stores; a plaintext `name` or `color` was sent for a Private calendar; or the body carries a member the operation does not take, `mode` included. The body never names a value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request carries no `If-Match`, so there is no version to be optimistic against */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
