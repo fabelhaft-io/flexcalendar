@@ -109,17 +109,26 @@ This seed is the stack's own. It does not depend on the Phase 0 spike;
 E01-R02's script and fixtures belong to the spike's Radicale server and to the
 E15 corpus.
 
-## Placeholders until their epics land
+## The API and its audience
 
-`api` runs a **skeleton** until its REST facade lands:
+`api` runs the Fastify facade of E05-R01. `GET /healthz` answers without a
+database, an IdP or a token; **every other route — unknown ones included —
+needs `Authorization: Bearer <JWT>`** from Zitadel and is refused with `401`
+without one. The only product route so far is `GET /me`, which maps the
+token's `sub` to a `users` row and creates it on first sight from Zitadel's
+userinfo (`handle` = `preferred_username`, `email` = `email`, both only when
+`email_verified` is true).
 
-| Container | Today | Replaced by |
-|---|---|---|
-| `api` (Node 24, Fastify) | `GET /healthz` and `GET /` answer; every other route is a `501` | E05-R01 (the REST facade over CalDAV) |
+The audience such a token must carry is the Zitadel **project ID**, which only
+`zitadel-config apply` knows. It therefore travels through the named volume
+`oidc-config`: `apply` writes the ID into `/oidc/audience` (atomically, mode
+0644) and `api` mounts the same volume read-only and reads the trimmed first
+line. Until `make seed` has run, every protected request is `503` — never
+accepted — and the API picks the file up without a restart once it appears.
+`CALFLEX_OIDC_AUDIENCE` overrides the file when set.
 
-The API skeleton does not touch Postgres, Zitadel or event data. It exists so
-that Caddy's routing, the certificates and the URLs can be exercised before
-the REST facade arrives.
+An IdP outage does not lock the API out: validated keys are cached for ten
+minutes, and a rotated key is picked up from the JWKS without a restart.
 
 ## Checking this directory
 
@@ -146,7 +155,13 @@ curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-
      https://caldav.localhost:8443/healthz
 curl … https://api.localhost:8443/healthz
 make seed && make seed     # the second run must create nothing
-```
+
+# With a seeded stack, prove the audience handshake end to end:
+TOKEN=$(make token USER=alice)
+curl --cacert "$(podman volume inspect --format '{{.Mountpoint}}' calendar-flex-dev_caddy-data)/caddy/pki/authorities/local/root.crt" \
+     -H "Authorization: Bearer $TOKEN" https://api.localhost:8443/me
+# → 200 with { id, handle, email }; a second call must not create a second row.
+# A garbage token → 401. Before `make seed` → 503.
 
 E02-R09 adds a containerized OpenTofu apply after the user seed, and a separate
 non-production token helper. See [the configuration and review protocol](../zitadel/README.md).

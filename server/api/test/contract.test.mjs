@@ -5,14 +5,27 @@ import { parse } from 'yaml';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import { buildApp } from '../src/app.mjs';
 
-// E05-R01 removes this non-product skeleton page. No other route is exempt.
-const allowed = ['/'];
+// E05-R01 removes the non-product skeleton page: no route is exempt any more.
+/** @type {string[]} */
+const allowed = [];
 /** @param {string} path */
 const normalize = (path) => path.replace(/:([^/]+)/g, '{$1}');
-/** @typedef {{method: string, url: string, schema?: {response?: Record<string, unknown>}}} Route */
-/** @typedef {Record<string, Record<string, {responses: Record<string, {content: Record<string, {schema: unknown}>}>}>>} Paths */
-/** @param {Route[]} routes @param {Paths} paths @param {string[]} exemptions */
-function compare(routes, paths, exemptions = allowed) {
+/**
+ * @typedef {{method: string, url: string, config?: {bearerAuth?: boolean}, schema?: {response?: Record<string, unknown>}}} Route
+ * @typedef {{responses: Record<string, {content: Record<string, {schema: unknown}>}>, security?: {bearerAuth: unknown}[]}} Operation
+ * @typedef {Record<string, Record<string, Operation>>} Paths
+ */
+/**
+ * The operation's effective security: its own, or the document's.
+ * @param {Operation} operation @param {{bearerAuth: unknown}[]} documentSecurity
+ */
+const requiresBearer = (operation, documentSecurity) =>
+  (operation.security ?? documentSecurity).some((entry) =>
+    Object.hasOwn(entry, 'bearerAuth'),
+  );
+
+/** @param {Route[]} routes @param {Paths} paths @param {string[]} exemptions @param {{bearerAuth: unknown}[]} documentSecurity */
+function compare(routes, paths, exemptions = allowed, documentSecurity = []) {
   for (const path of exemptions)
     assert.ok(
       routes.some((r) => r.url === path),
@@ -25,6 +38,14 @@ function compare(routes, paths, exemptions = allowed) {
     if (exemptions.includes(path)) continue;
     const operation = paths[path]?.[route.method.toLowerCase()];
     assert.ok(operation, `route missing from spec: ${route.method} ${path}`);
+    // The route's auth requirement and the spec's must agree, in both
+    // directions: a route without the hook must not be documented as
+    // protected, and a documented `bearerAuth` operation must be hooked.
+    assert.equal(
+      route.config?.bearerAuth === true,
+      requiresBearer(operation, documentSecurity),
+      `auth requirement differs: ${route.method} ${path}`,
+    );
     for (const [code, response] of Object.entries(operation.responses)) {
       const expected = response.content?.['application/json']?.schema;
       if (!expected) continue;
@@ -36,6 +57,13 @@ function compare(routes, paths, exemptions = allowed) {
         `response schema differs: ${path} ${code}`,
       );
     }
+    // The other direction: a status the route can answer with must exist in
+    // the contract, or a client generated from the spec cannot see it.
+    for (const code of Object.keys(route.schema?.response ?? {}))
+      assert.ok(
+        operation.responses[code],
+        `route defines a response the spec lacks: ${path} ${code}`,
+      );
   }
   for (const [path, operations] of Object.entries(paths))
     for (const method of Object.keys(operations).filter((key) =>
@@ -78,13 +106,19 @@ test('OpenAPI 3.1 is valid and every Fastify route agrees with it', async () => 
         routes.push({
           method,
           url: route.url,
+          config: /** @type {Route['config']} */ (route.config),
           schema: /** @type {Route['schema']} */ (route.schema),
         });
     },
   });
   try {
     await app.ready();
-    compare(routes, /** @type {Paths} */ (resolved.paths));
+    compare(
+      routes,
+      /** @type {Paths} */ (resolved.paths),
+      allowed,
+      /** @type {{bearerAuth: unknown}[]} */ (resolved.security ?? []),
+    );
     const response = await app.inject('/healthz');
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json(), { status: 'ok', service: 'api' });
@@ -102,13 +136,21 @@ const health = {
     service: { type: 'string', enum: ['api'] },
   },
 };
+const error = {
+  type: 'object',
+  required: ['error'],
+  additionalProperties: false,
+  properties: { error: { type: 'string' } },
+};
 const operation = {
   responses: { 200: { content: { 'application/json': { schema: health } } } },
+  security: [],
 };
 const paths = { '/healthz': { get: operation } };
 const route = {
   method: 'GET',
   url: '/healthz',
+  config: { bearerAuth: false },
   schema: { response: { 200: health } },
 };
 test('missing operations and schemas fail for their own reasons', () => {
@@ -130,6 +172,48 @@ test('missing operations and schemas fail for their own reasons', () => {
     [{ ...route, url: '/items/:id' }],
     { '/items/{id}': { get: operation } },
     [],
+  );
+});
+test('a response code the route can send but the spec lacks fails', () => {
+  const withExtra = {
+    ...route,
+    schema: { response: { 200: health, 503: error } },
+  };
+  assert.throws(
+    () => compare([withExtra], paths, []),
+    /route defines a response the spec lacks: \/healthz 503/,
+  );
+});
+test('the auth requirement is compared in both directions', () => {
+  const protectedPaths = {
+    '/healthz': { get: { ...operation, security: [{ bearerAuth: [] }] } },
+  };
+  assert.throws(
+    () => compare([route], protectedPaths, []),
+    /auth requirement differs: GET \/healthz/,
+  );
+  // The document's security applies when the operation does not override it.
+  const inherited = {
+    '/healthz': { get: { ...operation, security: undefined } },
+  };
+  assert.throws(
+    () => compare([route], inherited, [], [{ bearerAuth: [] }]),
+    /auth requirement differs: GET \/healthz/,
+  );
+  // …and a hooked route the spec leaves open fails the same way.
+  compare(
+    [{ ...route, config: { bearerAuth: true } }],
+    { '/healthz': { get: { ...operation, security: [{ bearerAuth: [] }] } } },
+    [],
+  );
+  assert.throws(
+    () =>
+      compare(
+        [{ ...route, config: { bearerAuth: true } }],
+        { '/healthz': { get: { ...operation, security: [] } } },
+        [],
+      ),
+    /auth requirement differs: GET \/healthz/,
   );
 });
 for (const [name, schema] of Object.entries({

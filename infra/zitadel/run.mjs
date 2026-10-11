@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { request, successful } from './http.mjs';
@@ -93,6 +93,27 @@ export async function run({
       ...(operation === 'apply' ? ['-auto-approve'] : ['-detailed-exitcode']),
       `-var-file=environments/${environment}.tfvars`,
     ]);
+    // The API validates `aud` against the project ID this apply created, and it
+    // boots before the seed does, so `apply` publishes it into the shared
+    // `oidc-config` volume. `plan` never writes: a dry run changes nothing.
+    if (operation === 'apply' && env.CALFLEX_OIDC_AUDIENCE_OUT) {
+      /** @type {Record<string, any>} */
+      let outputs;
+      try {
+        outputs = JSON.parse(await call(['output', '-json'], true));
+      } catch {
+        throw new Error('cannot read OpenTofu outputs');
+      }
+      const projectId = outputs.project_id?.value;
+      if (typeof projectId !== 'string' || projectId === '')
+        throw new Error('no project id in this configuration');
+      const target = env.CALFLEX_OIDC_AUDIENCE_OUT;
+      const temporary = `${target}.${process.pid}.tmp`;
+      // Atomic, mode 0644, and nothing else in the file: the API reads the
+      // trimmed first line, lazily, and re-reads it after an audience mismatch.
+      await writeFile(temporary, `${projectId}\n`, { mode: 0o644 });
+      await rename(temporary, target);
+    }
     return;
   }
   let outputs;

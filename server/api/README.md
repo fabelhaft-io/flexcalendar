@@ -18,10 +18,13 @@ and hit CalDAV directly (CLAUDE.md).
 - **Local stack
   ([E02-R03](../../docs/epics/E02-repo-tooling-ci.md)):** the `api` service of
   [`infra/dev/compose.yaml`](../../infra/dev/compose.yaml) is built from the
-  [`Dockerfile`](Dockerfile) here and runs [`src/server.mjs`](src/server.mjs),
-  a skeleton that answers `GET /healthz` and `GET /` and returns `501`
-  everywhere else. It touches no database, no Zitadel endpoint and no event
-  data; E05-R01 replaces it with the real service.
+  [`Dockerfile`](Dockerfile) here and runs [`src/server.mjs`](src/server.mjs).
+  It answers `GET /healthz` and `GET /me`, and nothing but the readiness probe
+  is reachable without an access token.
+- **OIDC bearer auth (E05-R01):** see [Authentication](#authentication). The
+  service never decrypts and stores no event content, and it logs nothing yet:
+  no token, header, claim or userinfo field reaches a log line, an error
+  message or a response body.
 - **Toolchain pins**
   ([E02-R02](../../docs/epics/E02-repo-tooling-ci.md)): this package's
   [`package.json`](package.json) pins Node 24 through `engines`, and the
@@ -70,3 +73,63 @@ and hit CalDAV directly (CLAUDE.md).
   boundary, not here. Only `calflex_api` has service access to these three tables;
   the CalDAV service has none. No server-side crypto is added.
 - **Not here:** CalDAV storage (that is `../caldav/`) and any client code.
+
+## Authentication
+
+Every route except `GET`/`HEAD /healthz` — unknown routes and unknown methods
+included — goes through one `onRequest` hook (`src/auth.mjs`) before any route
+handler runs:
+
+- **The token.** Exactly one `Authorization: Bearer <JWT>` header, scheme
+  case-insensitive, at most 8 KiB, three base64url segments. Nothing is read
+  from the query string, and an opaque token is a 401 **before any network
+  call**. `jwtVerify` then requires `RS256` only, our `iss`, our `aud` (the
+  Zitadel project ID), `exp`, `nbf` and a non-empty `sub` of at most 255
+  characters, with 5 s of clock tolerance.
+- **Discovery and JWKS.** `CALFLEX_OIDC_BASE_URL` (default: the issuer) is
+  where the three calls go; when it differs from the issuer they carry
+  `Host: <issuer>`, so Zitadel still resolves its instance. Discovery's
+  `issuer` must equal `CALFLEX_OIDC_ISSUER`, and `jwks_uri` and
+  `userinfo_endpoint` must be same-origin with the issuer before they are
+  re-rooted on the base URL. No redirects are followed, responses are capped at
+  1 MiB, RSA keys only, keys cached for 10 minutes. An unknown `kid` refetches
+  at most once per 30 s; with keys cached, an IdP outage does not stop
+  validation. `createRemoteJWKSet` is deliberately unused: it cannot pin the
+  base URL.
+- **Refusals.** Every authentication failure is the same 401: fixed body
+  `{"error":"unauthorized"}`, `WWW-Authenticate: Bearer`, `Cache-Control:
+  no-store`, and no reason code anywhere. A userinfo failure is 502, an
+  unverified email 403, and a handle or email address that is taken 409; none
+  of those creates a row.
+- **First sight.** A valid token whose `sub` has no `users` row calls the
+  issuer's `userinfo_endpoint` **once**, with the caller's own token — never on
+  a 401 path, never introspection. `handle` is `preferred_username` and `email`
+  is `email`, both taken verbatim (trimmed); `email_verified` must be `true`
+  and userinfo's `sub` must equal the token's. The insert is `ON CONFLICT
+  (idp_subject) DO NOTHING` followed by a read-back, so two simultaneous first
+  requests converge on one row; a unique violation on `handle` or `email` is a
+  409. There is no profile sync afterwards. Discovery's own userinfo shape is
+  not overridden here: whatever Zitadel puts in `preferred_username` is the
+  handle.
+
+### Configuration
+
+| Variable | Meaning |
+|---|---|
+| `CALFLEX_OIDC_ISSUER` | The `iss` every token must carry, and the identity discovery must confirm. Unset: 503 everywhere but `/healthz`. |
+| `CALFLEX_OIDC_BASE_URL` | Where the IdP is reached (default: the issuer). Locally `http://zitadel-api:8080`. |
+| `CALFLEX_OIDC_AUDIENCE` | The expected `aud` (the Zitadel project ID). Wins over the file. |
+| `CALFLEX_OIDC_AUDIENCE_FILE` | File whose trimmed first line is the audience. Read lazily, and re-read after an audience mismatch at most once per 5 s. Neither present: 503 on every protected route, never accepted. |
+| `CALFLEX_DATABASE_URL` | `public.users` for the first sight. `calflex_api`. |
+
+`GET /healthz` touches none of them and stays database-free.
+
+### Tests
+
+`node --test test/*.test.mjs`. The auth suite that needs no containers
+(`test/auth.test.mjs`, `test/audience.test.mjs`, `test/contract.test.mjs`,
+`test/health.test.mjs`) drives a real HTTP server against the stub identity
+provider in `test/support/idp.mjs`, whose tokens are signed by keys it serves
+as its own JWKS — never by Zitadel. `test/auth-db.test.mjs` needs the same
+rootless Podman as the migration tests, and exercises `public.users` through
+`test/support/postgres.mjs`.

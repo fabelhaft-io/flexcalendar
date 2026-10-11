@@ -335,6 +335,49 @@ check('every public virtual host drops delegation headers',
 check('delegation network is internal', compose.networks?.delegation?.internal === true);
 check('dynamic pool excludes the static listener address', compose.networks?.delegation?.ipam?.config?.[0]?.ip_range === '172.30.91.128/25');
 
+// --- the OIDC audience handshake (E05-R01) ------------------------------------
+
+// The API validates `aud` against the Zitadel project ID, which only `apply`
+// knows, and the API container starts before `make seed` runs. The ID travels
+// through a named volume, written once and read read-only.
+
+check('the stack declares a shared `oidc-config` volume', () =>
+  Object.hasOwn(compose.volumes ?? {}, 'oidc-config'),
+);
+
+check('`zitadel-config` writes the project audience into that volume', () => {
+  const config = services['zitadel-config'];
+  const out = String(config?.environment?.CALFLEX_OIDC_AUDIENCE_OUT ?? '');
+  if (out !== '/oidc/audience') return `CALFLEX_OIDC_AUDIENCE_OUT is ${JSON.stringify(out)}`;
+  return (config?.volumes ?? []).includes('oidc-config:/oidc')
+    ? true
+    : 'zitadel-config does not mount oidc-config read-write';
+});
+
+check('the API reads that audience from the volume, read-only', () => {
+  const api = services.api;
+  const file = String(api?.environment?.CALFLEX_OIDC_AUDIENCE_FILE ?? '');
+  if (file !== '/oidc/audience')
+    return `CALFLEX_OIDC_AUDIENCE_FILE is ${JSON.stringify(file)}`;
+  return (api?.volumes ?? []).includes('oidc-config:/oidc:ro')
+    ? true
+    : 'the API does not mount oidc-config read-only';
+});
+
+check('an explicit `CALFLEX_OIDC_AUDIENCE` overrides the file', () =>
+  String(services.api?.environment?.CALFLEX_OIDC_AUDIENCE ?? '') ===
+  '${CALFLEX_OIDC_AUDIENCE:-}'
+    ? true
+    : 'the API has no CALFLEX_OIDC_AUDIENCE knob',
+);
+
+check('the API reaches Zitadel over the internal network, plain HTTP', () =>
+  String(services.api?.environment?.CALFLEX_OIDC_BASE_URL ?? '') ===
+  'http://zitadel-api:8080'
+    ? true
+    : 'CALFLEX_OIDC_BASE_URL is not the internal Zitadel address',
+);
+
 // --- verdict -----------------------------------------------------------------
 
 process.stdout.write(`\n${checks.length - problems.length}/${checks.length} checks passed\n`);

@@ -11,7 +11,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Readiness probe
+         * @description Answers without a database, an identity provider or a token. The only operation that does.
+         */
         get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The authenticated user
+         * @description The `users` row the access token's `sub` maps to. Created on first sight from the issuer's userinfo (`handle` from `preferred_username`, `email` from `email`, both after `email_verified`); a subject already in `users` is read back without another userinfo call.
+         */
+        get: operations["getMe"];
         put?: never;
         post?: never;
         delete?: never;
@@ -29,6 +53,16 @@ export interface components {
             status: "ok";
             /** @enum {string} */
             service: "api";
+        };
+        /** @description One `public.users` row; every field is a string. */
+        User: {
+            /** @description The `users.id` uuid. */
+            id: string;
+            handle: string;
+            email: string;
+        };
+        Error: {
+            error: string;
         };
     };
     responses: never;
@@ -55,6 +89,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The authenticated user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The user's handle or email address is already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The issuer's userinfo could not be read or contradicted the token */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

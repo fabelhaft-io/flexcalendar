@@ -125,7 +125,8 @@ export async function getToken({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: `openid profile urn:zitadel:iam:org:project:id:${projectId}:aud`,
+    // `email` is what the API's first sight reads from userinfo (E05-R01).
+    scope: `openid profile email urn:zitadel:iam:org:project:id:${projectId}:aud`,
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
     state,

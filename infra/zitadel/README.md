@@ -91,12 +91,17 @@ exists. Do not migrate stale state from a deleted instance.
 - Token helper uses public discovery, authorize with random state and **S256**
   PKCE, user lookup, v2 session password check, v2 OIDC auth-request callback,
   then **authorization-code** exchange for the actual Android registration.
-  It requests openid/profile/project audience, not offline access. It deletes
+  It requests openid/profile/email/project audience, not offline access. It deletes
   the short-lived (**300 s**) test session afterward. Before printing it verifies
   **RS256** using discovery's same-origin JWKS, issuer, project audience, subject,
   expiry and not-before. It rejects cross-origin redirects/endpoints and state
   mismatches, and refuses production **before** reading credentials or state.
   No login UI credentials or bootstrap PAT are used on the token path.
+- After a successful `apply` — and only then — the runner publishes the project
+  ID into `CALFLEX_OIDC_AUDIENCE_OUT` (atomically, mode 0644, nothing else in
+  the file), which is the volume the API reads its expected `aud` from
+  (E05-R01); `plan` and `token` never write it, and the `email` scope above is
+  what lets those tokens call userinfo on a first sight.
 
 ## Staging and production reuse (E08)
 

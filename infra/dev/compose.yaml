@@ -210,8 +210,8 @@ services:
         ipv4_address: 172.30.91.2
         aliases: [caldav-internal]
 
-  # The API service (D-01). The container runs the skeleton in
-  # server/api/ until E05-R01 builds the Fastify facade on it.
+  # The API service (D-01). It fronts CalDAV for our own clients and requires
+  # an OIDC access token on every route but `/healthz` (E05-R01).
   api:
     build:
       context: ../..
@@ -224,6 +224,15 @@ services:
       # (INV-12).
       CALFLEX_DATABASE_URL: "postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}"
       CALFLEX_OIDC_ISSUER: "https://auth.${CALFLEX_DEV_DOMAIN:-localhost}:${CALFLEX_HTTPS_PORT:-8443}"
+      # Where Zitadel is reached from inside the network. `zitadel-config`
+      # talks to it the same way: plain HTTP with the authority a browser
+      # would use, so the token's `iss` and the instance still agree.
+      CALFLEX_OIDC_BASE_URL: http://zitadel-api:8080
+      # The `aud` every access token must carry is the project ID that
+      # `zitadel-config apply` writes into the shared volume. An explicit
+      # value here wins; empty means "read the file".
+      CALFLEX_OIDC_AUDIENCE: ${CALFLEX_OIDC_AUDIENCE:-}
+      CALFLEX_OIDC_AUDIENCE_FILE: /oidc/audience
       CALFLEX_CALDAV_ORIGIN: 'http://caldav-internal:8081'
       CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
       CALFLEX_SMTP_URL: "smtp://mailpit:1025"
@@ -241,6 +250,10 @@ services:
       timeout: 5s
       retries: 12
       start_period: 5s
+    volumes:
+      # Read-only: the API only ever reads the project audience written by
+      # `zitadel-config apply` (E05-R01).
+      - oidc-config:/oidc:ro
     expose:
       - "3000"
     mem_limit: 256m
@@ -359,10 +372,13 @@ services:
       CALFLEX_SEED_PAT_PATH: /zitadel-bootstrap/seed.pat
       CALFLEX_SEED_PASSWORD: ${CALFLEX_SEED_PASSWORD:-Development1!}
       CALFLEX_TOKEN_USER: ${CALFLEX_TOKEN_USER:-}
+      # After a successful apply, the project ID lands here for the API.
+      CALFLEX_OIDC_AUDIENCE_OUT: /oidc/audience
     volumes:
       - ../zitadel:/config:ro
       - caddy-data:/caddy-pki:ro
       - zitadel-bootstrap:/zitadel-bootstrap:ro
+      - oidc-config:/oidc
     depends_on:
       zitadel-api:
         condition: service_healthy
@@ -402,5 +418,7 @@ networks:
 volumes:
   caddy-config:
   caddy-data:
+  # One small file: the project audience `apply` writes and the API reads.
+  oidc-config:
   postgres-data:
   zitadel-bootstrap:
