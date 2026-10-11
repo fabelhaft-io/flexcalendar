@@ -11,7 +11,10 @@
       "Edit(**/secrets/**)",
       "Edit(**/credentials/**)",
       "Edit(**/.ssh/**)",
-      "Bash(gh pr merge:*)",
+      "Bash(gh pr merge --admin*)",
+      "Bash(gh pr merge * --admin*)",
+      "Bash(gh pr merge --auto*)",
+      "Bash(gh pr merge * --auto*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git push --force-with-lease:*)"

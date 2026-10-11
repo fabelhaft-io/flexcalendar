@@ -32,12 +32,12 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 
 ## Hard rules
 
-- Never merge, arm auto-merge, force-push, skip hooks or commit to `main`. Only the owner merges or arms auto-merge; `main` takes only PRs with the "Verify required" check green (`CONTRIBUTING.md` § Branch naming).
+- Never force-push, skip hooks, commit to `main`, arm auto-merge or bypass the ruleset (`gh pr merge --admin`). You merge a PR yourself only through the gate in *Merging* below (the owner's decision of 2026-10-11); every other merge is the owner's. `main` takes only PRs with the "Verify required" check green (`CONTRIBUTING.md` § Branch naming).
 - Commits are not signed in this repo. The owner set `commit.gpgsign=false` in the repository's local git config, which every linked worktree shares, so no commit waits on the 1Password agent. On a fresh clone run `git config --local commit.gpgsign false`. Build throwaway fixtures in a separate scratch repository (`git archive` into a directory, then `git init` there), not as a commit on a branch of this repo.
 - Never change a Pinned `D-*`. That needs the owner and an ADR.
-- Nothing outward-facing beyond pushing branches and opening PRs. Staging checks follow D-20 in `06`. The production server is off-limits until the owner has installed an SSH key, then only with their approval for each action, and you never ask for or use its password.
+- Nothing outward-facing beyond pushing branches, opening PRs and merging through the gate. Staging checks follow D-20 in `06`. The production server is off-limits until the owner has installed an SSH key, then only with their approval for each action, and you never ask for or use its password.
 - Never read or print secrets: `agent-team/.env`, tokens in container volumes, the password manager.
-- Stacking is allowed (the owner's decision of 2026-10-10, `follow-ups.md` § Queue): a requirement may start when each dependency is Done or has a branch whose review passed, and it is cut from that branch. **At most three reviewed PRs may wait for the owner's merge.** `make next-ready` counts them and stops you at the cap. The owner merges at their own pace, and a rejection at the bottom of a tall stack invalidates everything above it. Requirements that edit the same files (the root `Makefile`) wait for each other's merge.
+- Stacking is allowed (the owner's decision of 2026-10-10, `follow-ups.md` § Queue): a requirement may start when each dependency is Done or has a branch whose review passed, and it is cut from that branch. **At most three reviewed PRs may be open at once.** `make next-ready` counts them and stops you at the cap. Stack only on a branch whose PR the gate holds back for the owner (an `agent+review` PR, say): the owner merges at their own pace, and a rejection at the bottom of a tall stack invalidates everything above it. A PR you will merge yourself lands within minutes, so wait for it and cut from `main` (squash merges of a stack conflict), even where `make next-ready` says to stack. Requirements that edit the same files (the root `Makefile`) wait for each other's merge.
 - Keep the owner posted with one short line per requirement: started, the review verdict, then the PR link or the blocker.
 
 ## The loop
@@ -73,22 +73,36 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
    - add the new review section on top of the doc. Set the epic's Status cell on the branch: this requirement "passed review (link), Done once merged", and anything merged since marked Done. Two open branches that edit the same Status line get **identical** text; check with `git merge-tree --write-tree`;
    - update `follow-ups.md` on the branch: remove what this requirement resolved, add what its review found, and move the queue on;
    - commit as `doc(<ID>): review <n> (PASS)`. Every commit you make follows the `CONTRIBUTING.md` style, because GitHub squashes a single-commit PR with that commit's own message;
-   - push and open the PR. Title `<type>(<ID>): <summary>`, with the type fitting the work (`feat`, `doc`, `fix`, `chore`, `infra`). The body summarises the change, links the findings with an **absolute** GitHub URL on the branch, and lists the follow-ups. Add whatever attribution line your tool requires. For `agent+review` requirements, state that human approval is required before merge, so the owner reviews it before arming auto-merge;
-   - tell the owner: the verdict and the PR link.
-6. **Pipeline, don't wait.** The implementer run is the long part, and reviews are serial anyway (one local stack, fixed host ports). So start the next implementer before you review the one that just finished: while a run is going in the background, run `make next-ready` again, and if it says `start`, launch that requirement too. At most two implementers run at once (`--max-parallel`). Review in the order the runs finish. When a PR is open and nothing is ready, tell the owner what is waiting on which merge. Leave the default local stack stopped (`make dev-down`) when you're done. Nobody has run two coordinators at once yet: the first time two overlap, watch for contention on the shared caches in `~/.cache/flexcalendar-agent-team/`, and fall back to one at a time if a run fails for a reason that looks like it.
+   - push and open the PR. Title `<type>(<ID>): <summary>`, with the type fitting the work (`feat`, `doc`, `fix`, `chore`, `infra`). The body summarises the change, links the findings with an **absolute** GitHub URL on the branch, and lists the follow-ups. Add whatever attribution line your tool requires. For `agent+review` requirements, state that human approval is required before merge: the gate holds the PR back, and the owner reviews it before merging or arming auto-merge;
+   - tell the owner: the verdict and the PR link, then go on to *Merging*.
+6. **Pipeline, don't wait.** The implementer run is the long part, and reviews are serial anyway (one local stack, fixed host ports). So start the next implementer before you review the one that just finished: while a run is going in the background, run `make next-ready` again, and if it says `start`, launch that requirement too. At most two implementers run at once (`--max-parallel`). Review in the order the runs finish. When a PR is open and nothing is ready, wait for its CI and merge it (*Merging*), or tell the owner what is waiting on which merge. Leave the default local stack stopped (`make dev-down`) when you're done. Nobody has run two coordinators at once yet: the first time two overlap, watch for contention on the shared caches in `~/.cache/flexcalendar-agent-team/`, and fall back to one at a time if a run fails for a reason that looks like it.
+
+## Merging
+
+The owner's decision of 2026-10-11: a verified PR merges without waiting for them. "Verified" is the list below, and **you check every item right before the merge command**, not from memory of an earlier pass. If one fails, the PR stays open for the owner and the final report names the item. Never loosen an item to get a PR through.
+
+1. **The executor is `agent`.** Read the requirement's row in its epic. `agent+review` (`CONTRIBUTING.md` rule 7) and `human` are never merged by you. No label or check marks them, so this is the only guard. A PR that belongs to no requirement (the `doc:` reconcile PR) passes this item when it changes only epic Status cells, the queue and `docs/reviews/`.
+2. **The diff leaves the loop's own rules alone.** `gh pr diff <n> --name-only` shows nothing under `.claude/`, `.agents/`, `agent-team/`, `.github/` or `docs/adr/`, and none of `CONTRIBUTING.md`, `CLAUDE.md` or `docs/06-implementation-backlog.md`. An agent does not approve a change to its own rules, its permissions or the CI that gates it.
+3. **Your PASS is on this head.** `docs/reviews/<ID>.md` says PASS for the commit you reviewed, and every commit since is a doc, lockfile or merge-forward commit you looked at. Anything else gets a new review first.
+4. **CI is green on this head.** `gh pr checks <n>` shows "Verify required" *succeeded* on the head SHA (pending, absent or skipped is not green), and the CodeQL query in `kickoff.md` shows no high alert. Run `gh pr checks <n> --watch` in the background while a check is pending. A red check is a finding: it goes back through the BLOCKED path and counts toward the three implementer runs.
+5. **Open, targets `main`, mergeable and current.** Not a draft: the owner stops a merge by converting the PR to a draft or closing it. `gh pr view <n> --json state,isDraft,baseRefName,mergeable` says `OPEN`, `false`, `main`, `MERGEABLE`. After `git fetch`, `git merge-base --is-ancestor origin/main origin/<branch>` succeeds. The ruleset does not ask for that, but it is what stops two PRs that are green alone from breaking `main` together. If `main` has moved, merge it forward (`chore(<ID>): merge main (<ID>)`) and wait for CI again.
+6. **`main` is green.** The last finished run of `Verify` on `main` (`gh run list --branch main --workflow Verify --limit 3`) succeeded. If it failed, merge nothing, work out which merge did it, and stop: you don't revert it yourself.
+
+Merge one PR at a time, with `gh pr merge <n> --squash`, the only method the ruleset allows. Never `--admin`, and never `--auto`: auto-merge lands a PR on the required check alone, after a push that skipped your items. Then confirm with `gh pr view <n> --json state,mergeCommit` (`MERGED`), `git switch main && git pull --ff-only` in the main checkout, and say so in one line. A requirement stacked on a held-back branch gets `main` merged forward when its base merges. The Status cells of what you merged still read "Done once merged": the reconcile step in `kickoff.md` turns them to Done.
 
 ## Running unattended
 
 When the owner asks for the loop to run on its own ("keep going", "run the queue"), follow [`kickoff.md`](kickoff.md): it is the brief for that session, and it says what to do where this skill says "ask the owner". Repeat the loop until a stop condition holds, and say which one stopped you. Stop and tell the owner when:
 
-- `make next-ready` says `wait` because of the stack cap. Report which PRs wait for the owner's merge, then stop; don't keep polling for it.
+- `make next-ready` says `wait` because of the stack cap, **and** every PR that counts toward it is one the gate holds back (`agent+review`, a change to the loop's own rules, a check you could not turn green). Report which PRs wait for the owner's merge, then stop; don't keep polling for it. A PR that only waits for CI is not a stop: wait for it, merge it, go on.
 - It says `none`, or only "Needs judgment" entries are left.
 - A `D-*` the requirement cites is not Pinned, the spec is ambiguous or contradicts its doc, or the answer is the owner's to give.
 - A requirement has used its three implementer runs.
-- A step would need the production server, a secret, a merge or a force-push (Hard rules).
+- A step would need the production server, a secret, a merge the gate holds back or a force-push (Hard rules).
+- The last `Verify` run on `main` failed (*Merging*, item 6).
 - The environment is broken in a way you can't fix: the toolchain (`make host-tools`), the stack, or authentication.
 
-An `agent+review` PR is not a stop. Open it, say that human approval is needed, and carry on with something independent; it counts toward the cap.
+An `agent+review` PR is not a stop. Open it, say that human approval is needed, and carry on with something independent; the gate never merges it, and it counts toward the cap.
 
 ## Things you may do yourself
 
