@@ -28,7 +28,7 @@ Input: optionally a requirement ID (`E02-R09`). Without one, take the next entry
 5. `agent-team/README.md` and `agent-team/src/prompts/guardrails.md`: the implementer's rules.
 6. [`review-checklist.md`](review-checklist.md) and [`environment.md`](environment.md), before the first review of the session.
 
-Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git switch main && git pull`, `git status` (clean apart from ignored files), `git worktree list`, then `cd agent-team && npm install && npm run typecheck`. If `php`, `composer`, `flutter` or `dart` is missing from `PATH`, run `make host-tools` once ([`environment.md`](environment.md)). If the repo disagrees with `follow-ups.md` (a PR merged, a requirement changed), trust the repo and fix the file.
+Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git switch main && git pull`, `git status` (clean apart from ignored files), `git worktree list`, then `cd agent-team && npm install && npm run typecheck`. If `php`, `composer`, `flutter` or `dart` is missing from `PATH` or does not run (`php --version`), run `make host-tools` once ([`environment.md`](environment.md)). If the repo disagrees with `follow-ups.md` (a PR merged, a requirement changed), trust the repo and fix the file.
 
 ## Hard rules
 
