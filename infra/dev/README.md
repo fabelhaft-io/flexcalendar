@@ -20,7 +20,7 @@ make dev-reset  # stop it and delete the volumes (all local data)
 | `zitadel-api` | `ghcr.io/zitadel/zitadel:v4.16.0` | the identity provider: OIDC, JWT, the console (D-03, ADR 0004) | `https://auth.<domain>:<port>/` |
 | `zitadel-login` | `ghcr.io/zitadel/zitadel-login:v4.16.0` | Zitadel v4's login UI, its own container | `https://auth.<domain>:<port>/ui/v2/login/` |
 | `mailpit` | `axllent/mailpit:v1.31.4` | the SMTP sink invitations and mail land in (E03-R06, E05) | `https://mailpit.<domain>:<port>/`, SMTP on the internal `mailpit:1025` |
-| `caldav` | built from [`server/caldav/`](../../server/caldav/) | the CalDAV service (D-02); public host answers `401` except `/healthz` | `https://caldav.<domain>:<port>/` |
+| `caldav` | built from [`server/caldav/`](../../server/caldav/) | the CalDAV service (D-02); public host answers `301` on `/.well-known/caldav`, `401` otherwise except `/healthz` | `https://caldav.<domain>:<port>/` |
 | `api` | built from [`server/api/`](../../server/api/) | the REST facade for our own clients (D-01) | `https://api.<domain>:<port>/` |
 | `caddy` | `caddy:2.11-alpine` | the only published port; terminates TLS with its local CA | — |
 | `seed` | `node:24-alpine` | one-shot, profile `seed`: `make seed` | — |

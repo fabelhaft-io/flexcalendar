@@ -8,7 +8,8 @@ version or commit drift. Schema creation stays in the API migration chain.
 
 - Public `:8080` has a standalone entry, loads no delegation code or database,
   and ignores all authentication headers. `GET /healthz` is DB-independent;
-  all other paths return the same 401. Discovery is E03-R02.
+  exactly `/.well-known/caldav` answers `301` with `Location: /`, every other
+  path returns the same 401.
 - Internal `172.30.91.2:8081` binds only to the dedicated `delegation` network.
   Only API, CalDAV and the one-off test service join. No published port or proxy
   route reaches it. Outer Caddy removes the delegation header on every route.
@@ -43,6 +44,29 @@ version or commit drift. Schema creation stays in the API migration chain.
   PHP's built-in sodium extension is not used by this service.
 
 Human security approval is required before merge.
+
+## Discovery (E03-R02)
+
+The exact path `/.well-known/caldav` answers `301` with `Location: /` on the
+public listener, for `GET`, `HEAD`, `OPTIONS` and `PROPFIND`, with
+`Cache-Control: no-store` and no body. The match is one small function in the
+standalone entry, and the target is the fixed service root: it is never taken
+from `Host`, a forwarded header or the request, so a query string is ignored
+rather than reflected, the same request with no header, a valid delegation
+header or garbage produces byte-identical responses, and nothing is logged.
+`/.well-known/caldav/`, `/.well-known/CALDAV`, `/.well-known/caldavx`,
+`/.well-known/carddav`, `//.well-known/caldav` and `/x/.well-known/caldav` stay
+401.
+
+On the internal listener the tree root answers `{DAV:}current-user-principal`,
+the principal node answers `{DAV:}principal-URL` and
+`{urn:ietf:params:xml:ns:caldav}calendar-home-set`, and the home lists the
+collections: `/principals/<users.id>/`, `/calendars/<users.id>/`,
+`/calendars/<users.id>/<calendars.id>/`. Unit tests cover the match and the
+redirect over a real HTTP server; `tests/Integration/DiscoveryTest.php` runs the
+same sequence over the listener, with hrefs compared whole, and proves the
+redirect on the public listener without a header and with a garbage one.
+Stock-app behaviour itself is not asserted here: E15-R05 checks that on staging.
 
 ## Checks
 
