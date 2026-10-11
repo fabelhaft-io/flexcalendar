@@ -13,6 +13,9 @@ part 'health_client.g.dart';
 abstract class HealthClient {
   factory HealthClient(Dio dio, {String? baseUrl}) = _HealthClient;
 
+  /// Readiness probe.
+  ///
+  /// Answers without a database, an identity provider or a token. The only operation that does.
   @GET('/healthz')
   Future<Health> getHealth();
 }
