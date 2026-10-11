@@ -32,8 +32,47 @@ import { buildApp } from '../../src/app.mjs';
 import { createCalendarStore } from '../../src/calendar-store.mjs';
 import { createCalDavAdapter } from '../../src/caldav/adapter.mjs';
 import { readConfig } from '../../src/config.mjs';
+import { PROBLEM_TYPE_BASE, PROBLEM_TYPES } from '../../src/problem.mjs';
 import { createUserStore } from '../../src/store.mjs';
-import { assertProblem } from '../support/problem.mjs';
+
+/**
+ * The members a problem document may carry (`spec/openapi.yaml`'s `Problem`).
+ * Declared here rather than read from the spec: this suite runs inside the
+ * `api-test` image, which carries production dependencies only — `yaml` is a
+ * devDependency, and `test/support/problem.mjs`, which parses the spec with it,
+ * cannot be imported here. `test/integration-imports.test.mjs` keeps it that
+ * way.
+ */
+const PROBLEM_MEMBERS = [
+  'type',
+  'title',
+  'status',
+  'instance',
+  'property',
+  'current',
+];
+
+/**
+ * Asserts a body is the fixed problem for one kind, and nothing besides: the
+ * `type`, the `title`, the `status`, an `instance` and no other member. The
+ * assertion the stack suite needs is the absence of anything request-derived,
+ * which the member list gives without the schema checker of the unit suite.
+ * @param {any} body
+ * @param {'gone' | 'not-found'} slug
+ * @returns {any}
+ */
+function assertProblem(body, slug) {
+  const entry = PROBLEM_TYPES[slug];
+  assert.ok(entry !== undefined, `unknown problem type: ${slug}`);
+  assert.equal(body.type, `${PROBLEM_TYPE_BASE}${slug}`);
+  assert.equal(body.title, entry.title);
+  assert.equal(body.status, entry.status);
+  assert.match(body.instance, /^urn:uuid:[0-9a-f-]{36}$/);
+  for (const key of Object.keys(body)) {
+    assert.ok(PROBLEM_MEMBERS.includes(key), `unexpected member ${key}`);
+  }
+  return body;
+}
 
 const databaseUrl = process.env.CALFLEX_DATABASE_URL;
 const origin = process.env.CALFLEX_CALDAV_ORIGIN;
@@ -334,15 +373,23 @@ test('a create, an update and a delete between two tokens', async () => {
       (await changes(app, calendarId, answer.token)).json().changes,
       [],
     );
-    // The token went to CalDAV and back, and no log line carries it.
-    assert.ok(!capture.text().includes(answer.token));
+    // The token went to CalDAV and back, and no log line carries it — neither
+    // as the client sent it (`since`, and the token this answer returned, which
+    // the next poll sends) nor as the `<calendar id>:<n>` it decodes to.
+    const log = capture.text();
+    assert.ok(!log.includes(answer.token), 'the answer token reached the log');
+    assert.ok(!log.includes(since), 'the since token reached the log');
+    assert.ok(
+      !log.includes(Buffer.from(since, 'base64url').toString('utf8')),
+      'the decoded token reached the log',
+    );
   } finally {
     await app.close();
   }
 });
 
 test('each kind of rejected token is a 410', async () => {
-  const { app } = build();
+  const { app, capture } = build();
   try {
     const calendarId = await calendar(app);
     const elsewhere = await calendar(app);
@@ -378,6 +425,22 @@ test('each kind of rejected token is a 410', async () => {
       (await changes(app, calendarId, ours.json().token)).statusCode,
       200,
     );
+
+    // And no refused token reached a log line either — not the one the client
+    // sent, not a refused value's `<calendar id>:<n>` form. The empty `since`
+    // is left out: every string contains it.
+    const log = capture.text();
+    for (const value of rejected) {
+      if (value === '') continue;
+      assert.ok(
+        !log.includes(value),
+        `a refused token reached the log: ${value}`,
+      );
+      assert.ok(
+        !log.includes(Buffer.from(value, 'base64url').toString('utf8')),
+        'a refused token reached the log decoded',
+      );
+    }
   } finally {
     await app.close();
   }

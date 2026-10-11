@@ -27,9 +27,12 @@
 // SabreDAV's PDO backend accepts any numeric token and echoes it back (it only
 // queries `calendarchanges.synctoken >= n`, `lib/CalDAV/Backend/PDO.php`), so
 // the check that a number is real is this API's, made against the collection's
-// own current token (the adapter's `currentSyncToken`). `410` is the answer
-// that tells the client to reload fully; it is the fixed problem document, and
-// nothing of the request is in it.
+// own current token (the adapter's `currentSyncToken`). That read only ever
+// *refuses* one; the number an answer returns is the one the `sync-collection`
+// report carried, so a write that lands between the report and the read cannot
+// slip behind the client's cursor. `410` is the answer that tells the client to
+// reload fully; it is the fixed problem document, and nothing of the request is
+// in it.
 //
 // **A refused token is `410`, anything else CalDAV says keeps its meaning.** A
 // `sync-collection` SabreDAV the service refuses comes back from the adapter as
@@ -413,13 +416,28 @@ export function registerChangeRoutes(app, { store, oidc, calendars, caldav }) {
         return undefined;
       }
 
-      /** The number the answer names as "changed up to". */
-      let number;
+      // **The number the report itself carries.** SabreDAV computes it together
+      // with the changes it returns, so it is the position those changes belong
+      // to. Nothing read later may replace it: the report and the `PROPFIND`
+      // below are two requests, and a write that lands between them moves the
+      // collection on — a client handed the later number would store a position
+      // past a change the report never mentioned and skip it for good.
+      const number = syncTokenNumber(report.syncToken);
+      if (number === undefined) {
+        // A `207` without a readable sync token cannot be turned into a cursor
+        // that means anything, and inventing one would make the next request
+        // lie. Nothing of the response is echoed.
+        sendProblem(reply, 'bad-gateway', { instance: request.id });
+        return undefined;
+      }
+
+      // A number the collection never reached is not a token: SabreDAV accepts
+      // one and echoes it back (see the header), so the report cannot tell "in
+      // sync" from "never minted" — the collection's own number does. It is
+      // read only when the report held no change, because a number behind the
+      // collection is answered with the changes in between; and it can only
+      // *refuse* a token, never move the answer's.
       if (since !== undefined && report.changed.length === 0) {
-        // Nothing matched, which SabreDAV reports both for a client that is in
-        // sync and for a number the collection never reached — it echoes what
-        // it was given either way. The collection's own token is what tells
-        // them apart, and it is the honest one to hand back.
         /** @type {string} */
         let current;
         try {
@@ -432,17 +450,6 @@ export function registerChangeRoutes(app, { store, oidc, calendars, caldav }) {
           refuse(reply, request, 'gone');
           return undefined;
         }
-        number = current;
-      } else {
-        const reported = syncTokenNumber(report.syncToken);
-        if (reported === undefined) {
-          // A `207` without a readable sync token cannot be turned into a
-          // cursor that means anything, and inventing one would make the next
-          // request lie. Nothing of the response is echoed.
-          sendProblem(reply, 'bad-gateway', { instance: request.id });
-          return undefined;
-        }
-        number = reported;
       }
 
       // The outbox is only consulted when a tombstone's name is not the `UID`

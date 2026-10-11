@@ -435,6 +435,61 @@ test('a token ahead of the collection is 410, and a behind one is not', async ()
   }
 });
 
+test("the answer's token is the report's, even when the collection moves on", async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    await created(app, calendarId);
+    const initial = await changes(app, calendarId, 'owner', undefined);
+    assert.equal(initial.statusCode, 200, initial.body);
+    const since = initial.json().token;
+    const position = caldav.tokenOf(calendarId);
+    assert.equal(decoded(since), `${calendarId}:${position}`);
+
+    // A change lands between the `REPORT` — which saw nothing since `since` —
+    // and the `PROPFIND` that follows it. Those are two requests, so if the
+    // answer's token came from the later one the client would store a position
+    // past this change and never see it.
+    const raced = randomUUID();
+    caldav.beforeCurrentSyncToken(() => {
+      caldav.seed(
+        calendarId,
+        `${raced}.ics`,
+        `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${raced}\r\nDTSTAMP:${STAMP}\r\nDTSTART:${STAMP}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`,
+      );
+    });
+
+    const inSync = await changes(app, calendarId, 'owner', since);
+    assert.equal(inSync.statusCode, 200, inSync.body);
+    assert.deepEqual(inSync.json().changes, []);
+    // The token is the report's own number, and the collection really has moved
+    // past it: the write above happened while this answer was being assembled.
+    assert.equal(decoded(inSync.json().token), `${calendarId}:${position}`);
+    assert.equal(caldav.tokenOf(calendarId), position + 1);
+
+    // So the next poll, from that token, reports the change that raced.
+    const caughtUp = await changes(
+      app,
+      calendarId,
+      'owner',
+      inSync.json().token,
+    );
+    assert.equal(caughtUp.statusCode, 200, caughtUp.body);
+    assert.deepEqual(caughtUp.json().changes, [
+      {
+        uid: raced,
+        deleted: false,
+        etag: caldav.stored(calendarId, `${raced}.ics`)?.etag,
+      },
+    ]);
+    assert.equal(
+      decoded(caughtUp.json().token),
+      `${calendarId}:${position + 1}`,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
 test("SabreDAV's own refusal of a token is 410; other CalDAV failures are not", async () => {
   const { app, caldav, calendarId } = await setup();
   try {
@@ -539,15 +594,38 @@ test('neither the token, the object text nor its content reaches a log line', as
       false,
     );
     const since = body.token;
+    // The number the token names, which a log line must not carry either: the
+    // token as a client sends it and its decoded `<calendar id>:<n>` are the
+    // same secret in two shapes, and the SabreDAV token behind it is a third.
+    const number = decoded(since).slice(calendarId.length + 1);
 
-    // A malformed token and a refused one, so every refusal path logs too.
-    await changes(app, calendarId, 'owner', 'not-a-token');
+    // A poll with the good token — the path that reads the collection again and
+    // is therefore the one a careless log line would sit in — a token this API
+    // never minted, and a token SabreDAV refuses, so every path of the route has
+    // logged by the time the assertions below run.
+    const polled = await changes(app, calendarId, 'owner', since);
+    assert.equal(polled.statusCode, 200, polled.body);
+    const refused = await changes(app, calendarId, 'owner', 'not-a-token');
+    assert.equal(refused.statusCode, 410, refused.body);
     caldav.failOnce('syncChanges', new CalDavError('forbidden', 403));
-    await changes(app, calendarId, 'owner', since);
+    const gone = await changes(app, calendarId, 'owner', since);
+    assert.equal(gone.statusCode, 410, gone.body);
 
     const log = capture.text();
     assert.ok(!log.includes(CANARY), `the content reached the log: ${log}`);
     assert.ok(!log.includes(since), 'the token reached the log');
+    assert.ok(
+      !log.includes(decoded(since)),
+      'the decoded token reached the log',
+    );
+    assert.ok(
+      !log.includes(`http://sabre.io/ns/sync/${number}`),
+      'the SabreDAV token reached the log',
+    );
+    assert.ok(
+      !log.includes('not-a-token'),
+      'the refused token reached the log',
+    );
     assert.ok(!log.includes(seededUid), 'the uid reached the log');
     assert.ok(!log.includes('BEGIN:VEVENT'), 'the object text reached the log');
     assert.ok(

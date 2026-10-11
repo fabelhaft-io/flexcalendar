@@ -168,6 +168,13 @@ export function createMemoryCalDavStore(seed = {}) {
   /** How many calls of a method a one-shot failure still waits out. */
   /** @type {Map<string, number>} */
   const after = new Map();
+  /**
+   * Runs once, immediately before the next `currentSyncToken` read. It is how a
+   * test models the race between the two real requests of an empty delta answer:
+   * a write that lands after the `REPORT` and before the `PROPFIND`.
+   * @type {((calendarId: string) => void) | undefined}
+   */
+  let beforeCurrentSyncTokenHook;
   /** @type {Record<string, unknown>[]} */
   const events = seed.events ?? [];
   /** The users each view was built for, in order. */
@@ -317,6 +324,16 @@ export function createMemoryCalDavStore(seed = {}) {
       once.delete(method);
       after.delete(method);
     },
+    /**
+     * Runs `callback` once, immediately before the next `currentSyncToken`: the
+     * `PROPFIND` that follows an empty `REPORT`. It models the race between
+     * those two requests — something else moves the collection in between — so
+     * a test can hold the answer to the number its own report carried.
+     * @param {(calendarId: string) => void} callback
+     */
+    beforeCurrentSyncToken(callback) {
+      beforeCurrentSyncTokenHook = callback;
+    },
 
     /** @param {string} userId @param {{requestId?: string}} [options] */
     forUser(userId, options = {}) {
@@ -465,11 +482,14 @@ export function createMemoryCalDavStore(seed = {}) {
           const latest = new Map();
           for (const change of matched) latest.set(change.name, change);
           return {
-            // The number of the newest matched change, or the one asked for:
-            // SabreDAV echoes what it was given when nothing matched.
-            syncToken: sabreToken(
-              matched.length === 0 ? since : matched[matched.length - 1].token,
-            ),
+            // The number of the newest matched change, or the one asked for,
+            // verbatim: SabreDAV echoes what it was given when nothing matched,
+            // so a number ahead of the collection comes back unchanged and the
+            // API has to refuse it on its own.
+            syncToken:
+              matched.length === 0
+                ? token
+                : sabreToken(matched[matched.length - 1].token),
             changed: [...latest.values()]
               .filter((change) => change.name !== '')
               .map((change) => {
@@ -502,6 +522,11 @@ export function createMemoryCalDavStore(seed = {}) {
         async currentSyncToken(calendarId) {
           events.push({ op: 'currentSyncToken', calendarId });
           guard('currentSyncToken');
+          const hook = beforeCurrentSyncTokenHook;
+          if (hook !== undefined) {
+            beforeCurrentSyncTokenHook = undefined;
+            hook(calendarId);
+          }
           return String(stateOf(calendarId).token);
         },
       };

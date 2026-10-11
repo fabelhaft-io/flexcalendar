@@ -434,9 +434,14 @@ invented one. So the request is answered by asking the collection for its own
 current number — a `PROPFIND` of `{DAV:}sync-token` at depth 0, one round trip,
 and only when the change set came back empty (`adapter.currentSyncToken`); a
 request that has something to report never pays it — and a number beyond it is
-the `410`. A `403` **without** a `cf:` precondition out of `sync-collection` is
-SabreDAV's `InvalidSyncToken` and becomes the same `410`; every other CalDAV
-failure keeps its meaning, and a CalDAV `401` stays the `502` of E03-R01.
+the `410`. **That `PROPFIND` can only refuse a token; it never moves the
+answer's.** The number an answer carries is the one the report itself returned,
+computed by SabreDAV together with the changes: the report and the read are two
+requests, and a write landing between them would otherwise hand the client a
+position past a change the report never mentioned. A `403` **without** a `cf:`
+precondition out of `sync-collection` is SabreDAV's `InvalidSyncToken` and
+becomes the same `410`; every other CalDAV failure keeps its meaning, and a
+CalDAV `401` stays the `502` of E03-R01.
 
 ### The `uid` of a change
 
@@ -617,14 +622,26 @@ came from, and an ahead number **accepted** — so "a token ahead of the collect
 is 410" is an assertion about the API's own check and not about a double that is
 stricter than the service. It covers the initial load, the token round trip, the
 create/update/delete window, every malformed and foreign token, SabreDAV's own
-refusal against a `403` that carries a precondition of ours, the roles and the
-same 404s as the other routes, a tombstone that must not carry an `etag`, the
-outbox-named `uid` and the ambiguous window that leaves the entry out, and a
-canary that reaches neither a body nor a log line. `test/integration/changes.test.mjs`
-(inside the stack, `make test-api-caldav`) runs a create, an update and a delete
-between two tokens against the real CalDAV service, asserts each kind of rejected
-token is a `410`, and pins the premise the API's own check rests on: the live
-service accepts a token ahead of the collection and echoes it.
+refusal against a `403` that carries a precondition of ours, a write landing
+between the report and the `PROPFIND` that follows an empty one (the
+`beforeCurrentSyncToken` hook of the double, so the answer's token is the
+report's and the next poll still returns the change), the roles and the same 404s
+as the other routes, a tombstone that must not carry an `etag`, the outbox-named
+`uid` and the ambiguous window that leaves the entry out, and a canary that
+reaches neither a body nor a log line — with the initial load, a good token and a
+refused one all sent, and neither the token, nor the `<calendar id>:<n>` it
+decodes to, nor the SabreDAV token behind it in the captured log.
+`test/integration/changes.test.mjs` (inside the stack, `make test-api-caldav`)
+runs a create, an update and a delete between two tokens against the real CalDAV
+service, asserts each kind of rejected token is a `410` — with the problem bodies
+held to fixed assertions on `type`, `title`, `status` and `instance`, because the
+`api-test` image installs production dependencies only and the spec-parsing
+`test/support/problem.mjs` cannot be imported there — and pins the premise the
+API's own check rests on: the live service accepts a token ahead of the
+collection and echoes it. `test/integration-imports.test.mjs` reads the imports
+of every stack suite, transitively, and fails on a bare specifier that is not a
+production dependency: that is how a suite the `api-test` image cannot load is
+caught in the unit suite instead of at `make test-api-caldav`.
 
 The E05-R10 suites also need nothing but Node. `test/problem.test.mjs` holds the
 problem table, the status normaliser and the CalDAV mapping (hostile body
