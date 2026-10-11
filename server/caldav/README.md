@@ -26,7 +26,9 @@ version or commit drift. Schema creation stays in the API migration chain.
   method pipeline directly to serialize DAV preconditions and HTTP headers only, omitting exception
   messages, classes and traces. Fixed denial reasons distinguish malformed headers,
   unknown keys, signatures, skew, replay and unknown principals; exceptions log
-  `delegation_error` without their details.
+  `delegation_error` without their details. A `dav_failure` line is written only
+  for a `500` and above: a refused precondition, a `404` or a `412` is expected
+  protocol traffic and the access line already carries its status.
 - Principal lookup/listing is restricted to the acting `public.users` row;
   principal data is read-only. ACL unauthenticated access is off and inaccessible
   nodes are hidden. Other users' homes/principals are 404. Ownership is Sabre's
@@ -124,6 +126,32 @@ Unit tests exercise the allow-list and injected modes. Integration GuardTest
 exercises delegated requests, persistence after denials, copy/move, collection
 and object properties, malformed-body redaction and marker responses/headers.
 `make test-caldav` also scans service logs for guard markers; run it twice.
+
+## Request log and error responses (E05-R10)
+
+The internal listener writes **one access line per request**, from fixed fields
+only:
+
+```
+caldav request <METHOD> <status> <correlation-id>
+```
+
+`<METHOD>` comes from a fixed allow-list (`GET`, `HEAD`, `OPTIONS`, `PROPFIND`,
+`PROPPATCH`, `REPORT`, `PUT`, `DELETE`, `POST`, `MKCOL`, `MKCALENDAR`, `MOVE`,
+`COPY`); anything else is `OTHER`, so a method cannot inject text into a line.
+The ID is the API's `X-Request-Id`, believed only when it is exactly a lowercase
+UUIDv4 and `-` otherwise. Neither the line nor the delegation lines that follow
+it (`caldav delegation_denied <reason> <id>`, `caldav delegation_error <id>`)
+carry a path, a query string, a header value or a body: this service stores event
+content, and no log line may carry any (INV-01, INV-07). `X-Request-Id` is not
+part of the D-05 delegation signature; it is only logged.
+
+A `REPORT` whose XML body is empty or malformed raises `Sabre\Xml\ParseException`
+(`LibXMLException` extends it) inside Sabre's own `CorePlugin::httpReport`. It is
+not a DAV exception, so `Service::errorResponse` answers **400** for that class —
+and for nothing else: a `\RuntimeException` is still a `500`. The response body
+stays the precondition-only `DAV:error` document (no message, class or trace),
+and `dav_failure` is logged only at `500` and above.
 
 ## Change outbox (E03-R10)
 

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { assertProblem } from './support/problem.mjs';
 
 /**
  * Starts the real entry point with no identity provider configured, which is
@@ -20,20 +21,31 @@ async function start() {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const output = await Promise.race([
-    once(child.stdout, 'data'),
-    once(child, 'exit').then(() => {
-      throw new Error('API exited before readiness.');
-    }),
-    new Promise((_, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('API readiness timed out.')),
-        5000,
+  // The entry point writes its own startup line and Fastify's logger writes a
+  // "Server listening at …" line ahead of it, so the port is read from the
+  // line that names it rather than from the first chunk of stdout.
+  const port = await new Promise((resolve, reject) => {
+    let output = '';
+    const timer = setTimeout(
+      () => reject(new Error('API readiness timed out.')),
+      5000,
+    );
+    timer.unref();
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+      const match = output.match(
+        /flexcalendar api listening on http:\/\/127\.0\.0\.1:(\d+)/,
       );
-      timer.unref();
-    }),
-  ]);
-  const port = String(output[0]).match(/:(\d+)/)?.[1];
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[1]);
+      }
+    });
+    child.once('exit', () => {
+      clearTimeout(timer);
+      reject(new Error('API exited before readiness.'));
+    });
+  });
   assert.ok(port);
   return {
     base: `http://127.0.0.1:${port}`,
@@ -67,7 +79,7 @@ test('the readiness probe is the only route that needs no identity provider', as
     for (const path of ['/me', '/']) {
       const response = await fetch(`${api.base}${path}`);
       assert.equal(response.status, 503, `${path} answered ${response.status}`);
-      assert.deepEqual(await response.json(), { error: 'unavailable' });
+      assertProblem(await response.json(), 'unavailable');
     }
   } finally {
     await api.stop();

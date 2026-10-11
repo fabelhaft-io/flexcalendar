@@ -18,6 +18,7 @@
 // error message or a response body.
 
 import { UnavailableError, isAudienceMismatch } from './oidc.mjs';
+import { problemResponse, sendProblem } from './problem.mjs';
 
 /** `users.id` is a uuid; the spec's User schema types it as a string. */
 export const userSchema = {
@@ -32,15 +33,6 @@ export const userSchema = {
   },
 };
 
-/** Every refusal body is this envelope; only `error` is ever added. */
-export const errorSchema = {
-  type: 'object',
-  required: ['error'],
-  additionalProperties: false,
-  properties: { error: { type: 'string' } },
-};
-
-const UNAUTHORIZED = { error: 'unauthorized' };
 const BEARER =
   /^bearer[ \t]+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i;
 const MAX_TOKEN_LENGTH = 8192;
@@ -48,29 +40,14 @@ const MAX_TOKEN_LENGTH = 8192;
 const UNIQUE_VIOLATION = '23505';
 
 /**
- * @param {import('fastify').FastifyReply} reply
- * @param {number} code
- * @param {string} error
- */
-function refuse(reply, code, error) {
-  reply.code(code).send({ error });
-}
-
-/**
  * The one and only 401: identical status, body and headers for every reason.
  * @param {import('fastify').FastifyReply} reply
  */
 function unauthorized(reply) {
   reply
-    .code(401)
     .header('www-authenticate', 'Bearer')
-    .header('cache-control', 'no-store')
-    .send(UNAUTHORIZED);
-}
-
-/** @param {import('fastify').FastifyReply} reply */
-function unavailable(reply) {
-  refuse(reply, 503, 'unavailable');
+    .header('cache-control', 'no-store');
+  sendProblem(reply, 'unauthorized');
 }
 
 /**
@@ -135,8 +112,12 @@ async function resolveUser({ request, reply, store, oidc }) {
   try {
     const existing = await store.findBySubject(subject);
     if (existing) return existing;
-  } catch {
-    refuse(reply, 500, 'internal_error');
+  } catch (/** @type {any} */ error) {
+    // Logged by name (and, for `pg`, by SQLSTATE) only: a `pg` message can name
+    // a row's values — a unique violation prints the e-mail address — so the
+    // message and the stack never reach a log line (E05-R10).
+    request.log.error({ err: error }, 'store_read_failed');
+    sendProblem(reply, 'internal-error');
     return undefined;
   }
   const token = bearerToken(request);
@@ -150,15 +131,15 @@ async function resolveUser({ request, reply, store, oidc }) {
     claims = await oidc.userinfo(token);
   } catch {
     // A userinfo failure is a 502 and never creates a row.
-    refuse(reply, 502, 'bad_gateway');
+    sendProblem(reply, 'bad-gateway');
     return undefined;
   }
   if (typeof claims?.sub !== 'string' || claims.sub !== subject) {
-    refuse(reply, 502, 'bad_gateway');
+    sendProblem(reply, 'bad-gateway');
     return undefined;
   }
   if (claims.email_verified !== true) {
-    refuse(reply, 403, 'forbidden');
+    sendProblem(reply, 'forbidden');
     return undefined;
   }
   const handle =
@@ -167,13 +148,13 @@ async function resolveUser({ request, reply, store, oidc }) {
       : '';
   const email = typeof claims.email === 'string' ? claims.email.trim() : '';
   if (!handle || !email) {
-    refuse(reply, 502, 'bad_gateway');
+    sendProblem(reply, 'bad-gateway');
     return undefined;
   }
   try {
     const created = await store.createFirstSight({ subject, handle, email });
     if (!created) {
-      refuse(reply, 500, 'internal_error');
+      sendProblem(reply, 'internal-error');
       return undefined;
     }
     return created;
@@ -181,10 +162,11 @@ async function resolveUser({ request, reply, store, oidc }) {
     // A handle or email that is already taken is a 409; the subject conflict
     // itself is absorbed by ON CONFLICT (idp_subject) DO NOTHING.
     if (error?.code === UNIQUE_VIOLATION) {
-      refuse(reply, 409, 'conflict');
+      sendProblem(reply, 'conflict');
       return undefined;
     }
-    refuse(reply, 500, 'internal_error');
+    request.log.error({ err: error }, 'store_write_failed');
+    sendProblem(reply, 'internal-error');
     return undefined;
   }
 }
@@ -207,7 +189,7 @@ export function createAuthHook({ config, oidc, audience }) {
     // never an accepted request.
     const expected = config.issuer ? await audience.current() : undefined;
     if (!config.issuer || !expected) {
-      unavailable(reply);
+      sendProblem(reply, 'unavailable');
       return;
     }
     const token = bearerToken(request);
@@ -221,7 +203,7 @@ export function createAuthHook({ config, oidc, audience }) {
       claims = await oidc.verify(token, expected);
     } catch (/** @type {any} */ error) {
       if (error instanceof UnavailableError) {
-        unavailable(reply);
+        sendProblem(reply, 'unavailable');
         return;
       }
       // The project audience is written after the API boots, so an audience
@@ -266,11 +248,22 @@ export function registerAuthRoutes(app, { store, oidc }) {
       schema: {
         response: {
           200: userSchema,
-          401: errorSchema,
-          403: errorSchema,
-          409: errorSchema,
-          502: errorSchema,
-          503: errorSchema,
+          // Every refusal the service can answer with is a problem document
+          // (E05-R10): the hook's own 401/403/409/502/503, the limiter's 429
+          // with its `Retry-After`, and Fastify's own 400/404/405/413/415 and
+          // any unhandled 500.
+          400: problemResponse(),
+          401: problemResponse(),
+          403: problemResponse(),
+          404: problemResponse(),
+          405: problemResponse(),
+          409: problemResponse(),
+          413: problemResponse(),
+          415: problemResponse(),
+          429: problemResponse(),
+          500: problemResponse(),
+          502: problemResponse(),
+          503: problemResponse(),
         },
       },
     },

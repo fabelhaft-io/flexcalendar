@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildApp } from '../src/app.mjs';
 import { readConfig } from '../src/config.mjs';
+import { assertProblem } from './support/problem.mjs';
 
 const ISSUER = 'https://auth.example.test';
 const AUDIENCE = 'project-id';
@@ -143,7 +144,7 @@ test('a refused request is a 429 with Retry-After and the fixed body', async () 
   assert.equal(refused.statusCode, 429);
   // The fixed body, and only that: no counter, address or key in it, and not
   // the generic `request_failed` the error handler would otherwise send.
-  assert.deepEqual(refused.json(), { error: 'rate_limited' });
+  assertProblem(refused.json(), 'rate-limited');
   assert.equal(refused.headers['retry-after'], '60');
   await app.close();
 });
@@ -160,7 +161,7 @@ test('a valid token is refused past the limit, and a new window resets it', asyn
 
   const overLimit = await call(app);
   assert.equal(overLimit.statusCode, 429);
-  assert.deepEqual(overLimit.json(), { error: 'rate_limited' });
+  assertProblem(overLimit.json(), 'rate-limited');
   assert.equal(oidc.calls, 1);
 
   // One window later the same client has its allowance back.
@@ -202,7 +203,7 @@ test('the health probe is never limited, and nothing else is exempt', async () =
     method: 'POST',
   });
   assert.equal(flood.statusCode, 429);
-  assert.deepEqual(flood.json(), { error: 'rate_limited' });
+  assertProblem(flood.json(), 'rate-limited');
   await app.close();
 });
 

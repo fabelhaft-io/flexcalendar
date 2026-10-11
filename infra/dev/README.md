@@ -138,8 +138,9 @@ minutes, and a rotated key is picked up from the JWKS without a restart.
 
 The API also rate-limits, one in-memory bucket per client address: 300 requests
 per 60 s by default (`CALFLEX_RATE_LIMIT_MAX`,
-`CALFLEX_RATE_LIMIT_WINDOW_SECONDS`; `make dev` sets neither), and a request
-over its limit is a `429` with `Retry-After`. `GET`/`HEAD /healthz` is exempt,
+`CALFLEX_RATE_LIMIT_WINDOW_SECONDS`; both have a default in the compose file, so
+`make dev` sets neither), and a request over its limit is a `429` with
+`Retry-After`. `GET`/`HEAD /healthz` is exempt,
 so the container health check keeps working. Buckets are keyed by
 `request.ip`, and this is where the stack matters: Caddy sits in front of the
 API and is its only route in — the API publishes no host port — so the compose
@@ -148,6 +149,11 @@ is believed. The default is `0` (the socket address, `X-Forwarded-For`
 ignored), which is right for an API exposed directly and wrong here: every
 request would share Caddy's bucket. Too high is worse the other way: a client
 could put its own address in the header and pick its own bucket.
+
+`CALFLEX_LOG_LEVEL` sets the API's log level (`info` by default). The API logs
+one structured line per request — correlation ID, method, route template,
+status, duration — and nothing else; the rate-limit and log-level variables are
+the only ones here whose values are read by the service rather than the stack.
 
 A token from `make token USER=alice` is a real access token whose Zitadel
 session lives for five minutes, so send the first-sight request for a subject
@@ -254,15 +260,19 @@ rotatable keys from the secret store, never reuses this value.
 from the PHPUnit image stage, then checks CalDAV logs for leakage. Run twice
 against the local stack; `composer test` intentionally runs host unit tests only.
 
-`make test-api-caldav` (E05-R02) applies migrations and runs the profile `test`
-service `api-test`, built from the API image's `test` stage. That suite drives
-the API's CalDAV adapter — the one module that talks to `caldav-internal:8081` —
-as two seeded users: each creates a Private collection, writes and reads a
-skeleton, is refused another user's object, gets `412` on a stale precondition
-and `403` with `cf:private-skeleton-only` when a content property is smuggled
-in. It joins the `delegation` network, because the internal listener has no
-published port. The adapter's container-free unit tests are part of
-`make verify-server-api`.
+`make test-api-caldav` (E05-R02, E05-R10) applies migrations and runs the profile
+`test` service `api-test`, built from the API image's `test` stage. That suite
+drives the API's CalDAV adapter — the one module that talks to
+`caldav-internal:8081` — as two seeded users: each creates a Private collection,
+writes and reads a skeleton, is refused another user's object, gets `412` on a
+stale precondition and `403` with `cf:private-skeleton-only` when a content
+property is smuggled in. It also plants markers in a content property, in
+envelope bytes and in a request body, maps each refusal to the problem document
+the API answers with, and sends a fixed correlation ID; afterwards the target
+scans `compose logs caldav api` for the markers with `make check-log-canaries`
+and fails unless that ID is in the CalDAV access log. It joins the `delegation`
+network, because the internal listener has no published port. The adapter's
+container-free unit tests are part of `make verify-server-api`.
 
 A report's `calendar-data` is **LF-normalised**: SabreDAV strips the `\r` bytes
 out of the value it puts into the multistatus XML, so `listObjects` and

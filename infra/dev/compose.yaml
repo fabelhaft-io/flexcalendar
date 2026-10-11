@@ -236,7 +236,13 @@ services:
       # Caddy is exactly one hop in front of the API, and the API's port is not
       # published: the rate limiter buckets per client, not per Caddy address.
       # Without this it would trust the socket address, which is Caddy's.
+      # Fixed here, never taken from the environment (see `.env.example`).
       CALFLEX_TRUSTED_PROXY_HOPS: "1"
+      # E05-R10: the request log's level, and the limiter's numbers, so a local
+      # run can turn the log up without a rebuild.
+      CALFLEX_LOG_LEVEL: ${CALFLEX_LOG_LEVEL:-info}
+      CALFLEX_RATE_LIMIT_MAX: ${CALFLEX_RATE_LIMIT_MAX:-300}
+      CALFLEX_RATE_LIMIT_WINDOW_SECONDS: ${CALFLEX_RATE_LIMIT_WINDOW_SECONDS:-60}
       CALFLEX_CALDAV_ORIGIN: 'http://caldav-internal:8081'
       CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
       CALFLEX_SMTP_URL: "smtp://mailpit:1025"

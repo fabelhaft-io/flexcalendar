@@ -18,6 +18,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { startIdp } from './support/idp.mjs';
+import { assertProblem } from './support/problem.mjs';
 
 const apiDirectory = fileURLToPath(new URL('..', import.meta.url));
 
@@ -125,7 +126,7 @@ async function startStack(t, { audience = 'project-id', env = {} } = {}) {
  */
 function refused(response) {
   assert.equal(response.status, 401, response.body);
-  assert.deepEqual(JSON.parse(response.body), { error: 'unauthorized' });
+  assertProblem(JSON.parse(response.body), 'unauthorized');
   assert.equal(response.headers['www-authenticate'], 'Bearer');
   assert.equal(response.headers['cache-control'], 'no-store');
 }
@@ -134,7 +135,12 @@ function refused(response) {
 const signature = (response) =>
   JSON.stringify([
     response.status,
-    response.body,
+    // The only per-request member is `instance`, the correlation ID: it is
+    // normalised away so this compares everything a refusal could reveal.
+    response.body.replace(
+      /"instance":"urn:uuid:[0-9a-f-]+"/,
+      '"instance":"urn:uuid:<request>"',
+    ),
     response.headers['www-authenticate'],
     response.headers['cache-control'],
   ]);
@@ -321,7 +327,7 @@ test('a first sight that is refused creates no row', async (t) => {
     headers: bearer(idp.token({ sub: 'mismatch' })),
   });
   assert.equal(mismatched.status, 502, mismatched.body);
-  assert.deepEqual(JSON.parse(mismatched.body), { error: 'bad_gateway' });
+  assertProblem(JSON.parse(mismatched.body), 'bad-gateway');
 
   // userinfo being down is a 502 too.
   idp.setUserinfo(() => undefined);
@@ -354,7 +360,7 @@ test('a first sight that is refused creates no row', async (t) => {
     headers: bearer(idp.token({ sub: 'duplicate-email' })),
   });
   assert.equal(conflict.status, 409, conflict.body);
-  assert.deepEqual(JSON.parse(conflict.body), { error: 'conflict' });
+  assertProblem(JSON.parse(conflict.body), 'conflict');
 
   assert.equal(api.stderr(), '');
 });
@@ -383,7 +389,7 @@ test('without a configured audience everything but the health probe is 503', asy
   // 401 either, because nothing about the token was even examined.
   const unconfigured = await call('/me', { headers: bearer(idp.token()) });
   assert.equal(unconfigured.status, 503, unconfigured.body);
-  assert.deepEqual(JSON.parse(unconfigured.body), { error: 'unavailable' });
+  assertProblem(JSON.parse(unconfigured.body), 'unavailable');
   assert.equal(idp.calls.userinfo, 0);
 });
 
@@ -547,7 +553,7 @@ test('with no cached keys an outage is a 503, never an accepted request', async 
     headers: bearer(token),
   });
   assert.equal(response.status, 503, response.body);
-  assert.deepEqual(JSON.parse(response.body), { error: 'unavailable' });
+  assertProblem(JSON.parse(response.body), 'unavailable');
 });
 
 test('an audience file that changes after boot is picked up without a restart', async (t) => {
@@ -614,7 +620,7 @@ test('a blank or missing handle or email from userinfo is a 502 and creates noth
       headers: bearer(idp.token({ sub: userinfo.sub })),
     });
     assert.equal(response.status, 502, `${name}: ${response.body}`);
-    assert.deepEqual(JSON.parse(response.body), { error: 'bad_gateway' });
+    assertProblem(JSON.parse(response.body), 'bad-gateway');
   }
 
   // No row was created for any of them: a later well-formed first sight for the

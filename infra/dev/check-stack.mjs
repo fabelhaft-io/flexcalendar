@@ -313,10 +313,28 @@ check('`make seed` runs the one-shot seed service', () =>
 
 check('`make test-api-caldav` migrates and then runs the API test job (E05-R02)', () =>
   /^test-api-caldav: migrate\b/m.test(makefile)
-    ? /^\t\$\(COMPOSE\) --profile test run --build --rm -T api-test$/m.test(makefile)
+    ? /\$\(COMPOSE\) --profile test run --build --rm -T api-test/m.test(makefile)
       ? true
       : 'the target does not run api-test'
     : 'the target does not depend on `migrate`',
+);
+
+check('`make test-api-caldav` scans the api and caldav logs, and rejects a leaked marker (E05-R10)', () =>
+  /\$\(COMPOSE\) logs caldav api/m.test(makefile)
+    ? /check-log-canaries/m.test(makefile)
+      ? /grep -qE '\$\(CALFLEX_API_REQUEST_ID\)'/m.test(makefile)
+        ? true
+        : 'the target does not check that the request id reached the CalDAV log'
+      : 'the target does not run the marker scan'
+    : 'the target does not scan the api and caldav logs',
+);
+
+check('`make check-log-canaries` fails on a marker and needs a log file (E05-R10)', () =>
+  /^check-log-canaries:/m.test(makefile)
+    ? /^CALFLEX_LOG_CANARIES \?= .*CALFLEX_GUARD_MARKER/m.test(makefile)
+      ? true
+      : 'CALFLEX_LOG_CANARIES does not cover the CalDAV guard marker'
+    : 'the Makefile has no `check-log-canaries` target',
 );
 
 // --- the API's CalDAV adapter suite (E05-R02) ---------------------------------
@@ -467,6 +485,23 @@ check('the API publishes no host port a client could reach directly', () =>
     ? true
     : 'the API publishes a host port',
 );
+
+// --- observability settings (E05-R10) -----------------------------------------
+
+// The level and the limiter numbers are tunable per environment, with the
+// defaults the service itself falls back to; `.env.example` documents them (the
+// drift check above).
+for (const [name, fallback] of [
+  ['CALFLEX_LOG_LEVEL', 'info'],
+  ['CALFLEX_RATE_LIMIT_MAX', '300'],
+  ['CALFLEX_RATE_LIMIT_WINDOW_SECONDS', '60'],
+]) {
+  check(`the API reads ${name} with the ${fallback} default`, () =>
+    String(services.api?.environment?.[name] ?? '') === `\${${name}:-${fallback}}`
+      ? true
+      : `got ${JSON.stringify(services.api?.environment?.[name])}`,
+  );
+}
 
 // --- verdict -----------------------------------------------------------------
 
