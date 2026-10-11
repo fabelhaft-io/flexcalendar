@@ -39,8 +39,14 @@ export default [
   { ignores: ['**/node_modules/**', '**/vendor/**'] },
   js.configs.recommended,
   { files: ['**/*.mjs'], languageOptions: { globals: globals.node } },
+  // Both entries below are limited to the files the default parser (espree)
+  // reads. TypeScript files are outside this rule: the repository's ESLint has
+  // no TypeScript parser, so a `**/*.ts` glob makes espree fail on a type
+  // annotation instead of reporting the import. `server/api/test/caldav-imports.test.mjs`
+  // is what covers `server/api/src/` as a whole — it lints the whole directory
+  // from the test side, where the files are plain `.mjs`.
   {
-    files: ['**/*.{mjs,cjs,js,jsx,ts,tsx}'],
+    files: ['**/*.{mjs,cjs,js}'],
     rules: {
       'no-restricted-imports': tsdavStatic(),
       'no-restricted-syntax': tsdavDynamic(),
