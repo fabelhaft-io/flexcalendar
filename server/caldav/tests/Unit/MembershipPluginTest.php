@@ -110,6 +110,7 @@ final class MembershipPluginTest extends TestCase
             {
             }
 
+            /** @return array{bool, string} */
             public function check(RequestInterface $request, ResponseInterface $response): array
             {
                 return [true, $this->principal];

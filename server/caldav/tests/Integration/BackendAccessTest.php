@@ -302,6 +302,11 @@ final class BackendAccessTest extends TestCase
      */
     private function collect(string $calendar, string $actor): array
     {
+        // SabreDAV's own `PDO::createCalendar` is documented as returning a
+        // string but actually returns the [calendarid, instanceid] pair. Type
+        // the value as `mixed`, so the check below is a live narrowing of the
+        // real return rather than a comparison against the wrong declaration.
+        /** @var mixed $ids */
         $ids = $this->backend($actor)->createCalendar('principals/' . $actor, $calendar, []);
         if (!is_array($ids) || !isset($ids[0], $ids[1])) {
             throw new \RuntimeException('createCalendar did not return the SabreDAV id pair');
@@ -439,7 +444,7 @@ final class BackendAccessTest extends TestCase
         return (int) $query->fetchColumn();
     }
 
-    /** @param list<int> $parameters */
+    /** @param list<int|string> $parameters */
     private function scalar(string $sql, array $parameters): int
     {
         $query = $this->dav->prepare($sql);
