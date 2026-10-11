@@ -17,7 +17,7 @@ abstract class EventsClient {
 
   /// Create an event.
   ///
-  /// The client sends fields, never iCalendar: the API mints the `UID` (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client can never write `EXDATE` or `RECURRENCE-ID` (INV-05). The object name is `<uid>.ics`.
+  /// The client sends fields, never iCalendar: the API mints the `UID` (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client never writes the recurrence itself — an exception or an occurrence override is an intent (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
   /// The answer carries the raw iCalendar object (`ical`, byte for byte), the CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003), so the object is a skeleton: `summary`, `description`, `location` and `attendees` are refused with 422 (they arrive with Shared calendars) and `envelopeSha256` is required, because a Private `VEVENT` carries exactly one `X-CALFLEX-ENVELOPE-SHA256` (E03-R09, D-18).
   /// The request body is validated by the route rather than by a schema: a schema-refused body is a 400, and every rule above must answer 422.
   ///
@@ -44,7 +44,7 @@ abstract class EventsClient {
   /// Change an event.
   ///
   /// The client sends the fields it wants changed and the `If-Match` it read. The API reads the stored object, applies the change with `ical.js`, bumps `SEQUENCE` and `DTSTAMP`, and `PUT`s with the same `If-Match`, which CalDAV checks — so a write that lost a race is a 412 and never an overwrite. The 412 carries the current representation in the problem's `current` member, and nothing of the request that lost.
-  /// `rrule`, `uid`, `exdate` and `recurrenceId` are refused with 422: an edit to a recurring event is an intent (E05-R06/R07), and a client never writes the recurrence itself (INV-05). A member that is `null` removes the property it names. Everything the change did not touch — an override, a `VTIMEZONE`, an `X-` property — comes back unchanged (INV-02). On a Private calendar the content fields are a 422 (D-18).
+  /// `rrule` and `uid` are refused with 422, and so is any member naming a recurrence exception or an occurrence override: an edit to a recurring event is an intent (E05-R06/R07), and a client never writes the recurrence itself (INV-05). A member that is `null` removes the property it names, and a body that carries no member at all is a 422 as well. Everything the change did not touch — an override component, a `VTIMEZONE`, an `X-` property — comes back unchanged (INV-02). On a Private calendar the content fields are a 422 (D-18).
   ///
   /// [calendarId] - The `calendars.id` uuid of the calendar.
   ///

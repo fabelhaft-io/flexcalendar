@@ -30,7 +30,7 @@ class EventCreate {
   final EventTime start;
   final EventTime? end;
 
-  /// The recurrence rule, validated by `ical.js`. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.
+  /// The recurrence rule, in the RFC 5545 § 3.3.10 form: `FREQ` first, only the parts the RFC names and each at most once, `COUNT` or `UNTIL` but not both, `UNTIL` with the value type of the start, and neither `BYWEEKNO` nor a yearly rule on a 29 February start. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.
   final String? rrule;
   final EventAlarm? alarm;
 
