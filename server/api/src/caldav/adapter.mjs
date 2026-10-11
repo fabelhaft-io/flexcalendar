@@ -46,6 +46,13 @@ export const PRIVATE_CALENDAR_DISPLAY_NAME = 'Private calendar';
 /** The header the CalDAV service authenticates the API with (D-05). */
 export const PRINCIPAL_HEADER = 'X-Calflex-Principal';
 
+/**
+ * The correlation ID header (E05-R10). It is *not* part of the delegation
+ * signature: the service reads it, logs it with the request, and never lets it
+ * change who the caller is.
+ */
+export const REQUEST_ID_HEADER = 'X-Request-Id';
+
 /** The precondition namespace the CalDAV service answers with. */
 export const FLEXCALDAV_NAMESPACE = 'https://flexcalendar.de/ns/caldav';
 
@@ -572,7 +579,7 @@ function asCalDavError(error) {
  * origin is not that origin is refused before it is signed or sent. Exported so
  * the tests can reach both of those decisions directly.
  *
- * @param {{origin: URL, principal: string, keyId: string, key: Buffer, transport: typeof fetch, now: () => number, nonce: () => string, limit: number, timeout: number}} config
+ * @param {{origin: URL, principal: string, keyId: string, key: Buffer, transport: typeof fetch, now: () => number, nonce: () => string, limit: number, timeout: number, requestId?: string}} config
  * @returns {typeof fetch}
  */
 export function signedFetchFor(config) {
@@ -586,6 +593,7 @@ export function signedFetchFor(config) {
     nonce,
     limit,
     timeout,
+    requestId,
   } = config;
   return async (input, init = {}) => {
     const url =
@@ -607,6 +615,12 @@ export function signedFetchFor(config) {
         nonce: nonce(),
       }),
     );
+    // The caller's correlation ID, for the service's access log. Signed nothing
+    // and authenticated nothing: it is logged beside the refusal, never used to
+    // decide one.
+    if (requestId !== undefined) {
+      headers.set(REQUEST_ID_HEADER, requestId);
+    }
     let response;
     try {
       response = await transport(url, {
@@ -685,10 +699,20 @@ export function createCalDavAdapter(config = {}) {
      * Hrefs are `/calendars/<userId>/<calendarId>/…`. Object names are checked
      * here because they are path segments.
      *
+     * `options.requestId` is the caller's correlation ID (`request.id`). When
+     * it is present every CalDAV call carries it as `X-Request-Id`, so the
+     * service's access log and the API's request line name the same request;
+     * an id that is not a UUIDv4 is refused before any request exists.
+     *
      * @param {string} userId
+     * @param {{requestId?: string}} [options]
      */
-    forUser(userId) {
+    forUser(userId, options = {}) {
       const principal = assertUuid(userId, 'userId');
+      const requestId =
+        options.requestId === undefined
+          ? undefined
+          : assertUuid(options.requestId, 'requestId');
       const signed = signedFetchFor({
         origin,
         principal,
@@ -699,6 +723,7 @@ export function createCalDavAdapter(config = {}) {
         nonce,
         limit,
         timeout,
+        requestId,
       });
       const home = `/calendars/${principal}/`;
       /** @param {string} calendarId */

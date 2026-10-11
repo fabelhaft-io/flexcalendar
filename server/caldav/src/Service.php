@@ -13,7 +13,13 @@ final class Service
             $server->invokeMethod($server->httpRequest, $server->httpResponse);
         } catch (\Throwable $exception) {
             self::errorResponse($server, $exception);
-            error_log('caldav dav_failure');
+            // Only a server-side failure is logged. A rejected precondition, a
+            // 404 or a 412 is expected protocol traffic and the access line
+            // (`internal/index.php`) already carries its status: logging every
+            // one of them was 66 lines of noise in a single test run (E05-R10).
+            if ($server->httpResponse->getStatus() >= 500) {
+                error_log('caldav dav_failure');
+            }
             $server->sapi->sendResponse($server->httpResponse);
         }
     }
@@ -21,7 +27,15 @@ final class Service
     public static function errorResponse(\Sabre\DAV\Server $server, \Throwable $exception): void
     {
         $davException = $exception instanceof \Sabre\DAV\Exception;
-        $server->httpResponse->setStatus($davException ? $exception->getHTTPCode() : 500);
+        // A body the XML reader cannot parse is the caller's mistake, not ours:
+        // Sabre throws `Sabre\Xml\ParseException` (`LibXMLException` extends it)
+        // out of `CorePlugin::httpReport`, and it is not a DAV exception, so it
+        // must answer 400 instead of falling through to 500. Nothing else is
+        // widened to a 400.
+        $status = $davException
+            ? $exception->getHTTPCode()
+            : ($exception instanceof \Sabre\Xml\ParseException ? 400 : 500);
+        $server->httpResponse->setStatus($status);
         $server->httpResponse->setHeader('Content-Type', 'application/xml; charset=utf-8');
         $document = new \DOMDocument('1.0', 'utf-8');
         $error = $document->createElementNS('DAV:', 'd:error');

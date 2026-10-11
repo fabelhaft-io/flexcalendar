@@ -5,6 +5,8 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 header('Cache-Control: no-store');
+$method = \Calflex\RequestLog::method($_SERVER['REQUEST_METHOD'] ?? '');
+$correlationId = \Calflex\RequestLog::correlationId($_SERVER['HTTP_X_REQUEST_ID'] ?? '');
 $reason = 'delegation_error';
 try {
     $keys = \Calflex\Delegation::keys(getenv('CALFLEX_DELEGATION_KEYS') ?: '');
@@ -17,7 +19,11 @@ try {
         $pdo = \Calflex\Database::connect(getenv('CALFLEX_DATABASE_URL') ?: '');
         $reason = \Calflex\Delegation::accept($pdo, $identity);
         if ($reason === 'accepted') {
-            \Calflex\Service::run(\Calflex\Service::create($pdo, $identity['p']));
+            $server = \Calflex\Service::create($pdo, $identity['p']);
+            \Calflex\Service::run($server);
+            // The access line, beside the DAV response: method, status and the
+            // API's correlation ID, and nothing else (E05-R10).
+            \Calflex\RequestLog::request($method, $server->httpResponse->getStatus(), $correlationId);
             return;
         }
     }
@@ -25,7 +31,8 @@ try {
     $reason = 'delegation_error';
     // Do not expose configuration, PDO errors, headers or request content.
 }
-error_log('caldav ' . ($reason === 'delegation_error' ? $reason : 'delegation_denied ' . $reason));
+\Calflex\RequestLog::delegation($reason, $correlationId);
 http_response_code(401);
 header('Content-Type: text/plain; charset=utf-8');
 echo "Unauthorized\n";
+\Calflex\RequestLog::request($method, 401, $correlationId);

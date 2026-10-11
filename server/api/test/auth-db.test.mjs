@@ -12,6 +12,7 @@ import { buildApp } from '../src/app.mjs';
 import { readConfig } from '../src/config.mjs';
 import { createUserStore } from '../src/store.mjs';
 import { fresh, migrate } from './support/postgres.mjs';
+import { assertProblem } from './support/problem.mjs';
 
 /** A three-segment token whose payload is the subject under test. */
 const fakeToken = (/** @type {string} */ subject) =>
@@ -204,7 +205,7 @@ test('a taken handle or email is a 409 and creates nothing', async () => {
     });
     const conflict = await call(app, 'newcomer');
     assert.equal(conflict.statusCode, 409, conflict.body);
-    assert.deepEqual(conflict.json(), { error: 'conflict' });
+    assertProblem(conflict.json(), 'conflict');
     assert.equal((await users()).length, 1);
 
     // The same subject with a free email and a taken handle is a 409 as well.
@@ -223,7 +224,7 @@ test('without a token the request is refused before any database work', async ()
   await withApp(async ({ app, calls, users }) => {
     const response = await call(app, undefined);
     assert.equal(response.statusCode, 401);
-    assert.deepEqual(response.json(), { error: 'unauthorized' });
+    assertProblem(response.json(), 'unauthorized');
     assert.equal(response.headers['www-authenticate'], 'Bearer');
     assert.equal(calls.userinfo, 0);
     assert.equal((await users()).length, 0);

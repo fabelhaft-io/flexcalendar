@@ -32,8 +32,38 @@ function wholeNumber(env, name, fallback, minimum) {
 }
 
 /**
+ * The levels Fastify's own logger (pino) understands. An invalid value stops
+ * the service at startup, like every other setting here: a level nobody can see
+ * is worse than a service that refuses to boot.
+ */
+const LOG_LEVELS = new Set([
+  'trace',
+  'debug',
+  'info',
+  'warn',
+  'error',
+  'fatal',
+  'silent',
+]);
+
+/**
+ * @param {string | undefined} value
+ * @returns {string}
+ */
+function logLevel(value) {
+  const raw = text(value);
+  if (raw === undefined) return 'info';
+  if (!LOG_LEVELS.has(raw)) {
+    throw new Error(
+      `CALFLEX_LOG_LEVEL must be one of ${[...LOG_LEVELS].join(', ')}`,
+    );
+  }
+  return raw;
+}
+
+/**
  * @param {Record<string, string | undefined>} [env]
- * @returns {{issuer?: string, baseUrl?: string, audience?: string, audienceFile?: string, databaseUrl?: string, rateLimitMax: number, rateLimitWindowSeconds: number, trustedProxyHops: number}}
+ * @returns {{issuer?: string, baseUrl?: string, audience?: string, audienceFile?: string, databaseUrl?: string, logLevel: string, rateLimitMax: number, rateLimitWindowSeconds: number, trustedProxyHops: number}}
  */
 export function readConfig(env = process.env) {
   const issuer = text(env.CALFLEX_OIDC_ISSUER);
@@ -47,6 +77,8 @@ export function readConfig(env = process.env) {
     audience: text(env.CALFLEX_OIDC_AUDIENCE),
     audienceFile: text(env.CALFLEX_OIDC_AUDIENCE_FILE),
     databaseUrl: text(env.CALFLEX_DATABASE_URL),
+    // One structured line per request, from fixed fields only (E05-R10).
+    logLevel: logLevel(env.CALFLEX_LOG_LEVEL),
     // One in-memory bucket per client address, 300 requests per 60 s.
     rateLimitMax: wholeNumber(env, 'CALFLEX_RATE_LIMIT_MAX', 300, 1),
     rateLimitWindowSeconds: wholeNumber(

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import { buildApp } from '../src/app.mjs';
+import { readConfig } from '../src/config.mjs';
 
 // E05-R01 removes the non-product skeleton page: no route is exempt any more.
 /** @type {string[]} */
@@ -53,15 +54,28 @@ function compare(routes, paths, exemptions = allowed, documentSecurity = []) {
       `auth requirement differs: ${route.method} ${path}`,
     );
     for (const [code, response] of Object.entries(operation.responses)) {
-      const expected = response.content?.['application/json']?.schema;
-      if (!expected) continue;
-      const actual = route.schema?.response?.[code];
-      assert.ok(actual, `route has no response schema: ${path} ${code}`);
+      const routeResponse = /** @type {any} */ (route.schema?.response?.[code]);
+      assert.ok(routeResponse, `route has no response schema: ${path} ${code}`);
+      // A route schema without a `content` map is the plain `application/json`
+      // form; one with a map must declare exactly the media types the spec does
+      // (E05-R10: success is `application/json`, every error is
+      // `application/problem+json`).
+      const expectedContent = response.content ?? {};
+      const routeContent = routeResponse.content ?? {
+        'application/json': { schema: routeResponse },
+      };
       assert.deepEqual(
-        actual,
-        expected,
-        `response schema differs: ${path} ${code}`,
+        Object.keys(routeContent).sort(),
+        Object.keys(expectedContent).sort(),
+        `response content types differ: ${path} ${code}`,
       );
+      for (const mediaType of Object.keys(expectedContent)) {
+        assert.deepEqual(
+          routeContent[mediaType]?.schema,
+          expectedContent[mediaType].schema,
+          `response schema differs: ${path} ${code} ${mediaType}`,
+        );
+      }
     }
     // The other direction: a status the route can answer with must exist in
     // the contract, or a client generated from the spec cannot see it.
@@ -105,6 +119,7 @@ test('OpenAPI 3.1 is valid and every Fastify route agrees with it', async () => 
   /** @type {Route[]} */
   const routes = [];
   const app = buildApp({
+    logger: false,
     onRoute(route) {
       for (const method of Array.isArray(route.method)
         ? route.method
@@ -263,3 +278,167 @@ for (const [name, schema] of Object.entries({
       /response schema differs/,
     );
   });
+
+test('a response content type the spec does not declare fails', () => {
+  // The route answers a problem where the contract promises JSON.
+  const withProblem = {
+    ...route,
+    schema: {
+      response: {
+        200: {
+          content: { 'application/problem+json': { schema: health } },
+        },
+      },
+    },
+  };
+  assert.throws(
+    () => compare([withProblem], paths, []),
+    /response content types differ: \/healthz 200/,
+  );
+});
+
+/**
+ * The runtime half of the contract check: a response the real service answered
+ * must be one the spec declares, with the media type the spec declares.
+ * @param {any} resolved the dereferenced spec
+ * @param {{method: string, path: string, statusCode: number, contentType: string}} actual
+ */
+function assertDeclaredResponse(resolved, actual) {
+  const operation = resolved.paths[actual.path]?.[actual.method.toLowerCase()];
+  assert.ok(operation, `the spec has no ${actual.method} ${actual.path}`);
+  const declared = operation.responses?.[String(actual.statusCode)];
+  assert.ok(
+    declared,
+    `undeclared response code: ${actual.method} ${actual.path} ${actual.statusCode}`,
+  );
+  const mediaType = actual.contentType.split(';')[0];
+  assert.ok(
+    declared.content?.[mediaType],
+    `undeclared content type: ${actual.method} ${actual.path} ${actual.statusCode} ${mediaType}`,
+  );
+}
+
+test('every response the real service answers is declared, type included', async () => {
+  const spec = parse(
+    readFileSync(
+      new URL('../../../spec/openapi.yaml', import.meta.url),
+      'utf8',
+    ),
+  );
+  const resolved = await SwaggerParser.dereference(spec);
+  const app = buildApp({
+    logger: false,
+    config: readConfig({
+      CALFLEX_OIDC_ISSUER: 'https://auth.example.test',
+      CALFLEX_OIDC_BASE_URL: 'https://auth.example.test',
+      CALFLEX_OIDC_AUDIENCE: 'project-id',
+    }),
+    oidc: {
+      /** @param {string} token */
+      async verify(token) {
+        if (token !== 'aaa.bbb.ccc') throw new Error('invalid token');
+        return { sub: 'known-subject' };
+      },
+      async userinfo() {
+        throw new Error('userinfo is not part of this test');
+      },
+    },
+    audience: {
+      async current() {
+        return 'project-id';
+      },
+      async refresh() {
+        return false;
+      },
+    },
+    store: {
+      /** @param {string} subject */
+      async findBySubject(subject) {
+        return subject === 'known-subject'
+          ? {
+              id: '11111111-1111-4111-8111-111111111111',
+              handle: 'alice',
+              email: 'alice@example.test',
+            }
+          : undefined;
+      },
+      async createFirstSight() {
+        throw new Error('first sight is not part of this test');
+      },
+    },
+  });
+  try {
+    await app.ready();
+    const probes = [
+      { method: 'GET', path: '/healthz', headers: {} },
+      { method: 'GET', path: '/me', headers: {} },
+      {
+        method: 'GET',
+        path: '/me',
+        headers: { authorization: 'Bearer aaa.bbb.ccc' },
+      },
+      {
+        method: 'GET',
+        path: '/me',
+        headers: { authorization: 'Bearer xxx.yyy.zzz' },
+      },
+    ];
+    for (const probe of probes) {
+      const response = /** @type {any} */ (
+        await app.inject(
+          /** @type {any} */ ({
+            method: probe.method,
+            url: probe.path,
+            headers: probe.headers,
+          }),
+        )
+      );
+      assert.ok(
+        response.headers['x-request-id'],
+        `no correlation ID on ${probe.method} ${probe.path}`,
+      );
+      assertDeclaredResponse(resolved, {
+        method: probe.method,
+        path: probe.path,
+        statusCode: response.statusCode,
+        contentType: String(response.headers['content-type']),
+      });
+    }
+
+    // The limiter's 429 too, which never reaches a route.
+    const limited = buildApp({
+      logger: false,
+      config: readConfig({
+        CALFLEX_OIDC_ISSUER: 'https://auth.example.test',
+        CALFLEX_OIDC_BASE_URL: 'https://auth.example.test',
+        CALFLEX_OIDC_AUDIENCE: 'project-id',
+        CALFLEX_RATE_LIMIT_MAX: '1',
+      }),
+      audience: {
+        async current() {
+          return 'project-id';
+        },
+        async refresh() {
+          return false;
+        },
+      },
+    });
+    try {
+      await limited.ready();
+      await limited.inject({ url: '/me' });
+      const flood = /** @type {any} */ (await limited.inject({ url: '/me' }));
+      assert.equal(flood.statusCode, 429);
+      assertDeclaredResponse(resolved, {
+        method: 'GET',
+        path: '/me',
+        statusCode: flood.statusCode,
+        contentType: String(flood.headers['content-type']),
+      });
+      assert.equal(flood.headers['retry-after'], '60');
+    } finally {
+      await limited.close();
+    }
+  } finally {
+    await app.close();
+  }
+});

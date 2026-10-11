@@ -125,15 +125,42 @@ migrate-down: ## Destructive dev-only rollback of ONE migration
 	$(COMPOSE) up --detach --wait postgres
 	$(COMPOSE) --profile migrate run --build --rm -T migrate node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL -f migrate.config.json
 
-.PHONY: test-caldav test-api-caldav
+.PHONY: test-caldav test-api-caldav check-log-canaries
 
-test-api-caldav: migrate ## Test the API's CalDAV adapter against the internal listener (E05-R02)
-	$(COMPOSE) --profile test run --build --rm -T api-test
+# --- test log canaries (E05-R10) ----------------------------------------------
+#
+# The marker values the API and CalDAV suites plant in rejected content
+# properties, in envelope bytes and in request bodies. A hit anywhere in a
+# service log means event content reached a log line (INV-01, INV-07). The
+# suites never print these values on a successful run.
+CALFLEX_LOG_CANARIES ?= CALFLEX_(REJECTED_HEADER|REJECTED_BODY|EVENT_CONTENT|API_PROPERTY|API_ENVELOPE|API_BODY)_CANARY|CALFLEX_GUARD_MARKER
+
+# The correlation ID `api-test` sends to CalDAV. The CalDAV access log must
+# carry it, which is how "every request logs a correlation ID that is passed to
+# CalDAV" is checked from outside the containers.
+# `server/api/test/integration/caldav-adapter.test.mjs` holds the same value and
+# `server/api/test/log-scan.test.mjs` fails when the two drift apart.
+CALFLEX_API_REQUEST_ID ?= 11111111-2222-4333-8444-555555555555
+
+check-log-canaries: ## Fail when a log file holds a test marker (LOGS=<file>)
+	@test -n "$(LOGS)" || { printf 'LOGS=<file> is required\n' >&2; exit 2; }
+	@if grep -qE '$(CALFLEX_LOG_CANARIES)' "$(LOGS)"; then printf 'logs leaked test canary data\n' >&2; exit 1; fi
+
+test-api-caldav: migrate ## Test the API's CalDAV adapter and check redacted logs (E05-R02, E05-R10)
+	@status=0; $(COMPOSE) --profile test run --build --rm -T api-test || status=$$?; \
+	logs=$$(mktemp); \
+	$(COMPOSE) logs caldav api >"$$logs" 2>&1 || printf 'warning: could not read the api and caldav logs\n' >&2; \
+	$(MAKE) --no-print-directory check-log-canaries LOGS="$$logs" || status=1; \
+	caldav_logs=$$(mktemp); \
+	$(COMPOSE) logs caldav >"$$caldav_logs" 2>&1 || printf 'warning: could not read the caldav logs\n' >&2; \
+	if ! grep -qE '$(CALFLEX_API_REQUEST_ID)' "$$caldav_logs"; then \
+		printf 'the API request id did not reach the CalDAV log\n' >&2; status=1; \
+	fi; \
+	rm -f "$$logs" "$$caldav_logs"; exit $$status
 
 test-caldav: migrate ## Test internal CalDAV protocol/auth and check redacted logs
 	@status=0; $(COMPOSE) --profile test run --build --rm -T caldav-test || status=$$?; \
 	logs=$$(mktemp); \
 	if ! $(COMPOSE) logs caldav >"$$logs" 2>&1; then rm -f "$$logs"; exit 1; fi; \
-	if grep -qE 'CALFLEX_(REJECTED_HEADER|REJECTED_BODY|EVENT_CONTENT)_CANARY|CALFLEX_GUARD_MARKER' "$$logs"; then \
-		printf 'CalDAV logs leaked test canary data\n' >&2; status=1; \
-	fi; rm -f "$$logs"; exit $$status
+	$(MAKE) --no-print-directory check-log-canaries LOGS="$$logs" || status=1; \
+	rm -f "$$logs"; exit $$status

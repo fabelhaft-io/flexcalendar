@@ -14,6 +14,7 @@ import {
   PRECONDITION_SCAN_LIMIT_BYTES,
   PRIVATE_CALENDAR_DISPLAY_NAME,
   PRINCIPAL_HEADER,
+  REQUEST_ID_HEADER,
   createCalDavAdapter,
   delegationHeader,
   delegationTarget,
@@ -461,6 +462,96 @@ test('the signed fetch refuses a foreign origin and resolves a relative target',
     );
   }
   assert.equal(calls.length, 2, 'a foreign target is never sent');
+});
+
+test('the correlation ID travels as X-Request-Id and is never signed', async () => {
+  const { calls, transport } = record(plain(200, 'ok'));
+  const signed = signedFetchFor({
+    origin: new URL(ORIGIN),
+    principal: USER,
+    keyId: KEY_ID,
+    key: KEY,
+    transport,
+    now: () => TIMESTAMP * 1000,
+    nonce: () => NONCE,
+    limit: 1024,
+    timeout: 1000,
+    requestId: USER,
+  });
+
+  await signed('/calendars/x/', { method: 'GET' });
+  assert.equal(calls[0].init.headers.get(REQUEST_ID_HEADER), USER);
+  // The delegation header is the same bytes with and without a request ID: the
+  // correlation ID is not part of the D-05 signature.
+  assert.equal(
+    calls[0].init.headers.get(PRINCIPAL_HEADER),
+    delegationHeader({
+      keyId: KEY_ID,
+      key: KEY,
+      principal: USER,
+      method: 'GET',
+      target: '/calendars/x/',
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    }),
+  );
+
+  // Without one there is no header at all, rather than an empty value.
+  const { calls: plainCalls, transport: plainTransport } = record(
+    plain(200, 'ok'),
+  );
+  const bare = signedFetchFor({
+    origin: new URL(ORIGIN),
+    principal: USER,
+    keyId: KEY_ID,
+    key: KEY,
+    transport: plainTransport,
+    now: () => TIMESTAMP * 1000,
+    nonce: () => NONCE,
+    limit: 1024,
+    timeout: 1000,
+  });
+  await bare('/calendars/x/', { method: 'GET' });
+  assert.equal(plainCalls[0].init.headers.get(REQUEST_ID_HEADER), null);
+});
+
+test('forUser carries request.id on every call and refuses one that is not a v4 UUID', async () => {
+  const { adapter, calls } = adapterFor(plain(201, ''));
+  await adapter.forUser(USER, { requestId: OTHER_USER }).makeCalendar(CALENDAR);
+  assert.equal(calls[0].init.headers.get(REQUEST_ID_HEADER), OTHER_USER);
+  await adapter
+    .forUser(USER, { requestId: OTHER_USER })
+    .deleteCalendar(CALENDAR);
+  assert.equal(calls[1].init.headers.get(REQUEST_ID_HEADER), OTHER_USER);
+  // Without a request ID every call still works and sends no such header.
+  await adapter.forUser(USER).makeCalendar(CALENDAR);
+  assert.equal(calls[2].init.headers.get(REQUEST_ID_HEADER), null);
+
+  // Anything that is not a lowercase v4 UUID is refused before any request
+  // exists, so a header value can never reach the wire unfiltered.
+  for (const id of [
+    '',
+    'nope',
+    OTHER_USER.toUpperCase(),
+    `${OTHER_USER}\n`,
+    42,
+  ]) {
+    assert.throws(
+      () => adapter.forUser(USER, { requestId: /** @type {string} */ (id) }),
+      (/** @type {CalDavError} */ error) => {
+        assert.equal(error.kind, 'invalid-requestId', String(id));
+        if (String(id) !== '') {
+          assert.ok(!error.message.includes(String(id)), error.message);
+        }
+        return true;
+      },
+    );
+  }
+  assert.equal(
+    calls.length,
+    3,
+    'a refused request ID never reaches the transport',
+  );
 });
 
 // --- path safety -------------------------------------------------------------

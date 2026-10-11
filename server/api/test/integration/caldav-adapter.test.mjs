@@ -15,6 +15,7 @@ import { after, before, test } from 'node:test';
 import pg from 'pg';
 
 import { CalDavError, createCalDavAdapter } from '../../src/caldav/adapter.mjs';
+import { classifyCalDavError, problemBody } from '../../src/problem.mjs';
 
 const databaseUrl = process.env.CALFLEX_DATABASE_URL;
 const origin = process.env.CALFLEX_CALDAV_ORIGIN;
@@ -282,6 +283,89 @@ test('a content property is refused with the precondition and its name only', as
     adapter.forUser(users.a).getObject(calendars.a, name),
   );
   assert.equal(/** @type {CalDavError} */ (stored).kind, 'not-found');
+});
+
+/**
+ * The one correlation ID this suite sends to CalDAV. It is fixed, and the
+ * Makefile's `CALFLEX_API_REQUEST_ID` holds the same value, so scanning the
+ * CalDAV access log for it proves the API's `request.id` really travelled with
+ * the request. `log-scan.test.mjs` fails if the two ever drift apart.
+ */
+const REQUEST_ID = '11111111-2222-4333-8444-555555555555';
+
+test('a rejected content property becomes a problem naming it, never its value', async () => {
+  const name = `${randomUUID()}.ics`;
+  const error = await rejectionOf(
+    adapter
+      .forUser(users.a, { requestId: REQUEST_ID })
+      .putObject(
+        calendars.a,
+        name,
+        withLine(skeleton(), 'SUMMARY:CALFLEX_API_PROPERTY_CANARY'),
+        { ifNoneMatch: '*' },
+      ),
+  );
+  assert.ok(error instanceof CalDavError);
+  assert.equal(error.kind, 'forbidden');
+  assert.equal(error.status, 403);
+  const classified = classifyCalDavError(error);
+  assert.equal(classified.problem, 'private-skeleton-only');
+  assert.equal(classified.property, 'SUMMARY');
+  const problem = JSON.stringify(
+    problemBody(classified.problem, {
+      instance: REQUEST_ID,
+      property: classified.property,
+    }),
+  );
+  assert.ok(
+    !problem.includes('CALFLEX_API_PROPERTY_CANARY'),
+    'the property value must not reach the problem',
+  );
+});
+
+test('envelope bytes and a request body reach CalDAV and never come back', async () => {
+  // Envelope bytes, standing in for the sidecar blob: the guard refuses the
+  // value and names only the property.
+  const envelopeName = `${randomUUID()}.ics`;
+  const envelopeIcs = skeleton().replace(
+    'a'.repeat(64),
+    'CALFLEX_API_ENVELOPE_CANARY',
+  );
+  const envelopeError = await rejectionOf(
+    adapter
+      .forUser(users.a, { requestId: REQUEST_ID })
+      .putObject(calendars.a, envelopeName, envelopeIcs, { ifNoneMatch: '*' }),
+  );
+  assert.ok(envelopeError instanceof CalDavError);
+  assert.equal(envelopeError.kind, 'forbidden');
+  const envelopeProblem = classifyCalDavError(envelopeError);
+  assert.equal(envelopeProblem.problem, 'private-skeleton-only');
+  assert.equal(envelopeProblem.property, 'X-CALFLEX-ENVELOPE-SHA256');
+  assert.ok(
+    !JSON.stringify(envelopeProblem).includes('CALFLEX_API_ENVELOPE_CANARY'),
+    'the envelope bytes must not reach the problem',
+  );
+
+  // A request body that is not a calendar: the marker travels as the body and
+  // the refusal names the component, never the bytes.
+  const bodyName = `${randomUUID()}.ics`;
+  const bodyError = await rejectionOf(
+    adapter
+      .forUser(users.a, { requestId: REQUEST_ID })
+      .putObject(
+        calendars.a,
+        bodyName,
+        `${skeleton()}CALFLEX_API_BODY_CANARY\r\n`,
+        { ifNoneMatch: '*' },
+      ),
+  );
+  assert.ok(bodyError instanceof CalDavError);
+  assert.equal(bodyError.kind, 'forbidden');
+  const serialised = `${bodyError.message}\n${bodyError.stack ?? ''}\n${JSON.stringify(bodyError)}\n${JSON.stringify(classifyCalDavError(bodyError))}`;
+  assert.ok(
+    !serialised.includes('CALFLEX_API_BODY_CANARY'),
+    `the request body must not come back: ${serialised}`,
+  );
 });
 
 test('listObjects returns what was written, and only that', async () => {

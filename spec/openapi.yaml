@@ -12,6 +12,13 @@ info:
     RS256 only. An opaque or malformed token is refused, never introspected.
     The token's `sub` maps to a `users` row, created on first sight from the
     issuer's own userinfo.
+
+    Every error — an auth refusal, a rate-limit refusal, a validation failure
+    or an unhandled fault — is an RFC 9457 problem document
+    (`Content-Type: application/problem+json`, schema `Problem`). Nothing in it
+    is derived from the request or from an exception message. Every response
+    carries a correlation ID in `X-Request-Id`, the same ID that goes to CalDAV
+    and appears in the server logs.
 servers:
   - url: https://api.flexcalendar.de
     description: production
@@ -60,40 +67,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        '400':
+          description: >-
+            The request could not be parsed: a malformed body, a body that is
+            not JSON, or a payload the schema refuses
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '401':
           description: >-
             Missing, duplicated, malformed, opaque, expired, wrongly addressed
             or otherwise unverifiable access token
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Problem'
         '403':
-          description: The issuer does not report the user's email as verified
+          description: >-
+            The issuer does not report the user's email as verified, or a
+            Private calendar refused the write
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: No such resource, or no such operation on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '409':
           description: The user's handle or email address is already taken
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: The request body is larger than the service accepts
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: The request body's media type is not supported
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '502':
           description: The issuer's userinfo could not be read or contradicted the token
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Problem'
         '503':
           description: >-
             No audience is configured yet, or the issuer has no usable signing
             keys
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -129,10 +189,19 @@ components:
           type: string
         email:
           type: string
-    Error:
+    Problem:
       type: object
-      required: [error]
+      description: An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`.
+      required: [type, title, status, instance]
       additionalProperties: false
       properties:
-        error:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        instance:
+          type: string
+        property:
           type: string
