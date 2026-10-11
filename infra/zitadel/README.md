@@ -32,6 +32,14 @@ The helper works for local `.localhost` issuers and the exact staging issuer
 `https://auth.staging.flexcalendar.de` only. Other custom development domains
 are intentionally not allowed by the helper; use `.localhost` names instead.
 
+A token from `make token USER=alice` is a real Android access token whose
+Zitadel session lives for **300 s**; the helper deliberately leaves that session
+running so the token still works at Zitadel's own endpoints, `userinfo`
+included. The API calls userinfo only on a first sight, so a user who already
+has a `users` row is served from the database whatever the session is doing, and
+only a first request for a subject nobody has seen has to arrive within those
+five minutes (E05-R01).
+
 `run.mjs apply|plan|token` is the container entry point. Local provider gRPC goes
 over the private network to `zitadel-api:8080`, using `x-zitadel-forward-host` to
 select the public instance. Public API requests go through Caddy, verifying its
@@ -91,12 +99,23 @@ exists. Do not migrate stale state from a deleted instance.
 - Token helper uses public discovery, authorize with random state and **S256**
   PKCE, user lookup, v2 session password check, v2 OIDC auth-request callback,
   then **authorization-code** exchange for the actual Android registration.
-  It requests openid/profile/project audience, not offline access. It deletes
-  the short-lived (**300 s**) test session afterward. Before printing it verifies
-  **RS256** using discovery's same-origin JWKS, issuer, project audience, subject,
-  expiry and not-before. It rejects cross-origin redirects/endpoints and state
-  mismatches, and refuses production **before** reading credentials or state.
-  No login UI credentials or bootstrap PAT are used on the token path.
+  It requests openid/profile/email/project audience, not offline access. It
+  leaves its short-lived (**300 s**) test session running on purpose: Zitadel
+  refuses an access token whose session is gone (`userinfo` answers 401
+  `access_denied`), so the printed token is only usable at Zitadel's own
+  endpoints while that session lives. Bring a first-sight request to the API
+  within five minutes; a subject that already has a `users` row is answered
+  from the database and never calls userinfo (E05-R01). Before printing it
+  verifies **RS256** using discovery's same-origin JWKS, issuer, project
+  audience, subject, expiry and not-before. It rejects cross-origin
+  redirects/endpoints and state mismatches, and refuses production **before**
+  reading credentials or state. No login UI credentials or bootstrap PAT are
+  used on the token path.
+- After a successful `apply` — and only then — the runner publishes the project
+  ID into `CALFLEX_OIDC_AUDIENCE_OUT` (atomically, mode 0644, nothing else in
+  the file), which is the volume the API reads its expected `aud` from
+  (E05-R01); `plan` and `token` never write it, and the `email` scope above is
+  what lets those tokens call userinfo on a first sight.
 
 ## Staging and production reuse (E08)
 
@@ -131,9 +150,10 @@ CALFLEX_OIDC_ISSUER=https://auth.flexcalendar.de CALFLEX_ZITADEL_ENVIRONMENT=pro
 The provider tests plan all three configurations with a **mock provider**;
 they assert the production helper account, role and PAT are absent, plus policy
 and native/JWT constraints. They do not prove real Zitadel applies. Node tests
-use a stateful stub that enforces one-use codes, PKCE and session deletion,
-separate service credentials, valid JWKS signatures, wrong audience/state and
-production refusal. The real runner CLI is exercised with a stub tofu executable.
+use a stateful stub that enforces one-use codes, PKCE and the 300 s session the
+helper leaves running, separate service credentials, valid JWKS signatures,
+wrong audience/state and production refusal. The real runner CLI is exercised
+with a stub tofu executable.
 
 **Reviewer, outside the sandbox (destructive; local data only):**
 

@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { generateKeyPairSync, sign, createHash } from 'node:crypto';
-import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
+import {
+  mkdtemp,
+  writeFile,
+  rm,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+} from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { getToken, refuseProduction, verifyAccessToken } from './token.mjs';
 import { run } from './run.mjs';
@@ -79,6 +87,13 @@ async function stub(t, overrides = {}) {
           .get('scope')
           .includes('urn:zitadel:iam:org:project:id:project:aud'),
       );
+      // The API's first sight reads `email` and `preferred_username` from
+      // userinfo, so the helper has to ask for the email scope (E05-R01).
+      for (const scope of ['openid', 'profile', 'email'])
+        assert.ok(
+          url.searchParams.get('scope').split(' ').includes(scope),
+          `scope ${scope} is missing`,
+        );
       challenge = url.searchParams.get('code_challenge');
       state = url.searchParams.get('state');
       return redirect(`${issuer}/ui/v2/login/login?authRequest=auth-id`);
@@ -123,11 +138,11 @@ async function stub(t, overrides = {}) {
       });
     }
     if (url.pathname === '/oauth/v2/keys') return json(200, { keys: [jwk] });
-    if (url.pathname === '/v2/sessions/session' && req.method === 'DELETE') {
-      assert.ok(session, 'session must exist before deletion');
-      session = undefined;
-      return json(200, {});
-    }
+    // The helper must NOT delete its test session any more: the token it prints
+    // is only usable at Zitadel's own endpoints while the session lives, and
+    // the API's first sight calls userinfo (E05-R01). A DELETE falls through to
+    // the 404 below and is recorded in `calls`, so a test can assert it never
+    // happens; the session is closed by its 300 s lifetime instead.
     return json(404, {});
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -152,7 +167,7 @@ function settings(baseUrl) {
   };
 }
 
-test('real authorization-code + S256 session flow prints an app-issued, JWKS-verified JWT and deletes session', async (t) => {
+test('real authorization-code + S256 session flow prints an app-issued, JWKS-verified JWT and keeps the session alive', async (t) => {
   const s = await stub(t);
   const token = await getToken(settings(s.baseUrl));
   assert.equal(
@@ -160,17 +175,26 @@ test('real authorization-code + S256 session flow prints an app-issued, JWKS-ver
       .sub,
     'alice-id',
   );
-  assert.equal(s.getSession(), undefined);
+  // The session outlives the helper on purpose: the printed token has to stay
+  // usable at Zitadel's own endpoints (userinfo, which the API's first sight
+  // calls) for its 300 s lifetime, and a deleted session makes Zitadel refuse
+  // it with 401 `access_denied`.
+  assert.ok(s.getSession(), 'the helper must leave the test session running');
+  assert.ok(
+    !s.calls.some((call) => call.method === 'DELETE'),
+    'the helper must not delete the test session',
+  );
 });
 
-test('wrong state fails before exchanging the code; cleans session', async (t) => {
+test('wrong state fails before exchanging the code; the session stays for its lifetime', async (t) => {
   const s = await stub(t, { badState: true });
   await assert.rejects(
     getToken(settings(s.baseUrl)),
     /invalid authorization callback/,
   );
-  assert.equal(s.getSession(), undefined);
-  assert.ok(!s.calls.some((c) => c.path === '/oauth/v2/token'));
+  assert.ok(s.getSession(), 'a failed run must still leave the session alone');
+  assert.ok(!s.calls.some((call) => call.path === '/oauth/v2/token'));
+  assert.ok(!s.calls.some((call) => call.method === 'DELETE'));
 });
 
 test('wrong audience and invalid signature are never printed', async (t) => {
@@ -196,7 +220,8 @@ test('wrong audience and invalid signature are never printed', async (t) => {
       ),
     /lifetime/,
   );
-  assert.equal(s.getSession(), undefined);
+  assert.ok(s.getSession(), 'a rejected token must not cost the session');
+  assert.ok(!s.calls.some((call) => call.method === 'DELETE'));
 });
 
 test('production issuer is refused before credential access, even with local environment', async () => {
@@ -247,6 +272,81 @@ test('apply initializes locked provider then applies chosen environment; plan ex
       '-var-file=environments/local.tfvars',
     ]);
   }
+});
+
+test('apply publishes the project audience for the API; plan never writes it', async (t) => {
+  const s = await stub(t);
+  await mkdir('infra/zitadel/.tools', { recursive: true });
+  const directory = await mkdtemp('infra/zitadel/.tools/audience-');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const target = `${directory}/audience`;
+  const env = {
+    PG_CONN_STR: 'postgresql://test@postgres/zitadel',
+    ZITADEL_ACCESS_TOKEN: 'seed-pat',
+    CALFLEX_ZITADEL_BASE_URL: s.baseUrl,
+    CALFLEX_OIDC_AUDIENCE_OUT: target,
+  };
+  /** @param {string[]} args @param {boolean} [capture] */
+  const execute = (args, capture) => {
+    if (args[0] === 'output') {
+      assert.equal(capture, true, 'outputs are captured, never printed');
+      return JSON.stringify({
+        project_id: { value: 'project-from-tofu' },
+        android_client_id: { value: 'android' },
+      });
+    }
+    return '';
+  };
+
+  await run({ args: ['apply'], env, execute });
+  // Exactly the project id, nothing else, readable by the API container.
+  assert.equal(await readFile(target, 'utf8'), 'project-from-tofu\n');
+  assert.equal((await stat(target)).mode & 0o777, 0o644);
+  assert.deepEqual(await readdir(directory), ['audience']);
+
+  // plan is a dry run: it neither asks for outputs nor writes the file.
+  await rm(target);
+  const calls = [];
+  await run({
+    args: ['plan'],
+    env,
+    execute: (args, capture) => {
+      calls.push(args[0]);
+      return execute(args, capture);
+    },
+  });
+  assert.deepEqual(calls, ['init', 'plan']);
+  await assert.rejects(readFile(target, 'utf8'), /ENOENT/);
+});
+
+test('apply refuses an empty project id and publishes no audience file', async (t) => {
+  const s = await stub(t);
+  await mkdir('infra/zitadel/.tools', { recursive: true });
+  const directory = await mkdtemp('infra/zitadel/.tools/audience-empty-');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const target = `${directory}/audience`;
+  await assert.rejects(
+    run({
+      args: ['apply'],
+      env: {
+        PG_CONN_STR: 'postgresql://test@postgres/zitadel',
+        ZITADEL_ACCESS_TOKEN: 'seed-pat',
+        CALFLEX_ZITADEL_BASE_URL: s.baseUrl,
+        CALFLEX_OIDC_AUDIENCE_OUT: target,
+      },
+      execute: (args) =>
+        args[0] === 'output'
+          ? JSON.stringify({
+              project_id: { value: '' },
+              android_client_id: { value: 'android' },
+            })
+          : '',
+    }),
+    /no project id/,
+  );
+  // Nothing at all was written, not even a truncated or empty file.
+  assert.deepEqual(await readdir(directory), []);
+  await assert.rejects(readFile(target, 'utf8'), /ENOENT/);
 });
 
 function child(command, args, env) {

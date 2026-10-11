@@ -125,7 +125,8 @@ export async function getToken({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: `openid profile urn:zitadel:iam:org:project:id:${projectId}:aud`,
+    // `email` is what the API's first sight reads from userinfo (E05-R01).
+    scope: `openid profile email urn:zitadel:iam:org:project:id:${projectId}:aud`,
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
     state,
@@ -178,58 +179,54 @@ export async function getToken({
     }),
     'create session',
   );
-  try {
-    const callback = successful(
-      await send(`/v2/oidc/auth_requests/${encodeURIComponent(authRequest)}`, {
-        method: 'POST',
-        token: pat,
-        body: {
-          session: {
-            sessionId: session.sessionId,
-            sessionToken: session.sessionToken,
-          },
+  const callback = successful(
+    await send(`/v2/oidc/auth_requests/${encodeURIComponent(authRequest)}`, {
+      method: 'POST',
+      token: pat,
+      body: {
+        session: {
+          sessionId: session.sessionId,
+          sessionToken: session.sessionToken,
         },
-      }),
-      'complete auth request',
-    );
-    let next = new URL(callback.callbackUrl, issuer);
-    for (let hop = 0; next.protocol === 'https:' && hop < 6; hop += 1) {
-      response = await send(next);
-      if (!response.location) throw new Error('callback did not redirect');
-      next = new URL(response.location, issuer);
-    }
-    if (
-      `${next.protocol}${next.pathname}` !== redirectUri ||
-      next.searchParams.get('state') !== state ||
-      !next.searchParams.get('code')
-    ) {
-      throw new Error('invalid authorization callback');
-    }
-    const tokens = successful(
-      await send(discovery.token_endpoint, {
-        method: 'POST',
-        form: {
-          grant_type: 'authorization_code',
-          client_id: clientId,
-          code: next.searchParams.get('code'),
-          redirect_uri: redirectUri,
-          code_verifier: verifier,
-        },
-      }),
-      'exchange code',
-    );
-    if (tokens.token_type?.toLowerCase() !== 'bearer')
-      throw new Error('unexpected OAuth token type');
-    const jwks = successful(await send(discovery.jwks_uri), 'JWKS');
-    verifyAccessToken(tokens.access_token, jwks, { issuer, projectId });
-    return tokens.access_token;
-  } finally {
-    successful(
-      await send(`/v2/sessions/${encodeURIComponent(session.sessionId)}`, {
-        method: 'DELETE',
-        token: pat,
-      }),
-      'delete test session',
-    );
+      },
+    }),
+    'complete auth request',
+  );
+  let next = new URL(callback.callbackUrl, issuer);
+  for (let hop = 0; next.protocol === 'https:' && hop < 6; hop += 1) {
+    response = await send(next);
+    if (!response.location) throw new Error('callback did not redirect');
+    next = new URL(response.location, issuer);
   }
+  if (
+    `${next.protocol}${next.pathname}` !== redirectUri ||
+    next.searchParams.get('state') !== state ||
+    !next.searchParams.get('code')
+  ) {
+    throw new Error('invalid authorization callback');
+  }
+  const tokens = successful(
+    await send(discovery.token_endpoint, {
+      method: 'POST',
+      form: {
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        code: next.searchParams.get('code'),
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+      },
+    }),
+    'exchange code',
+  );
+  if (tokens.token_type?.toLowerCase() !== 'bearer')
+    throw new Error('unexpected OAuth token type');
+  const jwks = successful(await send(discovery.jwks_uri), 'JWKS');
+  verifyAccessToken(tokens.access_token, jwks, { issuer, projectId });
+  // The session created above is deliberately left running, unlike in run 1.
+  // Zitadel refuses a token whose session is gone — userinfo answers 401
+  // `access_denied` — so deleting it made the printed token useless at the very
+  // endpoint the API's first sight calls (E05-R01). Its 300 s lifetime above
+  // ends it; a token only validates at Zitadel's own endpoints while it lives,
+  // and a subject that already has a `users` row never calls userinfo.
+  return tokens.access_token;
 }

@@ -3,11 +3,12 @@
 # `make dev` builds this; production images are built in CI, pinned by digest
 # and owned by E08.
 #
-# The service body is the skeleton in src/ until E05-R01: it boots and answers.
-# The image also carries migrations/, sabredav/ and migrate.config.json for the
-# migrate service. It is a production install of this workspace package;
-# the workspace lockfile stays the single source of resolved
-# versions, which is why the build context is the repository root.
+# The service is the Fastify API of E05-R01: every route but `/healthz` needs a
+# Zitadel access token validated against its JWKS. The image also carries
+# migrations/, sabredav/ and migrate.config.json for the migrate service. It is
+# a production install of this workspace package; the workspace lockfile stays
+# the single source of resolved versions, which is why the build context is the
+# repository root.
 #
 #   dockerfile: server/api/Dockerfile
 #   context:    ../..   (the repository root, see infra/dev/compose.yaml)

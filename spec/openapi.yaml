@@ -5,7 +5,13 @@ info:
   version: 0.0.0
   license: { name: Apache-2.0, identifier: Apache-2.0 }
   description: >-
-    API contract for the readiness probe. E05 adds the product API.
+    API contract for the calendar-flex REST facade. Every operation except the
+    readiness probe requires an OIDC access token from the D-03 IdP, sent as
+    `Authorization: Bearer <JWT>` and validated locally against the IdP's
+    JWKS: issuer, audience (the Zitadel project ID), expiry and not-before, and
+    RS256 only. An opaque or malformed token is refused, never introspected.
+    The token's `sub` maps to a `users` row, created on first sight from the
+    issuer's own userinfo.
 servers:
   - url: https://api.flexcalendar.de
     description: production
@@ -16,11 +22,18 @@ servers:
     variables:
       port:
         default: '8443'
+security:
+  - bearerAuth: []
 paths:
   /healthz:
     get:
       tags: [health]
       operationId: getHealth
+      summary: Readiness probe
+      description: >-
+        Answers without a database, an identity provider or a token. The only
+        operation that does.
+      security: []
       responses:
         '200':
           description: API is ready
@@ -28,7 +41,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+  /me:
+    get:
+      tags: [users]
+      operationId: getMe
+      summary: The authenticated user
+      description: >-
+        The `users` row the access token's `sub` maps to. Created on first
+        sight from the issuer's userinfo (`handle` from `preferred_username`,
+        `email` from `email`, both after `email_verified`); a subject already
+        in `users` is read back without another userinfo call.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The issuer does not report the user's email as verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The user's handle or email address is already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: The issuer's userinfo could not be read or contradicted the token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        A Zitadel-issued JWT access token (RS256, `iss` our issuer, `aud` the
+        project ID). The API validates it against the issuer's JWKS and never
+        introspects it.
   schemas:
     Health:
       type: object
@@ -41,3 +116,23 @@ components:
         service:
           type: string
           enum: [api]
+    User:
+      type: object
+      description: One `public.users` row; every field is a string.
+      required: [id, handle, email]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: The `users.id` uuid.
+        handle:
+          type: string
+        email:
+          type: string
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string

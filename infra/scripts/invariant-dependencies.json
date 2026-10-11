@@ -1,5 +1,7 @@
 {
-  "npm": {},
+  "npm": {
+    "jose": "JWT signature verification of access tokens against the IdP's JWKS (E05-R01); never opens event envelopes."
+  },
   "composer": {},
   "platform": {
     "php": "PHP language runtime; no event-content crypto library.",

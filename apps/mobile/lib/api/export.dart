@@ -4,8 +4,11 @@
 
 // Clients
 export 'health/health_client.dart';
+export 'users/users_client.dart';
 // Data classes
 export 'models/health.dart';
+export 'models/user.dart';
+export 'models/error.dart';
 export 'models/health_status.dart';
 export 'models/health_service.dart';
 // Root client
