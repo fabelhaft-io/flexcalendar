@@ -95,6 +95,8 @@ Agent shell commands run under bubblewrap (`src/lib/sandbox.ts`):
   checks both against pinned SHA-256 hashes on every run and binds the directory read-only. If
   they can't be provisioned (offline, a hash mismatch), the run continues and the agent is told
   that PHP is unavailable. To bump a version, change the URL and both hashes together.
+  `make host-tools` (`src/host-tools.ts`) reuses the same pin to put PHP and Composer on the
+  host's `PATH` as well, together with the Flutter and Dart from `apps/mobile/.fvmrc`.
 - **No Podman.** Rootless `podman` cannot start under bwrap ("Error determining cgroups mode"),
   and the user's Podman socket is deliberately not mounted, because socket access is a sandbox
   escape. `/run/user/<uid>` must never be bound read-write: a failed rootless attempt deleted the

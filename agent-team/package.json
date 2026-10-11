@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev-team": "tsx src/cli.ts",
+    "host-tools": "tsx src/host-tools.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
