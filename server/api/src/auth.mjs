@@ -5,6 +5,11 @@
 // included, so a request without a valid token is always 401 and never 404.
 // `GET`/`HEAD /healthz` is the only exemption, and it stays database-free.
 //
+// `createAuthHook` returns that hook and `registerAuthRoutes` installs the
+// route it protects; `buildApp` installs both, after the rate limiter's own
+// `onRequest` hook, so a flood of bad tokens is counted before any of them is
+// verified.
+//
 // The token's `sub` maps to a `users` row, created on first sight from the
 // issuer's own userinfo (never from an unvalidated token, never by
 // introspection). Every refusal is the same 401 with a fixed body and no
@@ -99,8 +104,13 @@ function identity(request) {
   return /** @type {any} */ (request).user ?? {};
 }
 
-/** @param {import('fastify').FastifyRequest} request */
-function isHealthProbe(request) {
+/**
+ * The one exemption, shared by the auth hook and the rate limiter: exactly
+ * `GET`/`HEAD /healthz`, no prefix and no normalised spelling, so a container
+ * health check is never refused and nothing else slips through.
+ * @param {import('fastify').FastifyRequest} request
+ */
+export function isHealthProbe(request) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false;
   const url = request.raw?.url ?? request.url ?? '';
   return url.split('?')[0] === '/healthz';
@@ -180,17 +190,18 @@ async function resolveUser({ request, reply, store, oidc }) {
 }
 
 /**
- * @param {import('fastify').FastifyInstance} app
+ * The global `onRequest` hook. Returned rather than installed here: `buildApp`
+ * installs it after the rate limiter's hook, in the same routing tree, so the
+ * limiter's hook is both statically ahead of it (CodeQL's
+ * `js/missing-rate-limiting`) and ahead of it at runtime.
  * @param {object} options
  * @param {{issuer?: string}} options.config
  * @param {{verify: Function, userinfo: Function}} options.oidc
- * @param {{findBySubject: Function, createFirstSight: Function}} options.store
  * @param {{current: Function, refresh: Function}} options.audience
+ * @returns {import('fastify').onRequestHookHandler}
  */
-export function registerAuth(app, { config, oidc, store, audience }) {
-  app.decorateRequest('user', null);
-
-  app.addHook('onRequest', async (request, reply) => {
+export function createAuthHook({ config, oidc, audience }) {
+  return async function authenticate(request, reply) {
     if (isHealthProbe(request)) return;
     // Without an issuer or an audience the API cannot validate anyone: 503,
     // never an accepted request.
@@ -234,7 +245,19 @@ export function registerAuth(app, { config, oidc, store, audience }) {
       }
     }
     /** @type {any} */ (request).user = { sub: claims.sub };
-  });
+  };
+}
+
+/**
+ * The request decoration and the route the hook protects: `GET /me`. Installed
+ * by `buildApp` in the routing tree, after both hooks.
+ * @param {import('fastify').FastifyInstance} app
+ * @param {object} options
+ * @param {{findBySubject: Function, createFirstSight: Function}} options.store
+ * @param {{userinfo: Function}} options.oidc
+ */
+export function registerAuthRoutes(app, { store, oidc }) {
+  app.decorateRequest('user', null);
 
   app.get(
     '/me',

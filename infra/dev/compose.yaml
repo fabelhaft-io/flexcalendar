@@ -233,6 +233,10 @@ services:
       # value here wins; empty means "read the file".
       CALFLEX_OIDC_AUDIENCE: ${CALFLEX_OIDC_AUDIENCE:-}
       CALFLEX_OIDC_AUDIENCE_FILE: /oidc/audience
+      # Caddy is exactly one hop in front of the API, and the API's port is not
+      # published: the rate limiter buckets per client, not per Caddy address.
+      # Without this it would trust the socket address, which is Caddy's.
+      CALFLEX_TRUSTED_PROXY_HOPS: "1"
       CALFLEX_CALDAV_ORIGIN: 'http://caldav-internal:8081'
       CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
       CALFLEX_SMTP_URL: "smtp://mailpit:1025"

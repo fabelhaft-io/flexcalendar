@@ -378,6 +378,24 @@ check('the API reaches Zitadel over the internal network, plain HTTP', () =>
     : 'CALFLEX_OIDC_BASE_URL is not the internal Zitadel address',
 );
 
+// --- rate limiting and the client address (E05-R01) ---------------------------
+
+// The API's limiter buckets per client address. Behind Caddy that is only the
+// real client if the API trusts exactly that one hop; with the 0 default every
+// request would arrive from Caddy and share one bucket. The port is not
+// published, so no client can bypass Caddy and reach the socket directly.
+check('the API trusts exactly one proxy hop, so the limiter sees the client', () =>
+  String(services.api?.environment?.CALFLEX_TRUSTED_PROXY_HOPS ?? '') === '1'
+    ? true
+    : 'CALFLEX_TRUSTED_PROXY_HOPS is not "1"',
+);
+
+check('the API publishes no host port a client could reach directly', () =>
+  (services.api?.ports ?? []).length === 0
+    ? true
+    : 'the API publishes a host port',
+);
+
 // --- verdict -----------------------------------------------------------------
 
 process.stdout.write(`\n${checks.length - problems.length}/${checks.length} checks passed\n`);

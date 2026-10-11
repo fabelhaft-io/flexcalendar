@@ -136,6 +136,19 @@ accepted — and the API picks the file up without a restart once it appears.
 An IdP outage does not lock the API out: validated keys are cached for ten
 minutes, and a rotated key is picked up from the JWKS without a restart.
 
+The API also rate-limits, one in-memory bucket per client address: 300 requests
+per 60 s by default (`CALFLEX_RATE_LIMIT_MAX`,
+`CALFLEX_RATE_LIMIT_WINDOW_SECONDS`; `make dev` sets neither), and a request
+over its limit is a `429` with `Retry-After`. `GET`/`HEAD /healthz` is exempt,
+so the container health check keeps working. Buckets are keyed by
+`request.ip`, and this is where the stack matters: Caddy sits in front of the
+API and is its only route in — the API publishes no host port — so the compose
+file sets `CALFLEX_TRUSTED_PROXY_HOPS=1`, the one hop whose `X-Forwarded-For`
+is believed. The default is `0` (the socket address, `X-Forwarded-For`
+ignored), which is right for an API exposed directly and wrong here: every
+request would share Caddy's bucket. Too high is worse the other way: a client
+could put its own address in the header and pick its own bucket.
+
 A token from `make token USER=alice` is a real access token whose Zitadel
 session lives for five minutes, so send the first-sight request for a subject
 that has no row yet inside that window; a subject that already has a `users`
