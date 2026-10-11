@@ -25,7 +25,19 @@
 //   * preservation: every component, property and parameter of the input is in
 //     the output as well — per component path, property name and parameter
 //     name, so a single lost `X-` parameter fails even when the value is
-//     untouched.
+//     untouched. This is checked twice and independently: once on the
+//     normalised model built with `ical.js`, and again on the raw content lines
+//     of the two texts (`rawLines`). The raw pass exists because the normalised
+//     model is built with the very engine the gate tests: a property or
+//     parameter the engine drops at *parse* time is missing from both
+//     normalised sides and would otherwise pass. The raw pass compares
+//     component paths, property names and the sorted `NAME=value` parameters
+//     only — never a property value, which is the normalised comparison's job.
+//     It ignores `VALUE`, because the value type the normalised side compares is
+//     exactly what `VALUE` names, and it normalises parameter-name case and
+//     quoting, both of which `ical.js` legitimately rewrites. Where the two
+//     passes describe the same difference the message is identical and appears
+//     once.
 //
 // A violation names the fixture, the component path, the property or the
 // parameter, and which side lacks it. It never prints a value: a value appears
@@ -344,6 +356,288 @@ function compareDocuments(id, input, output) {
 }
 
 /**
+ * Unfold a text into its content lines: RFC 5545 § 3.1 folds a line by ending
+ * it and starting the rest with one space or tab, so an unfolding removes that
+ * break and keeps the leading character's remainder. Blank lines are dropped.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function unfoldLines(text) {
+  /** @type {string[]} */
+  const lines = [];
+  /** @type {string | null} */
+  let current = null;
+  for (const raw of text.split(/\r\n|\n|\r/)) {
+    if (/^[ \t]/.test(raw)) {
+      if (current !== null) current += raw.slice(1);
+      continue;
+    }
+    if (current !== null) lines.push(current);
+    current = raw;
+  }
+  if (current !== null) lines.push(current);
+  return lines.filter((line) => line.trim() !== '');
+}
+
+/**
+ * One parameter in comparable form: `NAME=value`, name upper-cased, a quoted
+ * value unquoted. `ical.js` writes parameter names in either case and drops the
+ * quoting when it can, so both are normalised away here; a quoting-only
+ * difference is not a difference.
+ * @param {string} piece
+ * @returns {string}
+ */
+function normaliseParameter(piece) {
+  const equals = piece.indexOf('=');
+  if (equals < 0) return piece.toUpperCase();
+  const name = piece.slice(0, equals).toUpperCase();
+  let value = piece.slice(equals + 1);
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"'))
+    value = value.slice(1, -1);
+  return `${name}=${value}`;
+}
+
+/**
+ * Split one content line into its name, parameters and value. A `;` outside a
+ * quoted parameter value separates parameters; the first `:` outside a quoted
+ * parameter value separates the value (so a quoted `X-` parameter value may
+ * hold `;` and `:`, as Apple's structured location does).
+ * @param {string} line
+ * @returns {{name: string, parameters: string[], value: string}}
+ */
+function splitContentLine(line) {
+  let quoted = false;
+  let colon = line.length;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') quoted = !quoted;
+    else if (character === ':' && !quoted) {
+      colon = index;
+      break;
+    }
+  }
+  const head = line.slice(0, colon);
+  const value = colon < line.length ? line.slice(colon + 1) : '';
+  /** @type {string[]} */
+  const pieces = [];
+  let current = '';
+  quoted = false;
+  for (const character of head) {
+    if (character === '"') {
+      quoted = !quoted;
+      current += character;
+    } else if (character === ';' && !quoted) {
+      pieces.push(current);
+      current = '';
+    } else current += character;
+  }
+  pieces.push(current);
+  const name = (pieces.shift() ?? '').toUpperCase();
+  const parameters = pieces.map(normaliseParameter).sort();
+  return { name, parameters, value };
+}
+
+/**
+ * @typedef {object} RawLine
+ * @property {'begin' | 'end' | 'property'} kind
+ * @property {string} path the component path with a sibling index, e.g. `VCALENDAR/VEVENT[0]`
+ * @property {string} name the property name, or the component name on a BEGIN/END
+ * @property {string[]} parameters `NAME=value`, sorted; empty on a BEGIN/END
+ * @property {string} value the value text; empty on a BEGIN/END
+ */
+
+/**
+ * Every content line of a document, unfolded, with its component path. The
+ * sibling index of a component is its position among the siblings that share
+ * its name, the way `indexDocument` numbers them, so the paths of the two
+ * passes line up.
+ * @param {string} text
+ * @returns {RawLine[]}
+ */
+export function rawLines(text) {
+  /** @type {RawLine[]} */
+  const lines = [];
+  /** @type {string[]} */
+  const stack = [];
+  /** @type {Map<string, number>} */
+  const counters = new Map();
+  for (const line of unfoldLines(text)) {
+    const { name, parameters, value } = splitContentLine(line);
+    if (name === 'BEGIN') {
+      const component = value.toUpperCase();
+      const parent = stack.length > 0 ? stack[stack.length - 1] : '';
+      const key = `${parent}\u0000${component}`;
+      const index = counters.get(key) ?? 0;
+      counters.set(key, index + 1);
+      const path = parent ? `${parent}/${component}[${index}]` : component;
+      lines.push({
+        kind: 'begin',
+        path,
+        name: component,
+        parameters: [],
+        value: '',
+      });
+      stack.push(path);
+    } else if (name === 'END') {
+      lines.push({
+        kind: 'end',
+        path: stack.pop() ?? '',
+        name: value.toUpperCase(),
+        parameters: [],
+        value: '',
+      });
+    } else {
+      lines.push({
+        kind: 'property',
+        path: stack[stack.length - 1] ?? '',
+        name,
+        parameters,
+        value,
+      });
+    }
+  }
+  return lines;
+}
+
+/**
+ * A document's raw properties by component path and then by name, in document
+ * order. `VALUE` is left out: it names the value type, which is what the
+ * normalised comparison compares.
+ * @param {string} text
+ * @returns {Map<string, Map<string, string[][]>>}
+ */
+function rawIndex(text) {
+  /** @type {Map<string, Map<string, string[][]>>} */
+  const index = new Map();
+  for (const line of rawLines(text)) {
+    if (line.kind === 'begin') {
+      if (!index.has(line.path)) index.set(line.path, new Map());
+      continue;
+    }
+    if (line.kind !== 'property') continue;
+    const properties = index.get(line.path);
+    if (!properties) continue;
+    const list = properties.get(line.name) ?? [];
+    list.push(line.parameters.filter((p) => !p.startsWith('VALUE=')));
+    properties.set(line.name, list);
+  }
+  return index;
+}
+
+/**
+ * Compare the raw content lines of two texts — the independent check that does
+ * not go through the engine under test. Per component path it compares the
+ * multiset of (property name, sorted `NAME=value` parameters); a value is never
+ * compared here. The messages match the normalised comparison's wording, so a
+ * difference both passes see is reported once.
+ * @param {string} id
+ * @param {string} fixtureText
+ * @param {string} outputText
+ * @returns {string[]}
+ */
+export function compareRawContent(id, fixtureText, outputText) {
+  const before = rawIndex(fixtureText);
+  const after = rawIndex(outputText);
+  const violations = [];
+  const paths = [...new Set([...before.keys(), ...after.keys()])].sort();
+  for (const path of paths) {
+    const left = before.get(path);
+    const right = after.get(path);
+    if (!left) {
+      violations.push(
+        `${id}: ${path}: the component is in the output but not in the fixture`,
+      );
+      continue;
+    }
+    if (!right) {
+      violations.push(
+        `${id}: ${path}: the component is in the fixture but not in the output`,
+      );
+      continue;
+    }
+    const names = [...new Set([...left.keys(), ...right.keys()])].sort();
+    for (const name of names) {
+      const from = left.get(name) ?? [];
+      const to = right.get(name) ?? [];
+      const positions = Math.max(from.length, to.length);
+      for (let position = 0; position < positions; position += 1) {
+        const where = `${id}: ${path}: ${name}[${position}]`;
+        const fixtureParameters = from[position];
+        const outputParameters = to[position];
+        if (!fixtureParameters) {
+          violations.push(
+            `${where}: the property is in the output but not in the fixture`,
+          );
+          continue;
+        }
+        if (!outputParameters) {
+          violations.push(
+            `${where}: the property is in the fixture but not in the output`,
+          );
+          continue;
+        }
+        for (const parameter of fixtureParameters)
+          if (!outputParameters.includes(parameter))
+            violations.push(
+              `${where}: parameter ${parameter.split('=')[0]} is in the fixture but not in the output (fixture value ${describeValue(parameter.slice(parameter.indexOf('=') + 1))})`,
+            );
+        for (const parameter of outputParameters)
+          if (!fixtureParameters.includes(parameter))
+            violations.push(
+              `${where}: parameter ${parameter.split('=')[0]} is in the output but not in the fixture (output value ${describeValue(parameter.slice(parameter.indexOf('=') + 1))})`,
+            );
+      }
+    }
+  }
+  return violations;
+}
+
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** The properties whose value has to name an instant or be an all-day `DATE`. */
+const TIME_PROPERTIES = new Set([
+  'DTSTART',
+  'DTEND',
+  'RECURRENCE-ID',
+  'EXDATE',
+  'RDATE',
+]);
+
+/**
+ * The INV-03 / INV-04 checks an `ours/` fixture has to satisfy: every `UID` is
+ * a lowercase random UUIDv4 (`crypto.randomUUID()`, what our own code writes)
+ * and every time carries an IANA `TZID`, a trailing `Z` or `VALUE=DATE` — never
+ * a floating time. Only the `VEVENT`s are checked: the `DTSTART` of a
+ * `VTIMEZONE` observance is a local wall-clock time by construction and is not
+ * an event time. A violation names the property, never a value.
+ * @param {string} id
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function skeletonViolations(id, text) {
+  /** @type {string[]} */
+  const violations = [];
+  for (const line of rawLines(text)) {
+    if (line.kind !== 'property') continue;
+    if (!line.path.includes('VEVENT[')) continue;
+    if (line.name === 'UID' && !UUID_V4.test(line.value))
+      violations.push(`${id}: ${line.path}: UID is not a lowercase UUIDv4`);
+    if (!TIME_PROPERTIES.has(line.name)) continue;
+    const hasTzid = line.parameters.some((p) => p.startsWith('TZID='));
+    const isDate = line.parameters.includes('VALUE=DATE');
+    const utc = line.value
+      .split(',')
+      .every((value) => /^\d{8}T\d{6}Z$/.test(value));
+    if (!hasTzid && !isDate && !utc)
+      violations.push(
+        `${id}: ${line.path}: ${line.name} carries neither TZID, Z nor VALUE=DATE`,
+      );
+  }
+  return violations;
+}
+
+/**
  * Read one document and register the `VTIMEZONE`s it carries, so the zones are
  * its own and nothing else's. The message of the thrown `CorpusViolation` names
  * a component, property or `TZID`, never a value; the caller prefixes the
@@ -426,11 +720,17 @@ export function checkRoundTrip({ id, text, roundTrip = defaultRoundTrip }) {
       ];
     }
     try {
-      return compareDocuments(
+      const normalised = compareDocuments(
         id,
         indexDocument(before.calendar),
         indexDocument(after.calendar),
       );
+      // The independent raw pass catches what the normalised one cannot: a
+      // property or parameter the engine dropped while parsing, which is then
+      // absent from both normalised sides. It reports the same wording for the
+      // same difference, so the dedup keeps each difference once.
+      const raw = compareRawContent(id, text, produced);
+      return [...new Set([...normalised, ...raw])];
     } catch (error) {
       return [
         `${id}: the object could not be normalised (${errorLabel(error)})`,

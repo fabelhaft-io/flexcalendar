@@ -3,12 +3,13 @@
 **Owning epic:** [E15 — Interop and regression test program](../../docs/epics/E15-interop-regression.md),
 R01 for the round-trip half and R03 for the recurrence half below.
 
-- **One directory per source.** `ours/` holds objects our own code writes — in Phase 1 that is
-  the Private skeleton of E03-R09 and nothing else. `synthetic/` holds hand-written objects that
-  imitate what stock apps are known to emit. `apple/`, `samsung/`, `google-davx5/`,
-  `android-adapter/` and `thunderbird/` are for objects captured from real devices and arrive
-  from Phase 4 with E15-R04; the harness already walks them, so a capture is gated the day it
-  lands.
+- **One directory per source.** `ours/` holds hand-written objects shaped as the Private
+  skeleton — `adr/0001` § Private calendars and the E03-R09 allow-list define it, and no writer
+  produces one yet; these are what our own code will write, not an imitation of another client.
+  `synthetic/` holds hand-written objects that imitate what stock apps are known to emit.
+  `apple/`, `samsung/`, `google-davx5/`, `android-adapter/` and `thunderbird/` are for objects
+  captured from real devices and arrive from Phase 4 with E15-R04; the harness already walks
+  them, so a capture is gated the day it lands.
 - **Fixtures are test data only:** no product code, no secrets and no real user data. Neutral
   text (`Fixture event`), no real names, addresses or places, every `UID` and identifier made up,
   every envelope hash a synthetic placeholder. Nothing in the corpus is written to a log.
@@ -54,7 +55,11 @@ it asserts:
   semantic.
 - **preservation** (INV-02): every component, property and parameter of the fixture is in the
   output, compared per component path, property name and parameter name — so one lost `X-`
-  parameter fails even when the value is untouched.
+  parameter fails even when the value is untouched. This is checked twice and independently:
+  on the normalised model built with `ical.js`, and again on the raw content lines of the two
+  texts, so a property or parameter the engine drops while parsing — and which would therefore
+  be missing from both normalised sides — still fails. The raw pass names properties and
+  parameters only; it never compares a value.
 - **`TZID`s stand on their own**: a fixture registers exactly the `VTIMEZONE`s it defines
   (`ical.js` carries no zone database, so a `TZID` it does not define would silently become
   floating time), and the same check runs on the round trip's output, which is how a dropped
@@ -63,9 +68,12 @@ it asserts:
 A failure names the fixture, the component path, the property or the parameter, and the side that
 lacks it. Values appear only as a byte length and the first 12 hex digits of their SHA-256, never
 themselves. The suite also carries its own deliberately lossy round trips — a dropped `X-`
-parameter, a dropped property, a dropped `VALARM`, a dropped `VTIMEZONE` — each required to fail
-with that reason, so the gate is shown to be able to fail and not only observed to pass. This is
-test data of `spec/`; the fixtures are never edited to make an engine pass.
+parameter, a dropped property, a dropped `VALARM`, a dropped `VTIMEZONE`, an added component, an
+added property and an added parameter — each required to fail with that reason, so the gate is
+shown to be able to fail and not only observed to pass. A further test over `ours/` checks INV-03
+and INV-04 directly: every `UID` is a lowercase UUIDv4 and every event time carries a `TZID`, a
+trailing `Z` or `VALUE=DATE`, never a floating time. This is test data of `spec/`; the fixtures
+are never edited to make an engine pass.
 
 `ours/` are Private skeletons, so the same files are checked again from the CalDAV side:
 `server/caldav/tests/Unit/PrivateSkeletonCorpusTest.php` feeds each one to

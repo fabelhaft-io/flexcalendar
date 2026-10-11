@@ -29,11 +29,14 @@ import ICAL from 'ical.js';
 
 import {
   checkRoundTrip,
+  compareRawContent,
   corpusRoot,
   defaultRoundTrip,
   describeValue,
   fixtures,
+  rawLines,
   readFixture,
+  skeletonViolations,
   sourceNoteViolation,
 } from './ical-roundtrip.mjs';
 
@@ -486,4 +489,258 @@ test('a value is described by its length and a short hash', () => {
     describeValue('Fixture even'),
   );
   assert.ok(!describeValue('Fixture event').includes('Fixture'));
+});
+
+/**
+ * A minimal document with `lines` as extra `VEVENT` properties, so the raw
+ * comparison can be driven by hand-written texts.
+ * @param {string[]} lines
+ * @returns {string}
+ */
+function rawEvent(lines) {
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Fixture//EN',
+    'BEGIN:VEVENT',
+    'UID:c0ffee00-1111-4222-8333-444455556666',
+    'DTSTAMP:20260101T000000Z',
+    'DTSTART:20261014T100000Z',
+    'DTEND:20261014T110000Z',
+    'SUMMARY:Fixture event',
+    ...lines,
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n');
+}
+
+test('rawLines unfolds a folded line and protects a quoted parameter value', () => {
+  const text = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VEVENT',
+    'UID:c0ffee00-1111-4222-8333-444455556666',
+    'X-FOLDED;X-LONG=averyveryvery',
+    ' longvalue;X-FLAG=1:value',
+    'X-QUOTED;X-PARAM="label: with punct;and comma":value',
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n');
+
+  const lines = rawLines(text);
+  assert.deepEqual(
+    lines.filter((line) => line.kind === 'begin').map((line) => line.path),
+    ['VCALENDAR', 'VCALENDAR/VEVENT[0]'],
+  );
+
+  const folded = lines.find((line) => line.name === 'X-FOLDED');
+  assert.ok(folded, 'the folded line was not read back');
+  assert.equal(folded.kind, 'property');
+  assert.equal(folded.path, 'VCALENDAR/VEVENT[0]');
+  assert.deepEqual(folded.parameters, [
+    'X-FLAG=1',
+    'X-LONG=averyveryverylongvalue',
+  ]);
+  assert.equal(folded.value, 'value');
+
+  // The quoted value holds `:`, `;` and `,`; only the `:` after the closing
+  // quote separates it from the property value.
+  const quoted = lines.find((line) => line.name === 'X-QUOTED');
+  assert.ok(quoted, 'the quoted line was not read back');
+  assert.deepEqual(quoted.parameters, ['X-PARAM=label: with punct;and comma']);
+  assert.equal(quoted.value, 'value');
+});
+
+test('the raw comparison fails on a dropped property', () => {
+  const violations = compareRawContent(
+    'case',
+    rawEvent(['X-FIXTURE;X-LABEL=one:value']),
+    rawEvent([]),
+  );
+  assert.equal(violations.length, 1, violations.join('\n'));
+  assert.match(
+    violations[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]: X-FIXTURE\[0\]: the property is in the fixture but not in the output/,
+  );
+  for (const violation of violations) assert.ok(!violation.includes('one'));
+});
+
+test('the raw comparison fails on a dropped and on an added parameter', () => {
+  const withParameter = rawEvent(['X-FIXTURE;X-LABEL=one:value']);
+  const withoutParameter = rawEvent(['X-FIXTURE:value']);
+
+  const dropped = compareRawContent('case', withParameter, withoutParameter);
+  assert.equal(dropped.length, 1, dropped.join('\n'));
+  assert.match(
+    dropped[0] ?? '',
+    /X-FIXTURE\[0\]: parameter X-LABEL is in the fixture but not in the output/,
+  );
+
+  const added = compareRawContent('case', withoutParameter, withParameter);
+  assert.equal(added.length, 1, added.join('\n'));
+  assert.match(
+    added[0] ?? '',
+    /X-FIXTURE\[0\]: parameter X-LABEL is in the output but not in the fixture/,
+  );
+  for (const violation of added) assert.ok(!violation.includes('one'));
+});
+
+test('the raw comparison fails on a component the output adds or drops', () => {
+  const withAlarm = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Fixture//EN',
+    'BEGIN:VEVENT',
+    'UID:c0ffee00-1111-4222-8333-444455556666',
+    'DTSTAMP:20260101T000000Z',
+    'DTSTART:20261014T100000Z',
+    'DTEND:20261014T110000Z',
+    'SUMMARY:Fixture event',
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    'TRIGGER:-PT10M',
+    'DESCRIPTION:Fixture alarm',
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n');
+  const withoutAlarm = rawEvent([]);
+
+  const dropped = compareRawContent('case', withAlarm, withoutAlarm);
+  assert.equal(dropped.length, 1, dropped.join('\n'));
+  assert.match(
+    dropped[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]\/VALARM\[0\]: the component is in the fixture but not in the output/,
+  );
+
+  const added = compareRawContent('case', withoutAlarm, withAlarm);
+  assert.equal(added.length, 1, added.join('\n'));
+  assert.match(
+    added[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]\/VALARM\[0\]: the component is in the output but not in the fixture/,
+  );
+});
+
+test('a quoting-only or case-only parameter difference is not a difference', () => {
+  const quoted = rawEvent(['X-FIXTURE;X-LABEL="one":value']);
+  const plain = rawEvent(['X-FIXTURE;X-LABEL=one:value']);
+  const lowercased = rawEvent(['X-FIXTURE;x-label=one:value']);
+  assert.deepEqual(compareRawContent('case', quoted, plain), []);
+  assert.deepEqual(compareRawContent('case', plain, quoted), []);
+  assert.deepEqual(compareRawContent('case', lowercased, plain), []);
+});
+
+test('the raw pass reports a parameter the engine drops while parsing', () => {
+  // `ICAL.parse` keeps only the last `X-P` of a repeated parameter, on both
+  // sides of the normalised comparison, so only the raw pass can see the loss.
+  const violations = checkRoundTrip({
+    id: 'case',
+    text: rawEvent(['X-DUP;X-P=1;X-P=2:value']),
+  });
+  assert.equal(violations.length, 1, violations.join('\n'));
+  assert.match(
+    violations[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]: X-DUP\[0\]: parameter X-P is in the fixture but not in the output \(fixture value sha256:/,
+  );
+});
+
+test('a round trip that adds a component fails with the component path named', () => {
+  const violations = checkRoundTrip({
+    id: 'case',
+    text: fixtureText(THUNDERBIRD),
+    roundTrip: lossy((calendar) => {
+      const event = calendar.getFirstSubcomponent('vevent');
+      assert.ok(event);
+      const alarm = new ICAL.Component('valarm');
+      alarm.addPropertyWithValue('action', 'DISPLAY');
+      alarm.addPropertyWithValue('trigger', ICAL.Duration.fromString('-PT10M'));
+      alarm.addPropertyWithValue('description', 'Fixture alarm');
+      event.addSubcomponent(alarm);
+    }),
+  });
+  assert.equal(violations.length, 1, violations.join('\n'));
+  assert.match(
+    violations[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]\/VALARM\[0\]: the component is in the output but not in the fixture/,
+  );
+});
+
+test('a round trip that adds a property fails with the property named', () => {
+  const violations = checkRoundTrip({
+    id: 'case',
+    text: fixtureText(THUNDERBIRD),
+    roundTrip: lossy((calendar) => {
+      const event = calendar.getFirstSubcomponent('vevent');
+      assert.ok(event);
+      event.addPropertyWithValue('x-added', 'Fixture value');
+    }),
+  });
+  assert.equal(violations.length, 1, violations.join('\n'));
+  assert.match(
+    violations[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]: X-ADDED\[0\]: the property is in the output but not in the fixture/,
+  );
+});
+
+test('a round trip that adds a parameter fails with the parameter named', () => {
+  const violations = checkRoundTrip({
+    id: 'case',
+    text: fixtureText(THUNDERBIRD),
+    roundTrip: lossy((calendar) => {
+      const event = calendar.getFirstSubcomponent('vevent');
+      assert.ok(event);
+      const summary = event.getFirstProperty('summary');
+      assert.ok(summary);
+      summary.setParameter('x-added-parameter', '1');
+    }),
+  });
+  assert.equal(violations.length, 1, violations.join('\n'));
+  assert.match(
+    violations[0] ?? '',
+    /VCALENDAR\/VEVENT\[0\]: SUMMARY\[0\]: parameter X-ADDED-PARAMETER is in the output but not in the fixture/,
+  );
+});
+
+test('every ours/ fixture is a lowercase-UUIDv4 skeleton with no floating time', () => {
+  const ours = corpus.filter((fixture) => fixture.source === 'ours');
+  assert.ok(ours.length > 0, 'ours/ is empty');
+  for (const fixture of ours)
+    assert.deepEqual(
+      skeletonViolations(fixture.id, readFixture(fixture)),
+      [],
+      fixture.id,
+    );
+});
+
+test('the ours/ invariant check bites on a v1 UID and a floating time', () => {
+  const clean = fixtureText('ours/private-timed-tzid');
+  assert.deepEqual(skeletonViolations('case', clean), []);
+
+  const v1 = clean.replace(
+    /UID:[^\r\n]*/,
+    'UID:7C9F1A24-3B58-1890-9F01-2A3B4C5D6E7F',
+  );
+  assert.notEqual(v1, clean, 'the fixture has no UID to replace');
+  const v1Violations = skeletonViolations('case', v1);
+  assert.equal(v1Violations.length, 1, v1Violations.join('\n'));
+  assert.match(v1Violations[0] ?? '', /UID is not a lowercase UUIDv4/);
+
+  const floating = clean.replace(
+    /DTSTART;TZID=[^:]*:[^\r\n]*/,
+    'DTSTART:20261014T100000',
+  );
+  assert.notEqual(
+    floating,
+    clean,
+    'the fixture has no TZID DTSTART to replace',
+  );
+  const floatingViolations = skeletonViolations('case', floating);
+  assert.equal(floatingViolations.length, 1, floatingViolations.join('\n'));
+  assert.match(
+    floatingViolations[0] ?? '',
+    /DTSTART carries neither TZID, Z nor VALUE=DATE/,
+  );
 });
