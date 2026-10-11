@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import {
   CONTROL_DATES,
   KINDS,
+  RULING,
   TRANSITIONS,
   YEARS,
   ZONES,
@@ -144,6 +145,37 @@ test('every declared transition matches ICU, and controls have none', () => {
   assert.deepEqual(factProblems(), []);
 });
 
+test('the contested cases carry their pending ruling and both readings', () => {
+  const contested = cases.filter((item) => item.kind === 'daily-skipped');
+  assert.ok(contested.length > 0, 'the table must carry the contested kind');
+  for (const item of contested) {
+    assert.equal(item.ruling, RULING, item.id);
+    assert.ok(item.alternative, item.id);
+    assert.equal(item.alternative.length, item.expected.length, item.id);
+    assert.notDeepEqual(item.alternative, item.expected, item.id);
+    assert.match(item.rfc.rule, /MUST NOT be counted/, item.id);
+    assert.match(item.rfc.rule, /3\.3\.5/, item.id);
+  }
+  for (const item of cases)
+    if (item.kind !== 'daily-skipped') {
+      assert.equal(item.ruling, undefined, item.id);
+      assert.equal(item.alternative, undefined, item.id);
+    }
+});
+
+test('every view-zone case pins the wall clock its viewer shows', () => {
+  const viewed = cases.filter((item) => item.kind === 'view-zone');
+  assert.ok(viewed.length > 0, 'the table must carry the cross-zone kind');
+  for (const item of viewed) {
+    assert.match(item.expectedLocal ?? '', /^\d{8}T\d{6}$/, item.id);
+    // The viewer's reading is a fact of its own zone, never a copy of DTSTART.
+    assert.notEqual(item.expectedLocal, item.input.dtstart, item.id);
+  }
+  for (const item of cases)
+    if (item.kind !== 'view-zone')
+      assert.equal(item.expectedLocal, undefined, item.id);
+});
+
 // --- shape -------------------------------------------------------------------
 
 test('shape: a duplicate id fails', () => {
@@ -213,6 +245,78 @@ test('shape: an unknown kind, zone, key or input fails', () => {
       `${label}: ${failures.join('\n')}`,
     );
   }
+});
+
+test('shape: a daily-skipped case without its ruling or alternative fails', () => {
+  const unruled = byKind('daily-skipped');
+  delete unruled.ruling;
+  assert.ok(
+    shapeProblems([unruled]).some((line) =>
+      line.includes('must carry "ruling": "pending"'),
+    ),
+    shapeProblems([unruled]).join('\n'),
+  );
+
+  const settled = byKind('daily-skipped');
+  settled.ruling = 'settled';
+  assert.ok(
+    shapeProblems([settled]).some((line) =>
+      line.includes('must carry "ruling": "pending"'),
+    ),
+  );
+
+  const unpaired = byKind('daily-skipped');
+  delete unpaired.alternative;
+  assert.ok(
+    shapeProblems([unpaired]).some((line) =>
+      line.includes('must carry alternative'),
+    ),
+    shapeProblems([unpaired]).join('\n'),
+  );
+
+  const short = byKind('daily-skipped');
+  assert.ok(short.alternative);
+  short.alternative = short.alternative.slice(0, 3);
+  assert.ok(
+    shapeProblems([short]).some((line) =>
+      line.includes('one instant per expected instant'),
+    ),
+  );
+
+  const onAnotherKind = byKind('daily-existing');
+  onAnotherKind.ruling = 'pending';
+  assert.ok(
+    shapeProblems([onAnotherKind]).some((line) =>
+      line.includes('only a daily-skipped case'),
+    ),
+  );
+});
+
+test('shape: a view-zone case without expectedLocal fails', () => {
+  const unlocal = byKind('view-zone');
+  delete unlocal.expectedLocal;
+  assert.ok(
+    shapeProblems([unlocal]).some((line) =>
+      line.includes('must carry expectedLocal'),
+    ),
+    shapeProblems([unlocal]).join('\n'),
+  );
+
+  const malformed = byKind('view-zone');
+  malformed.expectedLocal = '20260329 030000';
+  assert.ok(
+    shapeProblems([malformed]).some((line) =>
+      line.includes('must carry expectedLocal'),
+    ),
+  );
+
+  const onAnotherKind = byKind('skipped');
+  onAnotherKind.expectedLocal = '20260329T030000';
+  assert.ok(
+    shapeProblems([onAnotherKind]).some((line) =>
+      line.includes('only a view-zone case'),
+    ),
+  );
 });
 
 // --- coverage ----------------------------------------------------------------
@@ -359,6 +463,56 @@ test('oracle: counting a skipped recurrence instance fails', () => {
   assert.ok(
     failures.some(
       (line) => line.startsWith(`${mutated.id}:`) && line.includes(DISAGREES),
+    ),
+    failures.join('\n'),
+  );
+});
+
+test('oracle: a wrong alternative fails', () => {
+  const mutated = byKind('daily-skipped');
+  assert.ok(mutated.alternative, mutated.id);
+  const third = atInstant(mutated.alternative[2]);
+  mutated.alternative[2] = formatInstant(third + 3600);
+  const failures = oracleProblems([mutated]);
+  assert.ok(
+    failures.some(
+      (line) =>
+        line.startsWith(`${mutated.id}:`) && line.includes('alternative'),
+    ),
+    failures.join('\n'),
+  );
+});
+
+test('oracle: a daily-skipped case with no gap to skip fails', () => {
+  const flat = byKind('daily-skipped');
+  flat.zone = 'Asia/Kolkata';
+  flat.input = {
+    dtstart: '20260327T023000',
+    rrule: { freq: 'DAILY', count: 3 },
+  };
+  flat.expected = ['20260326T210000Z', '20260327T210000Z', '20260328T210000Z'];
+  flat.alternative = [...flat.expected];
+  assert.ok(
+    oracleProblems([flat]).some((line) =>
+      line.includes('give the same instants'),
+    ),
+    oracleProblems([flat]).join('\n'),
+  );
+});
+
+test('oracle: an expectedLocal an hour out in the view zone fails', () => {
+  const mutated = byKind('view-zone');
+  const local = localSeconds(mutated.expectedLocal);
+  assert.ok(local !== null, mutated.id);
+  mutated.expectedLocal = new Date((local + 3600) * 1000)
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .slice(0, 15);
+  const failures = oracleProblems([mutated]);
+  assert.ok(
+    failures.some(
+      (line) =>
+        line.startsWith(`${mutated.id}:`) && line.includes('expectedLocal'),
     ),
     failures.join('\n'),
   );

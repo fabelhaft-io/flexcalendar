@@ -48,9 +48,18 @@ One case is:
   daily case lists the instances in order, the nonexistent one excluded (see below). An
   all-day case lists exactly `[start, exclusive end]`, the two instants the `DATE` day covers
   **in its viewing zone**.
+- **`ruling` and `alternative`** — on every `daily-skipped` case, and on nothing else. `ruling`
+  is always `"pending"`: that kind's value is contested (see below), and `alternative` lists the
+  instants the other reading gives, one per `expected` instant. A runner takes `expected` **or**
+  `alternative` for such a case, reports which one it matched, and accepts nothing else; a
+  `daily-skipped` result is never called green until the project rules.
+- **`expectedLocal`** — on every `view-zone` case, and on nothing else: the wall clock
+  (`YYYYMMDDTHHMMSS`) the viewer in `input.viewZone` must show for the instant. A UTC instant
+  alone cannot fail a viewer that renders the event in the wrong zone; this can.
 - **`rfc`** — `section` is the RFC 5545 section the values follow, `rule` a one-line paraphrase
   of it. Both are part of the table: a client runner that disagrees with a value should be able
-  to say which rule the table claims.
+  to say which rule the table claims. A `daily-skipped` case's `rule` quotes both sentences of
+  § 3.3.10, because the table's reading follows the first.
 
 ### The kinds
 
@@ -59,9 +68,9 @@ One case is:
 | `skipped` | `DTSTART` at a local time that does not exist on the spring-forward day | § 3.3.5 form 3: read with the UTC offset **before** the gap |
 | `repeated` | `DTSTART` at a local time that occurs twice on the fall-back day | § 3.3.5 form 3: the **first** occurrence |
 | `daily-existing` | `FREQ=DAILY` at a time that exists every day, across a transition | § 3.8.5.3: every instance keeps the local time of `DTSTART`, so the UTC instants shift with the offset |
-| `daily-skipped` | `FREQ=DAILY` at the skipped local time, across the spring transition | § 3.3.10: the nonexistent instance is ignored and does **not** spend one of `COUNT` |
+| `daily-skipped` | `FREQ=DAILY` at the skipped local time, across the spring transition | § 3.3.10: the nonexistent instance is ignored and does **not** spend one of `COUNT` — **contested**, so the case carries `ruling: pending` and the other reading in `alternative` |
 | `all-day` | a `DATE` day on a transition day, in a viewing zone | § 3.8.2.2 with § 3.3.4: one calendar day, exclusive end, instants only in the viewing zone |
-| `view-zone` | a `TZID`-timed event on a day **one** of the two zones switches | § 3.3.5 form 3: the instant belongs to `zone` and does not move with the viewer |
+| `view-zone` | a `TZID`-timed event on a day **one** of the two zones switches | § 3.3.5 form 3: the instant belongs to `zone` and does not move with the viewer — `expected` is the instant, `expectedLocal` the wall clock the viewer must show |
 | `control` | a zone that never transitions, on a date a client might wrongly shift it | § 3.3.5 form 3: one offset all year, one instant |
 
 `all-day` cases appear twice per transition day where it matters: once in the zone's own view
@@ -136,10 +145,19 @@ ignoring it. Both readings are in the same section, so no engine can be called w
 text alone. The table follows the note, because (a) it is the sentence this project's own
 `RULINGS.md` follows for the invalid-date sibling, which is worded identically, and (b) a
 client that invents an instant for a time that never existed shows the user an event at a time
-that never happened. It is reported as an open question with this requirement, for E05-R05 (the
-API's runner) and E12-R01 (the wire spec, which must pin the Dart answer); if the project
-settles on the other reading, the `daily-skipped` cases change in one reviewed commit and every
-client re-runs the same table.
+that never happened.
+
+**Because the prose cannot settle it, no `daily-skipped` case is silent about it.** Each one
+carries `"ruling": "pending"` and `alternative` — the instants the other reading gives (the gap
+instance kept, at the offset before the gap, and counted, so the same `COUNT` reaches one day
+less) — and its `rfc.rule` quotes both sentences. The validator re-derives both readings from
+ICU, refuses a case whose two readings agree, and refuses one that is missing either field. A
+runner reads the field, not this file: for a `daily-skipped` case it accepts `expected` **or**
+`alternative`, reports which one it matched, and accepts nothing else (the contract below). It
+is reported as an open question with this requirement, for E05-R05 (the API's runner) and
+E12-R01 (the wire spec, which must pin the Dart answer); when the project rules, one reviewed
+commit deletes the field and the losing list, and every client re-runs the same table against
+the surviving one.
 
 ## What the engines do (looked at 2026-10-11, not part of the gate)
 
@@ -180,24 +198,31 @@ None of it needs the local stack, Postgres, Podman or the network: the oracle is
 ICU, and the table is a file. What it does:
 
 1. **shape** — one case list, unique ids, real local times and real UTC instants, a known zone
-   and kind, the input its kind needs and nothing else, and a `rfc.section` on every case;
+   and kind, the input its kind needs and nothing else, a `rfc.section` on every case, a
+   `pending` ruling and an `alternative` on every `daily-skipped` case, an `expectedLocal` on
+   every `view-zone` case, and neither field on any other kind;
 2. **coverage** — every zone, year, kind, transition day and cross-zone case the requirement
    names, derived from the transition facts (not from the table, so deleting a case fails);
 3. **facts** — every declared transition date and control date against ICU and against how it
    is derived;
-4. **the oracle** — every expected instant re-derived from ICU's offsets and the RFC rules, with
-   the case id and both instants in the failure, plus a per-kind check that the case is what its
-   `kind` says (a "skipped" time that exists, a "control" zone that transitions, a cross-zone
-   case where neither zone switches — each fails).
+4. **the oracle** — every expected instant re-derived from ICU's offsets and the RFC rules,
+   with the case id and both instants in the failure; the `alternative` of every
+   `daily-skipped` case re-derived the same way (and refused when the two readings agree); the
+   `expectedLocal` of every `view-zone` case re-read from the view zone; plus a per-kind check
+   that the case is what its `kind` says (a "skipped" time that exists, a "control" zone that
+   transitions, a cross-zone case where neither zone switches — each fails).
 
 The table was **authored** from the tz database (Python's `zoneinfo`) and the RFC; the oracle
 re-derives it from a different implementation (Node's ICU). The test suite carries the
 mutations that prove the gate bites: an instant an hour out in every kind, a repeated time given
-its second occurrence, a counted skipped instance, a dropped zone, year or kind, a stripped
-`rfc`, and a stale transition fact.
+its second occurrence, a counted skipped instance, a wrong `alternative`, a viewer's wall clock
+an hour out, a dropped zone, year or kind, a stripped `rfc`, and a stale transition fact.
 
 A client runner (E10-R04, E09-R02, E11-R05) reads `cases.json`, builds the object its own way,
 resolves the `zone` — never the device zone, except where `input.viewZone` says otherwise — and
-compares its instants to `expected` in order. On a mismatch it reports the case `id`, both
-instants and the `rfc` the table cites. Like the rest of this tree, the fixtures are test data:
-no real event, no real person, nothing here is logged.
+compares its instants to `expected` in order. For a `view-zone` case it also compares the wall
+clock it would show the viewer in `input.viewZone` to `expectedLocal`. On a `daily-skipped`
+case it may match `expected` or `alternative`, and must say which; matching neither, or calling
+that kind green while `ruling` is `pending`, is a failure. On a mismatch it reports the case
+`id`, both instants and the `rfc` the table cites. Like the rest of this tree, the fixtures are
+test data: no real event, no real person, nothing here is logged.

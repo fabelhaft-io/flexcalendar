@@ -21,7 +21,14 @@
 //   produce, reported with the case id and both instants;
 // - a case whose kind its own zone contradicts (a "skipped" time that exists, a
 //   "control" whose zone transitions that day, a cross-zone case where both or
-//   neither zone switched).
+//   neither zone switched);
+// - a `daily-skipped` case that does not carry `"ruling": "pending"` with its
+//   `alternative` instants, or whose two readings agree: RFC 5545 § 3.3.10
+//   says both things, so the table marks the contested cases instead of
+//   hiding them;
+// - a `view-zone` case that does not carry `expectedLocal`, the wall clock the
+//   viewer in `input.viewZone` must show, or whose value is not what ICU reads
+//   there.
 //
 // The table is authored from the tz database and the RFC, never emitted from
 // this file: the oracle exists to disagree with it, not to generate it.
@@ -131,7 +138,24 @@ const INSTANT_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
 const DATE_RE = /^(\d{4})(\d{2})(\d{2})$/;
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const RFC_RE = /^RFC 5545 § \d+(?:\.\d+)*$/;
-const KEYS = ['id', 'zone', 'kind', 'input', 'expected', 'rfc'];
+const KEYS = [
+  'id',
+  'zone',
+  'kind',
+  'ruling',
+  'input',
+  'expected',
+  'alternative',
+  'expectedLocal',
+  'rfc',
+];
+
+/**
+ * The only ruling a contested `daily-skipped` case may carry: the two readings
+ * of RFC 5545 § 3.3.10 disagree, so no client may call that kind green until a
+ * human rules (see `spec/ical-fixtures/dst/README.md`).
+ */
+export const RULING = 'pending';
 
 /**
  * @typedef {object} CaseInput
@@ -146,8 +170,11 @@ const KEYS = ['id', 'zone', 'kind', 'input', 'expected', 'rfc'];
  * @property {string} id
  * @property {string} zone
  * @property {string} kind
+ * @property {string} [ruling] `'pending'` on every contested `daily-skipped` case.
  * @property {CaseInput} input
  * @property {string[]} expected
+ * @property {string[]} [alternative] The other § 3.3.10 reading; `daily-skipped` only.
+ * @property {string} [expectedLocal] The viewer's wall clock; `view-zone` only.
  * @property {{section: string, rule: string}} rfc
  */
 
@@ -534,6 +561,41 @@ export function shapeProblems(cases) {
           problems.push(
             `${label}: expected ${value} is not a real UTC instant`,
           );
+    const contested = item.kind === 'daily-skipped';
+    if (contested) {
+      if (item.ruling !== RULING)
+        problems.push(
+          `${label}: a daily-skipped case must carry "ruling": "${RULING}" — the two readings of RFC 5545 § 3.3.10 are contested`,
+        );
+      if (!Array.isArray(item.alternative) || item.alternative.length === 0)
+        problems.push(
+          `${label}: a daily-skipped case must carry alternative, the other § 3.3.10 reading`,
+        );
+      else {
+        for (const value of item.alternative)
+          if (instantSeconds(value) === null)
+            problems.push(
+              `${label}: alternative ${value} is not a real UTC instant`,
+            );
+        if (
+          Array.isArray(item.expected) &&
+          item.alternative.length !== item.expected.length
+        )
+          problems.push(
+            `${label}: alternative must name one instant per expected instant (${item.alternative.length} vs ${item.expected.length})`,
+          );
+      }
+    } else if (item.ruling !== undefined || item.alternative !== undefined)
+      problems.push(
+        `${label}: only a daily-skipped case may carry ruling and alternative`,
+      );
+    if (item.kind === 'view-zone') {
+      if (localSeconds(item.expectedLocal) === null)
+        problems.push(
+          `${label}: a view-zone case must carry expectedLocal, the viewer's wall clock YYYYMMDDTHHMMSS in input.viewZone`,
+        );
+    } else if (item.expectedLocal !== undefined)
+      problems.push(`${label}: only a view-zone case may carry expectedLocal`);
     const rfc = item.rfc;
     if (!rfc || typeof rfc !== 'object')
       problems.push(`${label}: rfc must cite the RFC 5545 rule`);
@@ -542,6 +604,15 @@ export function shapeProblems(cases) {
         problems.push(`${label}: rfc.section must name an RFC 5545 section`);
       if (typeof rfc.rule !== 'string' || rfc.rule.trim().length < 20)
         problems.push(`${label}: rfc.rule must paraphrase the rule`);
+      else if (
+        contested &&
+        !(
+          rfc.rule.includes('MUST NOT be counted') && rfc.rule.includes('3.3.5')
+        )
+      )
+        problems.push(
+          `${label}: rfc.rule must cite both sentences of RFC 5545 § 3.3.10 — the ignored instance and the § 3.3.5 interpretation`,
+        );
     }
   }
   return problems;
@@ -711,27 +782,39 @@ function nthSunday(year, month, week) {
 // --- the oracle --------------------------------------------------------------
 
 /**
- * Daily instances from a local start, `count` of them, each keeping the wall
- * clock of `DTSTART`. A local time that does not exist produces no instance and
- * does not spend one of `count` (RFC 5545 § 3.3.10), except for `daily-existing`
- * where the wall clock exists every day and a gap is a table error.
+ * Daily instances from a local start, each keeping the wall clock of
+ * `DTSTART`. `keepGaps` picks one of the two readings of RFC 5545 § 3.3.10:
+ * `false` is the table's `expected` — an instance whose local time does not
+ * exist produces no instance and does not spend one of `count` — and `true` is
+ * the section's closing paragraph — the same instance, read per § 3.3.5 (the
+ * offset before the gap) and counted, which is `alternative`.
  * @param {string} zone @param {number} localStart @param {number} count
- * @param {boolean} dropGaps
- * @returns {{instants: string[], gap: string | null}}
+ * @param {boolean} keepGaps
+ * @returns {string[]}
  */
-function dailyInstances(zone, localStart, count, dropGaps) {
+function dailyInstances(zone, localStart, count, keepGaps) {
   /** @type {string[]} */
   const instants = [];
   for (let day = 0; instants.length < count && day < 400; day += 1) {
     const local = localStart + day * 86400;
     const resolved = resolveLocal(zone, local);
-    if (resolved.kind === 'gap') {
-      if (!dropGaps) return { instants, gap: formatWallClock(local) };
-      continue;
-    }
+    if (resolved.kind === 'gap' && !keepGaps) continue;
     instants.push(formatInstant(resolved.instant));
   }
-  return { instants, gap: null };
+  return instants;
+}
+
+/**
+ * The first day of a daily series whose wall clock does not exist, if any.
+ * @param {string} zone @param {number} localStart @param {number} count
+ * @returns {string | null}
+ */
+function firstGap(zone, localStart, count) {
+  for (let day = 0; day < count; day += 1) {
+    const local = localStart + day * 86400;
+    if (resolveLocal(zone, local).kind === 'gap') return formatWallClock(local);
+  }
+  return null;
 }
 
 /**
@@ -771,19 +854,24 @@ export function oracleProblems(cases) {
           `${label}: ${zone} transitions on ${caseDate(item)}, so it is no control`,
         );
       computed = [formatInstant(resolved.instant)];
+      if (kind === 'view-zone' && typeof input.viewZone === 'string') {
+        const reading = formatWallClock(
+          localOf(input.viewZone, resolved.instant),
+        );
+        if (item.expectedLocal !== reading)
+          problems.push(
+            `${label}: expectedLocal ${item.expectedLocal} but ${computed[0]} read in ${input.viewZone} is ${reading}`,
+          );
+      }
     } else if (['daily-existing', 'daily-skipped'].includes(kind)) {
       const local = localSeconds(input.dtstart);
       const rule = input.rrule;
       if (local === null || !rule) continue;
-      const series = dailyInstances(
-        zone,
-        local,
-        rule.count,
-        kind === 'daily-skipped',
-      );
-      if (series.gap)
-        problems.push(`${label}: ${series.gap} does not exist in ${zone}`);
-      computed = series.instants;
+      if (kind === 'daily-existing') {
+        const gap = firstGap(zone, local, rule.count);
+        if (gap) problems.push(`${label}: ${gap} does not exist in ${zone}`);
+      }
+      computed = dailyInstances(zone, local, rule.count, false);
     } else if (kind === 'all-day') {
       const date = input.date;
       const viewZone = input.viewZone;
@@ -807,6 +895,24 @@ export function oracleProblems(cases) {
         problems.push(
           `${label}: expected ${item.expected.join(' ')} but ICU and the RFC give ${computed.join(' ')}`,
         );
+    if (kind === 'daily-skipped') {
+      const local = localSeconds(input.dtstart);
+      const rule = input.rrule;
+      if (local !== null && rule) {
+        const kept = dailyInstances(zone, local, rule.count, true);
+        if (kept.join(',') === (computed ?? []).join(','))
+          problems.push(
+            `${label}: the two readings of RFC 5545 § 3.3.10 give the same instants, so the case tests nothing`,
+          );
+        if (
+          Array.isArray(item.alternative) &&
+          item.alternative.join(',') !== kept.join(',')
+        )
+          problems.push(
+            `${label}: alternative ${item.alternative.join(' ')} but the § 3.3.5 reading gives ${kept.join(' ')}`,
+          );
+      }
+    }
     const viewZone = input.viewZone;
     if (
       typeof viewZone === 'string' &&

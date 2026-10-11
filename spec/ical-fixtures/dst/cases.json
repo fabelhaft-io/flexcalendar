@@ -1,5 +1,5 @@
 {
-  "note": "E15-R02 DST table. Engine-neutral: a runner builds the object from zone/kind/input and compares the UTC instants in expected. See README.md.",
+  "note": "E15-R02 DST table. Engine-neutral: a runner builds the object from zone/kind/input and compares the UTC instants in expected. A daily-skipped case is contested: it carries \"ruling\": \"pending\" and, in alternative, the other § 3.3.10 reading, either of which a runner may match and must report. A view-zone case also pins expectedLocal, the wall clock its viewer in input.viewZone must show. See README.md.",
   "cases": [
     {
       "id": "berlin-2026-spring-daily-existing",
@@ -13,9 +13,11 @@
       "id": "berlin-2026-spring-daily-skipped",
       "zone": "Europe/Berlin",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20260327T023000", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20260327T013000Z", "20260328T013000Z", "20260330T003000Z", "20260331T003000Z", "20260401T003000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20260327T013000Z", "20260328T013000Z", "20260329T013000Z", "20260330T003000Z", "20260331T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "berlin-2026-spring-all-day",
@@ -47,6 +49,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20260329T090000", "viewZone": "America/New_York"},
       "expected": ["20260329T070000Z"],
+      "expectedLocal": "20260329T030000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -85,9 +88,11 @@
       "id": "berlin-2027-spring-daily-skipped",
       "zone": "Europe/Berlin",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20270326T023000", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20270326T013000Z", "20270327T013000Z", "20270329T003000Z", "20270330T003000Z", "20270331T003000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20270326T013000Z", "20270327T013000Z", "20270328T013000Z", "20270329T003000Z", "20270330T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "berlin-2027-spring-all-day",
@@ -119,6 +124,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20270328T090000", "viewZone": "America/New_York"},
       "expected": ["20270328T070000Z"],
+      "expectedLocal": "20270328T030000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -157,9 +163,11 @@
       "id": "new-york-2026-spring-daily-skipped",
       "zone": "America/New_York",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20260306T023000", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20260306T073000Z", "20260307T073000Z", "20260309T063000Z", "20260310T063000Z", "20260311T063000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20260306T073000Z", "20260307T073000Z", "20260308T073000Z", "20260309T063000Z", "20260310T063000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "new-york-2026-spring-all-day",
@@ -191,6 +199,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20260308T090000", "viewZone": "Europe/Berlin"},
       "expected": ["20260308T130000Z"],
+      "expectedLocal": "20260308T140000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -229,9 +238,11 @@
       "id": "new-york-2027-spring-daily-skipped",
       "zone": "America/New_York",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20270312T023000", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20270312T073000Z", "20270313T073000Z", "20270315T063000Z", "20270316T063000Z", "20270317T063000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20270312T073000Z", "20270313T073000Z", "20270314T073000Z", "20270315T063000Z", "20270316T063000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "new-york-2027-spring-all-day",
@@ -263,6 +274,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20270314T090000", "viewZone": "Europe/Berlin"},
       "expected": ["20270314T130000Z"],
+      "expectedLocal": "20270314T140000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -351,6 +363,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20261101T090000", "viewZone": "America/New_York"},
       "expected": ["20261101T120000Z"],
+      "expectedLocal": "20261101T070000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -415,6 +428,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20271107T090000", "viewZone": "America/New_York"},
       "expected": ["20271107T120000Z"],
+      "expectedLocal": "20271107T070000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -453,9 +467,11 @@
       "id": "sydney-2026-spring-daily-skipped",
       "zone": "Australia/Sydney",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20261002T023000", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20261001T163000Z", "20261002T163000Z", "20261004T153000Z", "20261005T153000Z", "20261006T153000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20261001T163000Z", "20261002T163000Z", "20261003T163000Z", "20261004T153000Z", "20261005T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "sydney-2026-spring-all-day",
@@ -487,6 +503,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20261004T090000", "viewZone": "Pacific/Chatham"},
       "expected": ["20261003T220000Z"],
+      "expectedLocal": "20261004T114500",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -525,9 +542,11 @@
       "id": "sydney-2027-spring-daily-skipped",
       "zone": "Australia/Sydney",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20271001T023000", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20270930T163000Z", "20271001T163000Z", "20271003T153000Z", "20271004T153000Z", "20271005T153000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20270930T163000Z", "20271001T163000Z", "20271002T163000Z", "20271003T153000Z", "20271004T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "sydney-2027-spring-all-day",
@@ -559,6 +578,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20271003T090000", "viewZone": "Pacific/Chatham"},
       "expected": ["20271002T220000Z"],
+      "expectedLocal": "20271003T114500",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -599,6 +619,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20260329T090000", "viewZone": "Europe/Berlin"},
       "expected": ["20260329T033000Z"],
+      "expectedLocal": "20260329T053000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -663,6 +684,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20270328T090000", "viewZone": "Europe/Berlin"},
       "expected": ["20270328T033000Z"],
+      "expectedLocal": "20270328T053000",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -725,9 +747,11 @@
       "id": "chatham-2026-spring-daily-skipped",
       "zone": "Pacific/Chatham",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20260925T031500", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20260924T143000Z", "20260925T143000Z", "20260927T133000Z", "20260928T133000Z", "20260929T133000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20260924T143000Z", "20260925T143000Z", "20260926T143000Z", "20260927T133000Z", "20260928T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "chatham-2026-spring-all-day",
@@ -759,6 +783,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20260927T090000", "viewZone": "Australia/Sydney"},
       "expected": ["20260926T191500Z"],
+      "expectedLocal": "20260927T051500",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     },
     {
@@ -797,9 +822,11 @@
       "id": "chatham-2027-spring-daily-skipped",
       "zone": "Pacific/Chatham",
       "kind": "daily-skipped",
+      "ruling": "pending",
       "input": {"dtstart": "20270924T031500", "rrule": {"freq": "DAILY", "count": 5}},
       "expected": ["20270923T143000Z", "20270924T143000Z", "20270926T133000Z", "20270927T133000Z", "20270928T133000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set."}
+      "alternative": ["20270923T143000Z", "20270924T143000Z", "20270925T143000Z", "20270926T133000Z", "20270927T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
     },
     {
       "id": "chatham-2027-spring-all-day",
@@ -831,6 +858,7 @@
       "kind": "view-zone",
       "input": {"dtstart": "20270926T090000", "viewZone": "Australia/Sydney"},
       "expected": ["20270925T191500Z"],
+      "expectedLocal": "20270926T051500",
       "rfc": {"section": "RFC 5545 § 3.3.5", "rule": "RFC 5545 § 3.3.5 form 3: TZID names the zone the local time is written in, so the instant does not move when the same event is viewed from another zone."}
     }
   ]
