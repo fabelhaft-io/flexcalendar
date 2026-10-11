@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | Cross-cutting. Phase 1: R01–R03, the corpus, the DST table and the API-side runners; each later client adds its runner; Phase 4: R04, R05 |
-| Status | R01–R03 Ready once E02-R04 is Done; R04 and R05 wait for Phase 4 (Shared calendars on staging) |
+| Status | In progress: R03 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E15-R03-differential-recurrence-testing/docs/reviews/E15-R03.md), [PR #63](https://github.com/fabelhaft-io/flexcalendar/pull/63)), Done once merged; R01 and R02 Ready; R04 and R05 wait for Phase 4 (Shared calendars on staging) |
 | Executor | `agent` for harnesses; `human` for device capture and runs |
 | Depends on | E02-R04 |
 | Spec | `05` risks 2, 3 and 10, CLAUDE.md § Risks |
