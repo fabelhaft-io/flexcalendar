@@ -43,3 +43,23 @@ returns no fixtures. It needs Node, PHP and a `composer install` in
 run inside their own component suites, so nothing here needs Postgres, Podman or
 the network. `spec/ical-fixtures/rrule/README.md` documents the fixtures, the
 window and the normalisation.
+
+## E15-R02
+
+`E15-R02.json` runs `node infra/scripts/dst-table.mjs`, the DST table's
+validator and oracle. It reads `spec/ical-fixtures/dst/cases.json` — the E15-R02
+table of one case per DST question, expected results as UTC instants, each citing
+the RFC 5545 section it follows — checks its shape and its coverage, checks the
+transition dates the table is built on against ICU, and re-derives every expected
+instant from Node's own zone database applying the RFC rules by hand. It fails
+with the case id and both instants on a disagreement, and it never imports an
+engine: E15-R02 owns the table, not a runner. `node --test
+infra/scripts/dst-table.test.mjs` is the gate's own suite (run by the tooling
+package's `test` script), which carries the mutations — an instant an hour out in
+every kind, a repeated time given its second occurrence, a counted skipped
+instance, a dropped zone, year or kind, a stripped `rfc` — that prove it bites.
+`spec/ical-fixtures/dst/README.md` documents the table, the two nonexistent-time
+rules and the RFC's disagreement about them.
+
+It needs Node and no local stack, container runtime or network:
+`spec/ical-fixtures/dst/` holds data only.
