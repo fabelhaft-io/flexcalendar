@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { z } from 'zod';
-import { loadConfig } from './config.js';
+import { loadConfig, parseMaxSteps } from './config.js';
 import { findRequirement, branchSlug, resolveSpecDocs, extractH2Section, type Requirement } from './lib/requirements.js';
 import {
   ensureWorktree,
@@ -31,7 +31,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** The first attempt plus two fix cycles (`06` working agreement, guardrails "Stopping conditions"). */
 const MAX_FIX_CYCLES = 2;
 const MAX_IMPLEMENTER_RUNS = 1 + MAX_FIX_CYCLES;
-const MAX_STEPS = 150;
+/** Model turns per implementer or reviewer run: `AGENT_MAX_STEPS`, default 300 (see `config.ts`). */
+const MAX_STEPS = parseMaxSteps(process.env.AGENT_MAX_STEPS);
 const MAX_FINDINGS_CHARS = 12000;
 const MAX_SPEC_DOC_CHARS = 90000;
 
@@ -172,7 +173,7 @@ async function runImplementer(opts: {
     return implementerFallback(
       `Implementer exhausted its ${MAX_STEPS}-step budget before producing a handoff.`,
       `The implementer ran out of its ${MAX_STEPS}-step budget before reporting. Check the log for redundant ` +
-        'tool calls, then trim those or raise MAX_STEPS.',
+        'tool calls, then trim those or raise AGENT_MAX_STEPS.',
     );
   }
   return implementerFallback(
