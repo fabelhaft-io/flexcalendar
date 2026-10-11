@@ -1,0 +1,5 @@
+- **From the E03-R09 reviews, for later requirements** (R09 itself is in PR #47):
+  - **E05-R04, E05-R10:** a write the guard rejects is a 403 whose `DAV:error` holds `cf:private-skeleton-only` and a child `cf:name` (the offending property, parameter or component, or `UNLISTED`). Map it to problem+json with that name and never a value; the API must not forward the CalDAV body;
+  - **E05-R09:** a `VTIMEZONE` the API embeds must stay inside the allow-list (`TZID`, `LAST-MODIFIED`, `TZURL`, `X-LIC-LOCATION`; `STANDARD`/`DAYLIGHT` with `DTSTART`, `TZOFFSETFROM`, `TZOFFSETTO`, `RRULE`, `RDATE`, `TZNAME`). A zone copied from tzurl.org carries `X-PROLEPTIC-TZNAME` and is rejected;
+  - **E15-R01:** the Private-calendar fixtures are skeletons with `X-CALFLEX-ENVELOPE-SHA256` on every `VEVENT`, no content properties, and no `X-` parameters;
+  - the `make test-caldav` log scan greps `CALFLEX_GUARD_MARKER`: a marker that must not reach the log needs that prefix.

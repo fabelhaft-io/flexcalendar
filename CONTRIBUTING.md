@@ -46,10 +46,18 @@ Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
   [`docs/reviews/<ID>.md`](docs/reviews/) on the branch. A `BLOCKED` verdict
   goes back to the implementer on that same branch, for at most two fix
   cycles; after a `PASS` the reviewer pushes the branch and opens the PR.
-  **Only a human merges**: the owner merges the PR, or arms auto-merge on it
-  (`gh pr merge --auto --squash`), which lands it once the required checks
-  pass. Agents never run `gh pr merge`. No check tells an `agent+review` PR
-  (rule 7) from any other, so the owner reviews it before arming auto-merge.
+  **The orchestrator merges its own PR when the merge gate holds** (the
+  owner's decision of 2026-10-11; the gate is
+  [`.agents/skills/orchestrate/SKILL.md`](.agents/skills/orchestrate/SKILL.md)
+  § Merging): an `agent` requirement, the reviewer's `PASS` on the head
+  commit, **Verify required** green on it, and a diff that changes none of
+  the loop's own rules (`.claude/`, `.agents/`, `agent-team/`, `.github/`,
+  this file, `CLAUDE.md`, `docs/06`, `docs/adr/`). It merges with `gh pr merge
+  --squash`, never `--admin`. **Everything else waits for the owner**, who
+  merges the PR or arms auto-merge on it (`gh pr merge --auto --squash`): an
+  `agent+review` PR above all (rule 7), and a PR that changes those rules. No
+  check tells an `agent+review` PR from any other, so the owner reviews it
+  before arming auto-merge. Implementer agents never run `gh pr merge`.
 - **Rules on `main`.** A ruleset allows changes only through a PR, with the
   **Verify required** check green and a squash merge. It blocks force-push and
   deletion and asks for no approving review, because the owner opens and

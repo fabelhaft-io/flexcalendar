@@ -1,0 +1,7 @@
+- **E08:**
+  - production pins images by digest; the dev stack's image tags are no template for that;
+  - **R10 (Zitadel's database role, owner's decision of 2026-10-09, doc PR #42):** a separate requirement, not urgent. Evaluate the options first and write an ADR for the owner to accept; implement only then. A separate startup sequence (a one-off `zitadel init` with admin credentials, then `setup` and `start` as an app role) is the owner's leading hypothesis, not a decision. R02 waits for the accepted ADR. Until then Zitadel and the `zitadel-config` runner use the bootstrap login, a superuser, locally;
+  - E04-R01's second Accept, "from the first production deploy on, CI also migrates a copy of the last released schema", has nothing to act on before the first release. Add the CI step with the first production deploy;
+  - R02/R03 run `infra/zitadel` with `PG_CONN_STR` pointing at the instance's own Zitadel database (state in schema `calflex_tofu`, D-11) and `ZITADEL_ACCESS_TOKEN` from the password manager (E02-R09);
+  - R03: staging's token-helper PAT expires 2030-01-01 and its account holds `IAM_LOGIN_CLIENT`, which is powerful; plan its rotation.
+  - R08: at each Zitadel upgrade, look for a setting that makes PKCE mandatory for public clients, and enable it in `infra/zitadel/` if it exists.

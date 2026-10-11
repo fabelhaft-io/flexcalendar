@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 (R01, R02, R08, R09, R10; R04 is merged into R01); 4 (R03, R05, R06, R07), per ADR 0003 |
-| Status | In progress: R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), R09 ([PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)) and R10 ([PR #50](https://github.com/fabelhaft-io/flexcalendar/pull/50)) Done, 2026-10-10 and 2026-10-11; R02 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E03-R02-discovery/docs/reviews/E03-R02.md), [PR #52](https://github.com/fabelhaft-io/flexcalendar/pull/52)), Done once merged; R08 follows, stacked on it ([PR #54](https://github.com/fabelhaft-io/flexcalendar/pull/54)). Phase 4 reqs wait for M1 |
+| Status | In progress: the Phase 1 requirements are Done, R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), R09 ([PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)), R10 ([PR #50](https://github.com/fabelhaft-io/flexcalendar/pull/50)), R02 ([PR #52](https://github.com/fabelhaft-io/flexcalendar/pull/52)) and R08 ([PR #54](https://github.com/fabelhaft-io/flexcalendar/pull/54)), 2026-10-10 and 2026-10-11. Phase 4 reqs wait for M1 |
 | Executor | `agent+review` (auth and ACL work: R01, R03, R07, R08), `agent` otherwise |
 | Depends on | E02-R03, E04-R01, E04-R02; D-02, D-05, D-18; D-04 for Phase 4 |
 | Spec | `01-architecture.md` § Storage, `02` § CalDAV Server and § Runtime layout, `03`, ADR 0001 § Private calendars — cryptography |

@@ -49,7 +49,7 @@ set the requirement needs and confirm it with the user once.
    **2** fix cycles after the first attempt. After that, stop and hand the branch and findings
    doc to the user. Don't fix product code yourself.
 8. **On PASS:**
-   - set the requirement's progress in its epic's Status cell, on the same branch;
+   - leave the epic's Status cell, the queue and every existing line of `follow-ups.md` alone: they are shared, and the first merge would conflict every other open branch. Put follow-ups for later requirements in the new file `docs/reviews/follow-ups/from-<ID>.md`; a reconcile `doc:` PR marks the requirement Done after the merge;
    - push the branch and open the PR (`gh pr create --base main`). Title is
      `<type>(<ID>): <summary>` with type `feat`, `doc`, `fix`, `chore` or `infra`: PRs are
      squash-merged, so it becomes the commit subject on `main` (`CONTRIBUTING.md`). The body links `docs/reviews/<ID>.md` and ends with the attribution line your system

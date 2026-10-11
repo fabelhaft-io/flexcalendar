@@ -35,7 +35,7 @@ The implementer's self-reported "pass" is not evidence. Neither is a static chec
 
 - The diff touches only what the requirement needs, and every file is inside `--paths`.
 - Unrequested edits to existing code are findings, even when small. E02-R04 dropped an error message from the API's startup log.
-- Follow-ups go in the findings doc and `follow-ups.md`, not in the code.
+- Follow-ups go in the findings doc and in the new file `docs/reviews/follow-ups/from-<ID>.md`, not in the code and not into an existing line of `follow-ups.md`.
 
 ## Facts
 
