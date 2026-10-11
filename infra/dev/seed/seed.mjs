@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// --- calendar-flex local stack: development seed (E02-R03) -------------------
+// --- flexcalendar local stack: development seed (E02-R03) -------------------
 //
 // Loads `infra/dev/seed/users.json` into the running local stack, by way of
 // Zitadel's v1 Management API. `make seed` runs this inside the stack (the

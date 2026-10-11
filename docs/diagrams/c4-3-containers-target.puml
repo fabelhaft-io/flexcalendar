@@ -17,7 +17,7 @@ Person(stockUser, "Family member using a stock app [Phase 4]", "Shared calendars
 
 System_Ext(stockApps, "Stock calendar apps [Phase 4]", "Apple Calendar; Samsung and Google Calendar via DAVx⁵.", $tags="later")
 
-System_Boundary(cf, "calendar-flex") {
+System_Boundary(cf, "flexcalendar") {
   Boundary(clients, "User devices", "plaintext of Private events exists only here") {
     Container(mobile, "Mobile app", "Flutter, Dart 3, sodium_libs", "Android (M1) and iOS (Phase 5). UI, keys, envelope crypto, recovery code, device linking, trusted contacts (Phase 7).", $tags="plaintext")
     Container(web, "Web app [Phase 5]", "React, Vite, FullCalendar, libsodium-wrappers", "Same features as mobile. Keys arrive by device linking or the recovery code; operational crypto subset (D-16).", $tags="plaintextLater")

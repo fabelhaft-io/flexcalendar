@@ -1,4 +1,4 @@
--- --- calendar-flex local stack: first start of the Postgres cluster ---------
+-- --- flexcalendar local stack: first start of the Postgres cluster ---------
 --
 -- Postgres runs every file in /docker-entrypoint-initdb.d once, when the data
 -- volume is empty (infra/dev/compose.yaml mounts this directory read-only

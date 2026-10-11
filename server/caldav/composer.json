@@ -1,5 +1,5 @@
 {
-  "name": "calendar-flex/caldav",
+  "name": "flexcalendar/caldav",
   "description": "CalDAV service with internal delegated authentication",
   "type": "project",
   "license": "Apache-2.0",

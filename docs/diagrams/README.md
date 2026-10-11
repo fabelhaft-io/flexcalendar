@@ -1,6 +1,6 @@
 # Diagrams
 
-C4 model views of calendar-flex, written in PlantUML with the C4-PlantUML library bundled in PlantUML's standard library (`!include <C4/...>`), so no network access is needed to render them. `docs/01-architecture.md` § C4 diagrams describes each view.
+C4 model views of flexcalendar, written in PlantUML with the C4-PlantUML library bundled in PlantUML's standard library (`!include <C4/...>`), so no network access is needed to render them. `docs/01-architecture.md` § C4 diagrams describes each view.
 
 Render all of them to SVG:
 

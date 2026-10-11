@@ -74,8 +74,8 @@ export function createReviewerAgent({
   });
 
   return new Agent({
-    id: 'calendar-flex-reviewer',
-    name: 'calendar-flex Reviewer',
+    id: 'flexcalendar-reviewer',
+    name: 'flexcalendar Reviewer',
     model,
     workspace,
     instructions: `${guardrails}

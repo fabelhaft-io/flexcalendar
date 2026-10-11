@@ -80,8 +80,8 @@ export function createImplementerAgent({
   });
 
   return createCodingAgent({
-    id: 'calendar-flex-implementer',
-    name: 'calendar-flex Implementer',
+    id: 'flexcalendar-implementer',
+    name: 'flexcalendar Implementer',
     model,
     workspace,
     instructions: `${guardrails}

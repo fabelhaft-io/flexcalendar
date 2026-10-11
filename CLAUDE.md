@@ -1,4 +1,4 @@
-# calendar-flex — Working Notes for Claude
+# flexcalendar — Working Notes for Claude
 
 A cross-platform shared-calendar product. This file captures the non-obvious facts an AI assistant needs to do useful work in this repo. The full design lives in `docs/00-overview.md` through `docs/05-risks-and-open-questions.md` — read those before making non-trivial changes.
 

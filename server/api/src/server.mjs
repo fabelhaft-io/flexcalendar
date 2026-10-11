@@ -1,4 +1,4 @@
-// --- calendar-flex API service: entry point (E05-R01) -----------------------
+// --- flexcalendar API service: entry point (E05-R01) -----------------------
 //
 // `make dev` runs this so the stack has a real API at
 // https://api.localhost:<port>/ . Node 24 + Fastify (D-01), behind the OIDC
@@ -26,10 +26,10 @@ const host = process.env.HOST ?? '0.0.0.0';
 
 try {
   const address = await app.listen({ port, host });
-  process.stdout.write(`calendar-flex api listening on ${address}\n`);
+  process.stdout.write(`flexcalendar api listening on ${address}\n`);
 } catch (error) {
   process.stderr.write(
-    `calendar-flex api failed to start: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+    `flexcalendar api failed to start: ${error instanceof Error ? error.message : 'unknown error'}\n`,
   );
   process.exit(1);
 }

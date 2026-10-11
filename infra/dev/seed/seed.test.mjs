@@ -1,4 +1,4 @@
-// --- calendar-flex local stack: tests for the development seed (E02-R03) -----
+// --- flexcalendar local stack: tests for the development seed (E02-R03) -----
 //
 // Runs `seed.mjs` against a stub Zitadel, so the parts of the seed that can lie
 // are exercised without the stack: the Management API payloads, the

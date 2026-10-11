@@ -28,7 +28,7 @@ const fixtures = JSON.parse(
 
 /** @param {Record<string, any>} files @param {(root: string) => void} check */
 function tree(files, check) {
-  const root = mkdtempSync(join(tmpdir(), 'calendar-flex-invariant-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'flexcalendar-invariant-test-'));
   try {
     for (const [path, content] of Object.entries(files)) {
       const target = resolve(root, path);

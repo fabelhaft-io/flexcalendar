@@ -20,7 +20,7 @@ test('stack step succeeds, or diagnoses unhealthy/exited containers and fails', 
 case "$*" in
   version) echo 'podman version fixture' ;;
   'compose --file infra/dev/compose.yaml ps -a') echo 'compose status fixture' ;;
-  'ps -a --filter label=com.docker.compose.project=calendar-flex-dev --format {{.ID}}') printf 'healthy\nunhealthy\nexited\n' ;;
+  'ps -a --filter label=com.docker.compose.project=flexcalendar-dev --format {{.ID}}') printf 'healthy\nunhealthy\nexited\n' ;;
   'inspect --format {{.State.Status}} exited') echo exited ;;
   'inspect --format {{.State.Status}} '*) echo running ;;
   *'{{.State.Health.Status}}'*unhealthy) echo unhealthy ;;

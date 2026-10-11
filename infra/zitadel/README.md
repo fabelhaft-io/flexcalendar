@@ -59,7 +59,7 @@ under `/tmp/calflex-tofu/<environment>/.terraform`, not a state volume.
 `tofu output -json`.** Restrict database and backup access accordingly.
 Existing local installations with the old `zitadel-state` volume must run
 `make dev-reset` before applying this backend change (destructive); remove the
-obsolete volume with `podman volume rm calendar-flex-dev_zitadel-state` if it
+obsolete volume with `podman volume rm flexcalendar-dev_zitadel-state` if it
 exists. Do not migrate stale state from a deleted instance.
 
 ## Reviewed auth surface
@@ -168,9 +168,9 @@ make token USER=bob
 
 # Separate teardown: drop ONLY Zitadel's database, keep the rest of Postgres.
 # Stop the stack and discard first-instance PAT files (not database/state files).
-export COMPOSE_PROJECT_NAME=calendar-flex-dev
+export COMPOSE_PROJECT_NAME=flexcalendar-dev
 podman compose --file infra/dev/compose.yaml down --remove-orphans
-podman volume rm calendar-flex-dev_zitadel-bootstrap
+podman volume rm flexcalendar-dev_zitadel-bootstrap
 podman compose --file infra/dev/compose.yaml up --detach --wait postgres
 podman compose --file infra/dev/compose.yaml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "DROP DATABASE zitadel WITH (FORCE)" -c "CREATE DATABASE zitadel"'
 make dev && make seed && make zitadel-plan
@@ -180,7 +180,7 @@ make token USER=alice
 
 The exact containerized plan command is
 `podman compose --file infra/dev/compose.yaml --profile seed run --rm -T zitadel-config plan`
-with `COMPOSE_PROJECT_NAME=calendar-flex-dev` exported, as Make does. Both teardown procedures are **local only**, never staging/production.
+with `COMPOSE_PROJECT_NAME=flexcalendar-dev` exported, as Make does. Both teardown procedures are **local only**, never staging/production.
 For production's no-helper acceptance, run the mock-provider production plan
 assertions with `tofu -chdir=infra/zitadel test -filter=tests/auth.tftest.hcl` and
 review `environments/production.tfvars` plus the three count expressions.

@@ -1,6 +1,6 @@
 ---
 name: dev-team
-description: Run calendar-flex's agent team on one requirement (E<nn>-R<nn> from docs/epics/) with the Claude Code harness — implement, review, fix cycles, and a PR after a PASS. Use when the user says "/dev-team <ID>", "work E03-R01", or asks to hand a backlog requirement to the dev team.
+description: Run flexcalendar's agent team on one requirement (E<nn>-R<nn> from docs/epics/) with the Claude Code harness — implement, review, fix cycles, and a PR after a PASS. Use when the user says "/dev-team <ID>", "work E03-R01", or asks to hand a backlog requirement to the dev team.
 ---
 
 # /dev-team — Claude Code harness coordinator
@@ -24,10 +24,10 @@ set the requirement needs and confirm it with the user once.
    user. Never guess: open questions change the architecture.
 3. **Create or reuse the worktree** from the repo root:
    ```
-   git worktree add ../calendar-flex-agent-<ID> -b feat/<ID>-<slug> main
+   git worktree add ../flexcalendar-agent-<ID> -b feat/<ID>-<slug> main
    ```
    `<slug>` is the requirement title in lowercase kebab-case. When reusing, first
-   `git -C ../calendar-flex-agent-<ID> merge --no-edit main`. On a conflict, `git merge --abort`,
+   `git -C ../flexcalendar-agent-<ID> merge --no-edit main`. On a conflict, `git merge --abort`,
    stop, and hand it to the user. Refuse to start on a dirty worktree.
 4. **Spawn `dev-implementer`** (`subagent_type: "dev-implementer"`). Give it:
    - the requirement text verbatim;

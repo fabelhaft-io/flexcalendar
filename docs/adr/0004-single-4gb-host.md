@@ -7,7 +7,7 @@
 
 ## Context
 
-calendar-flex is a side project. The plan in `02` § Sizing and cost puts it at about €70/month until M1, of which production alone is about €42: an 8 GB CPX32 (€35.49) plus Hetzner server backups (about €7). Staging, a permanent 4 GB twin, is another €19.50.
+flexcalendar is a side project. The plan in `02` § Sizing and cost puts it at about €70/month until M1, of which production alone is about €42: an 8 GB CPX32 (€35.49) plus Hetzner server backups (about €7). Staging, a permanent 4 GB twin, is another €19.50.
 
 The 8 GB host exists for one reason. `02` says the stack fits in 4 GB *except* for Keycloak, which needs 1–1.5 GB on its own. Without it, the rest is about 1.5–2 GB: Postgres around 1 GB, SabreDAV and the API a few hundred MB each, Caddy and the monitoring agents. Hetzner's June 2026 repricing made the gap between 4 GB (CPX22, €19.49) and 8 GB (CPX32, €35.49) €16/month.
 

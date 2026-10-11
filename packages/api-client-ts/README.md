@@ -1,6 +1,6 @@
 # `packages/api-client-ts` — OpenAPI fetch client
 
-The private workspace `@calendar-flex/api-client` exports a typed `createClient`
+The private workspace `@flexcalendar/api-client` exports a typed `createClient`
 wrapper over `openapi-fetch` 0.17.0. `src/schema.d.ts` is generated, never edited,
 from `spec/openapi.yaml` (OpenAPI 3.1.0), using `openapi-typescript` 7.13.0.
 

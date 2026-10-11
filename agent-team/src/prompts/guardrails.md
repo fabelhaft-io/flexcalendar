@@ -1,4 +1,4 @@
-# calendar-flex Agent Team — Rules
+# flexcalendar Agent Team — Rules
 
 These rules bind every agent in both harnesses: the Mastra team in `agent-team/` and the Claude
 Code `/dev-team` skill with its `.claude/agents/`. Where they enforce something differently (the
@@ -57,7 +57,7 @@ your worktree. When this file and the docs disagree, the docs win; say so in `op
   handoff that wrote nothing costs a fix cycle and tells the reviewer nothing.
 - **Toolchains you download stay out of the worktree.** Files under your writable paths are
   committed by the coordinator, so an SDK unpacked there ends up in git. In the Mastra sandbox
-  the one persistent, writable host path is `~/.cache/calendar-flex-agent-team/`: download and
+  the one persistent, writable host path is `~/.cache/flexcalendar-agent-team/`: download and
   unpack there, and check the archive's SHA-256 against the vendor's published value. For
   Flutter, take the official `flutter_linux_<version>-stable.tar.xz` from
   `https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/`, with its hash

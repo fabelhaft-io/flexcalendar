@@ -1,4 +1,4 @@
-# --- calendar-flex local stack: TLS and routing (E02-R03) --------------------
+# --- flexcalendar local stack: TLS and routing (E02-R03) --------------------
 #
 # Caddy is the only published port of the local stack, and it terminates TLS
 # with its own local CA (`docs/02-technology-choices.md` § Runtime layout). This

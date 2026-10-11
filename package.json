@@ -1,8 +1,8 @@
 {
-  "name": "calendar-flex",
+  "name": "flexcalendar",
   "version": "0.0.0",
   "private": true,
-  "description": "calendar-flex monorepo. TypeScript packages are pnpm workspaces (D-09); see pnpm-workspace.yaml.",
+  "description": "flexcalendar monorepo. TypeScript packages are pnpm workspaces (D-09); see pnpm-workspace.yaml.",
   "engines": {
     "node": ">=24.17.0 <25",
     "pnpm": ">=12.9.1 <13"

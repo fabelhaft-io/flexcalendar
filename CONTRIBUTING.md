@@ -38,7 +38,7 @@ Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
   thing is not one. PRs are squash-merged, so the PR title becomes the commit
   subject on `main`.
 - **Fix runs stay on the same branch.** The agent harness creates the branch
-  in a worktree at `../calendar-flex-agent-<ID>` and reuses it, merged forward
+  in a worktree at `../flexcalendar-agent-<ID>` and reuses it, merged forward
   from `main`, for every later run of that requirement — review findings are
   not moved to a `fix/...` branch. The harness never pushes, opens a PR or
   merges; see [`agent-team/README.md`](agent-team/README.md).
