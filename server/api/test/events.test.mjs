@@ -358,6 +358,180 @@ test('a create with a rule and an all-day time writes exactly what was asked', a
   }
 });
 
+test('a TZID event carries its VTIMEZONE through create, read and patch', async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    const collection = `/calendars/${calendarId}/events`;
+    const body = await created(
+      app,
+      calendarId,
+      createBody({
+        start: { local: '20261014T100000', tzid: 'Europe/Berlin' },
+        end: { local: '20261014T110000', tzid: 'Europe/Berlin' },
+      }),
+    );
+    assert.match(body.ical, /^DTSTART;TZID=Europe\/Berlin:20261014T100000$/m);
+    assert.match(body.ical, /^DTEND;TZID=Europe\/Berlin:20261014T110000$/m);
+    assert.equal((body.ical.match(/BEGIN:VTIMEZONE/g) ?? []).length, 1);
+    assert.ok(
+      body.ical.indexOf('BEGIN:VTIMEZONE') < body.ical.indexOf('BEGIN:VEVENT'),
+      'the VTIMEZONE does not precede the event',
+    );
+    // The reading a client shows: the wall clock the object spells and the
+    // instant it names (E05-R09).
+    assert.deepEqual(body.parsed.start, {
+      tzid: 'Europe/Berlin',
+      local: '20261014T100000',
+      utc: '20261014T080000Z',
+    });
+    assert.deepEqual(body.parsed.end, {
+      tzid: 'Europe/Berlin',
+      local: '20261014T110000',
+      utc: '20261014T090000Z',
+    });
+
+    const read = await call(app, {
+      url: `${collection}/${body.uid}`,
+      subject: 'owner',
+    });
+    assert.equal(read.statusCode, 200, read.body);
+    assert.equal(
+      read.json().ical,
+      body.ical,
+      'the read is not the stored bytes',
+    );
+
+    // A patch that moves the end into another zone embeds that zone, and the
+    // definition the object already carried comes back untouched (INV-02).
+    const stored = caldav.stored(calendarId, `${body.uid}.ics`);
+    assert.ok(stored);
+    const patched = await call(app, {
+      method: 'PATCH',
+      url: `${collection}/${body.uid}`,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: {
+        end: { local: '20261014T060000', tzid: 'America/New_York' },
+      },
+    });
+    assert.equal(patched.statusCode, 200, patched.body);
+    const updated = patched.json();
+    assert.match(
+      updated.ical,
+      /^DTSTART;TZID=Europe\/Berlin:20261014T100000$/m,
+    );
+    assert.match(
+      updated.ical,
+      /^DTEND;TZID=America\/New_York:20261014T060000$/m,
+    );
+    assert.equal((updated.ical.match(/BEGIN:VTIMEZONE/g) ?? []).length, 2);
+    assert.match(updated.ical, /^TZID:America\/New_York$/m);
+    assert.equal(
+      (updated.ical.match(/^X-LIC-LOCATION:Europe\/Berlin$/gm) ?? []).length,
+      1,
+    );
+    assert.deepEqual(updated.parsed.end, {
+      tzid: 'America/New_York',
+      local: '20261014T060000',
+      utc: '20261014T100000Z',
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('a stored zone the resolver cannot read survives a patch that leaves the times alone', async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    // The corpus' Microsoft object, trimmed to the skeleton a Private calendar
+    // stores (E03-R09). What this test is about is its own `VTIMEZONE` and the
+    // `TZID` times that name it; the content lines are a Shared calendar's and
+    // the guard would refuse them, so they are dropped rather than rewritten.
+    const uid = 'c1f2a3b4-5d6e-4f70-8a9b-0c1d2e3f4a5b';
+    const seeded = readFileSync(
+      new URL(
+        '../../../spec/ical-fixtures/synthetic/microsoft-windows-zone-name.ics',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+      .replace(/^UID:.*$/m, `UID:${uid}`)
+      .split(/\r?\n/)
+      .filter((line) => !/^(SUMMARY|LOCATION|X-MICROSOFT-)/.test(line))
+      .flatMap((line) =>
+        line.startsWith('DTEND')
+          ? [line, `X-CALFLEX-ENVELOPE-SHA256:${HASH}`]
+          : [line],
+      )
+      .join('\r\n');
+    const etag = caldav.seed(calendarId, `${uid}.ics`, seeded);
+    const url = `/calendars/${calendarId}/events/${uid}`;
+
+    // The read reports the wall clock and the name, and no instant, because the
+    // zone is not one the resolver knows (INV-02).
+    const read = await call(app, { url, subject: 'owner' });
+    assert.equal(read.statusCode, 200, read.body);
+    assert.deepEqual(read.json().parsed.start, {
+      tzid: 'W. Europe Standard Time',
+      local: '20261014T100000',
+    });
+
+    // A patch that names no time leaves the object, its zone and its own
+    // VTIMEZONE exactly as they are.
+    const kept = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': etag },
+      payload: { alarm: { trigger: '-PT30M' } },
+    });
+    assert.equal(kept.statusCode, 200, kept.body);
+    assert.match(
+      kept.json().ical,
+      /^DTSTART;TZID=W\. Europe Standard Time:20261014T100000$/m,
+    );
+    assert.match(kept.json().ical, /^BEGIN:VTIMEZONE$/m);
+    assert.match(kept.json().ical, /^DTSTART:16010325T020000$/m);
+
+    // Touching one time field is the fixed 422 ...
+    const stored = caldav.stored(calendarId, `${uid}.ics`);
+    assert.ok(stored);
+    const refused = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: { start: { utc: '20300601T120000Z' } },
+    });
+    assert.equal(refused.statusCode, 422, refused.body);
+    assertProblem(refused.json(), 'invalid-input');
+    assert.equal(
+      caldav.stored(calendarId, `${uid}.ics`)?.ics,
+      stored.ics,
+      'a refused patch moved the revision',
+    );
+
+    // ... and replacing both is written.
+    const replaced = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: {
+        start: { utc: '20300601T120000Z' },
+        end: { utc: '20300601T130000Z' },
+      },
+    });
+    assert.equal(replaced.statusCode, 200, replaced.body);
+    assert.match(replaced.json().ical, /^DTSTART:20300601T120000Z$/m);
+    assert.deepEqual(replaced.json().parsed.start, {
+      utc: '20300601T120000Z',
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 test('every create refusal is one 422 with a fixed body, and none of them reaches CalDAV', async () => {
   const { app, capture, caldav, calendarId } = await setup();
   try {
@@ -374,14 +548,47 @@ test('every create refusal is one 422 with a fixed body, and none of them reache
         createBody({ start: { date: '2026-10-12', utc: STAMP } }),
       ],
       [
-        'start with a tzid',
+        'start with a floating time',
+        createBody({ start: { local: '20261014T100000' } }),
+      ],
+      // A `TZID` is an IANA zone in its exact spelling, and ICU has to read it
+      // (E05-R09, INV-04).
+      [
+        'start with a zone in the wrong case',
         createBody({
-          start: { tzid: 'Europe/Berlin', local: '20261014T100000' },
+          start: { tzid: 'europe/berlin', local: '20261014T100000' },
         }),
       ],
       [
-        'start with a floating time',
-        createBody({ start: { local: '20261014T100000' } }),
+        'start with a Windows zone',
+        createBody({
+          start: {
+            tzid: 'W. Europe Standard Time',
+            local: '20261014T100000',
+          },
+        }),
+      ],
+      [
+        'start with an unknown zone',
+        createBody({
+          start: { tzid: 'Mars/Olympus', local: '20261014T100000' },
+        }),
+      ],
+      [
+        'start with a tzid beside an instant',
+        createBody({
+          start: { tzid: 'Europe/Berlin', utc: STAMP },
+        }),
+      ],
+      [
+        'start with a tzid and no wall clock',
+        createBody({ start: { tzid: 'Europe/Berlin' } }),
+      ],
+      [
+        'start with an impossible wall clock',
+        createBody({
+          start: { tzid: 'Europe/Berlin', local: '20260230T100000' },
+        }),
       ],
       [
         'a date that is not a date',
@@ -692,11 +899,17 @@ test('a patch of a master leaves the overrides and every other property untouche
       url,
       subject: 'owner',
       headers: { 'if-match': etag },
-      payload: { start: { utc: '20261021T100000Z' } },
+      // Both members move: with the zone maths of E05-R09 the stored `TZID` end
+      // is now comparable, and a start after it is the fixed 422.
+      payload: {
+        start: { utc: '20261021T100000Z' },
+        end: { utc: '20261021T110000Z' },
+      },
     });
     assert.equal(response.statusCode, 200, response.body);
     const after = response.json();
     assert.match(after.ical, /^DTSTART:20261021T100000Z$/m);
+    assert.match(after.ical, /^DTEND:20261021T110000Z$/m);
     // INV-02: the override component and the `VTIMEZONE` it needs came back
     // exactly as they went in.
     assert.deepEqual(linesOf(after.ical, 'VCALENDAR/VEVENT[1]'), before);

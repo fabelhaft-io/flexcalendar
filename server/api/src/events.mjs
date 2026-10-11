@@ -21,6 +21,17 @@
 // fixed `PRODID` is ours. So a client can never write `EXDATE` or
 // `RECURRENCE-ID`, and no value it sends reaches the text verbatim.
 //
+// **A time is a `date`, an `utc` instant or a `local` wall clock beside an IANA
+// `tzid`** (E05-R09, INV-04). A `TZID` write is written as the wall clock it
+// spells, with the `TZID` parameter and the zone's generated `VTIMEZONE` in the
+// object beside it; `parsed` gives the instant that reading names back. The zone
+// has to be an IANA name in its exact spelling that the IANA zone database
+// resolves, so `W. Europe Standard Time`, `europe/berlin` and `Mars/Olympus` are
+// the caller's fixed 422, and so is a reading outside the horizon the embedded
+// definition covers (1970–2100; a `Z` time is how a date outside it is written)
+// — as is a patch that moves one time field of an object whose stored `TZID`
+// cannot be resolved without replacing both.
+//
 // **Writes carry a precondition.** Create writes with `If-None-Match: *`; update
 // and delete need the caller's `If-Match` (428 without it) and forward it to
 // CalDAV, which is the authority on whether it still matches. A `412` answers

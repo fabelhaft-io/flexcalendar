@@ -16,13 +16,21 @@
 //
 // Two properties of the design are worth stating, because both are load-bearing:
 //
-//   * **The module never converts a time.** It writes a `VALUE=DATE` date or a
-//     `Z` instant, and it reads back what the object spells: a `TZID` time is
-//     reported as its wall clock plus its `TZID`, never converted to an instant.
+//   * **The module converts a time only through `src/zones.mjs`.** It writes a
+//     `VALUE=DATE` date, a `Z` instant or a `TZID` wall clock, and it reads back
+//     what the object spells: a `TZID` time is reported as its wall clock plus
+//     its `TZID`, and with the instant that reading names when the zone resolves.
 //     `ical.js` carries no zone database and is wrong on a skipped and on a
-//     repeated local time (`spec/ical-fixtures/dst/README.md`); E05-R09 owns
-//     zone handling. A read-modify-write therefore keeps a stored `TZID` time
-//     exactly as it is and never invents one (INV-02, INV-04).
+//     repeated local time (`spec/ical-fixtures/dst/README.md`), so no instant
+//     here comes out of the library: `instantOf` is the RFC 5545 § 3.3.5 form 3
+//     reader (E05-R09). A read-modify-write keeps a stored `TZID` time exactly as
+//     it is and never invents one (INV-02, INV-04).
+//   * **A written `TZID` carries its own `VTIMEZONE`.** A `TZID` the object does
+//     not define would be a zone no other client can read (the round-trip gate of
+//     E15-R01 refuses one), so a write that names a zone the object lacks embeds
+//     the generated definition from `src/zones.mjs` beside it. A definition the
+//     object already carries — a Windows zone a stock app wrote, say — is left
+//     exactly as it is (INV-02).
 //   * **Nothing a caller sends reaches the text verbatim.** Every field is
 //     parsed into an `ical.js` value and serialised from that value, and the
 //     control characters the library writes through unescaped — a carriage
@@ -45,6 +53,15 @@
 
 import ICAL from 'ical.js';
 
+import {
+  HORIZON,
+  ZoneError,
+  instantOf,
+  isIanaZone,
+  resolves,
+  vtimezoneFor,
+} from './zones.mjs';
+
 /**
  * The `PRODID` of every object this API writes. It matches the `ours/` fixtures
  * of the round-trip corpus, which are the objects our own code produces.
@@ -57,10 +74,33 @@ export const ENVELOPE_HASH_PROPERTY = 'x-calflex-envelope-sha256';
 /** The alarm a skeleton carries; the write guard accepts exactly this one. */
 export const ALARM_DESCRIPTION = 'Reminder';
 
+/**
+ * The instants a `TZID` write may name: the coverage of the `VTIMEZONE` an object
+ * gets, which is generated for `HORIZON` (E05-R09). Its first change sits at the
+ * window's start, so a reading inside the first day of it is not something the
+ * definition can read back, and the last transition is the one before the
+ * window's end — hence a day of margin at the front and the end itself behind.
+ * A write outside it is the caller's fixed 422 rather than an object whose
+ * embedded definition would disagree with the instant `parsed` reports; `utc` is
+ * how a client writes a time outside the horizon.
+ */
+const COVERED = Object.freeze({
+  from:
+    epochOfInstant(`${String(HORIZON.from).replaceAll('-', '')}T000000Z`) +
+    86400,
+  to: epochOfInstant(`${String(HORIZON.to).replaceAll('-', '')}T000000Z`),
+});
+
 /** `YYYY-MM-DD`, the all-day `VALUE=DATE` form. */
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 /** `YYYYMMDDTHHMMSSZ`, the UTC instant INV-04 asks our own writes to carry. */
 const INSTANT = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
+/**
+ * `YYYYMMDDTHHMMSS`, the wall clock a `TZID` write carries. It names no instant
+ * on its own: RFC 5545 § 3.3.5 form 3 turns it into one through the zone's
+ * offsets, which is `instantOf`'s job (E05-R09).
+ */
+const LOCAL = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/;
 /**
  * The characters an RRULE value may hold. RFC 5545 § 3.3.10's `recur` grammar
  * is names, digits and `; , = + - /`, and nothing else — in particular no
@@ -213,8 +253,10 @@ export function master(calendar) {
  * override list; the raw `ical` beside it is the whole object.
  *
  * A time is `{date}` (`YYYY-MM-DD`), `{utc}` (`YYYYMMDDTHHMMSSZ`) or `{local}`
- * with the `TZID` the property names when it names one. A `TZID` time is never
- * converted to an instant here (E05-R09 owns zones).
+ * with the `TZID` the property names when it names one. A `TZID` time keeps the
+ * wall clock the object spells — that is the stored truth, INV-02 — and gains
+ * `utc`, the instant that reading names, when the zone resolves. The instant
+ * comes from `src/zones.mjs`, never from `ical.js` (E05-R09).
  *
  * @param {ICAL.Component} calendar
  * @returns {{uid: string, start: any, end: any, rrule: string | null, alarm: {trigger: string} | null, sequence: number, envelopeSha256: string | null}}
@@ -239,7 +281,7 @@ export function describe(calendar) {
  * Reads a time property back in the shape `src/events.mjs` writes one.
  * @param {ICAL.Component} event
  * @param {string} name
- * @returns {{date: string} | {utc: string} | {local: string, tzid?: string} | null}
+ * @returns {{date: string} | {utc: string} | {local: string, tzid?: string, utc?: string} | null}
  */
 function timeOf(event, name) {
   const property = event.getFirstProperty(name);
@@ -250,7 +292,21 @@ function timeOf(event, name) {
   const fields = value.toJSON();
   const wall = compact(fields);
   const tzid = property.getParameter('tzid');
-  if (typeof tzid === 'string' && tzid !== '') return { tzid, local: wall };
+  if (typeof tzid === 'string' && tzid !== '') {
+    /** @type {{tzid: string, local: string, utc?: string}} */
+    const zoned = { tzid, local: wall };
+    // The zone resolving is what makes the instant computable; a stored text
+    // whose reading the zone cannot hold (an impossible wall clock) keeps its
+    // own spelling and carries no instant rather than failing the whole read.
+    if (resolves(tzid)) {
+      try {
+        zoned.utc = instantOf(wall, tzid);
+      } catch (error) {
+        if (!(error instanceof ZoneError)) throw error;
+      }
+    }
+    return zoned;
+  }
   // A floating time names no instant and carries no `Z`; INV-04 forbids our own
   // writes from producing one, but an object that arrived with one is reported
   // exactly as it is rather than guessed at.
@@ -316,15 +372,36 @@ function textOf(event, name) {
 }
 
 /**
+ * The epoch seconds an iCalendar instant names, for comparing two clocks.
+ * @param {string} instant `YYYYMMDDTHHMMSSZ`
+ * @returns {number}
+ */
+function epochOfInstant(instant) {
+  return (
+    Date.UTC(
+      Number(instant.slice(0, 4)),
+      Number(instant.slice(4, 6)) - 1,
+      Number(instant.slice(6, 8)),
+      Number(instant.slice(9, 11)),
+      Number(instant.slice(11, 13)),
+      Number(instant.slice(13, 15)),
+    ) / 1000
+  );
+}
+
+/**
  * The clock a time property spells, as the object carries it: an all-day date,
- * an instant, a `TZID` wall clock or a floating one. Two clocks are comparable
- * only when they are the same shape: comparing across zones would be zone maths,
- * which this module never does (`spec/ical-fixtures/dst/README.md`, E05-R09).
- * `undefined` when the object carries no such property or holds a value that is
- * not a time at all.
+ * an instant, a `TZID` wall clock or a floating one. A timed clock that names an
+ * instant this module can compute — a `Z` time, or a `TZID` time in a zone the
+ * resolver knows — reports it, through `src/zones.mjs` and never `ical.js`. A
+ * clock that names no computable instant (a floating time, or a `TZID` the
+ * resolver cannot read, the Microsoft zone of the E15-R01 corpus say) reports
+ * its shape and its wall clock instead, and `assertOrder` leaves two of those
+ * alone (INV-02). `undefined` when the object carries no such property or holds
+ * a value that is not a time at all.
  * @param {ICAL.Component} event
  * @param {string} name
- * @returns {{allDay: boolean, scale: string, key: string} | undefined}
+ * @returns {{allDay: boolean, instant?: number, scale?: string, key?: string} | undefined}
  */
 function clockOf(event, name) {
   const property = event.getFirstProperty(name);
@@ -341,10 +418,20 @@ function clockOf(event, name) {
   const wall = compact(value.toJSON());
   const tzid = property.getParameter('tzid');
   if (typeof tzid === 'string' && tzid !== '') {
+    if (resolves(tzid)) {
+      try {
+        return {
+          allDay: false,
+          instant: epochOfInstant(instantOf(wall, tzid)),
+        };
+      } catch (error) {
+        if (!(error instanceof ZoneError)) throw error;
+      }
+    }
     return { allDay: false, scale: `tzid:${tzid}`, key: wall };
   }
   return value.zone === ICAL.Timezone.utcTimezone
-    ? { allDay: false, scale: 'instant', key: `${wall}Z` }
+    ? { allDay: false, instant: epochOfInstant(`${wall}Z`) }
     : { allDay: false, scale: 'floating', key: wall };
 }
 
@@ -356,10 +443,13 @@ function clockOf(event, name) {
  * negative event is not something a client means to write.
  *
  * The routes call this after a create and after a patch, so a member the caller
- * did not send is checked against the stored object all the same. Two clocks in
- * forms this module cannot compare without a zone — a `Z` instant beside a
- * `TZID` wall clock, or two different `TZID`s — are left alone: E05-R09 owns
- * zone handling, and a stored object may legitimately mix them (INV-02).
+ * did not send is checked against the stored object all the same. Two clocks
+ * that name an instant are compared as the instants they name, whatever their
+ * form: a `Z` time beside a `TZID` wall clock and two different `TZID`s are as
+ * comparable as two `Z` times (E05-R09, RFC 5545 § 3.3.5 form 3). Only two
+ * clocks this module cannot turn into an instant — a floating time, or a `TZID`
+ * the resolver cannot read — are left alone when they do not share a shape,
+ * because INV-02 keeps a stored object exactly as its own client wrote it.
  *
  * @param {ICAL.Component} calendar
  * @returns {ICAL.Component}
@@ -371,8 +461,13 @@ export function assertOrder(calendar) {
   const end = clockOf(event, 'dtend');
   if (start === undefined || end === undefined) return calendar;
   if (start.allDay !== end.allDay) throw new IcalError('invalid-times');
-  if (start.scale !== end.scale) return calendar;
-  if (end.key <= start.key) throw new IcalError('invalid-times');
+  if (start.instant !== undefined && end.instant !== undefined) {
+    if (end.instant <= start.instant) throw new IcalError('invalid-times');
+    return calendar;
+  }
+  if (start.scale === undefined || start.scale !== end.scale) return calendar;
+  if (String(end.key) <= String(start.key))
+    throw new IcalError('invalid-times');
   return calendar;
 }
 
@@ -385,8 +480,8 @@ export function assertOrder(calendar) {
  * @param {object} fields
  * @param {string} fields.uid the `UID` (a UUIDv4 the API minted, INV-03)
  * @param {string} fields.dtstamp the `DTSTAMP`, `YYYYMMDDTHHMMSSZ`
- * @param {{date?: string, utc?: string}} fields.start
- * @param {{date?: string, utc?: string} | null} [fields.end]
+ * @param {{date?: string, utc?: string, local?: string, tzid?: string}} fields.start
+ * @param {{date?: string, utc?: string, local?: string, tzid?: string} | null} [fields.end]
  * @param {string | null} [fields.rrule]
  * @param {{trigger: string} | null} [fields.alarm]
  * @param {string | null} [fields.envelopeSha256]
@@ -437,10 +532,17 @@ export function build(fields) {
  * member that is `null` removes the property; `attendees: []` removes every
  * `ATTENDEE`. Nothing else in the document is touched, overrides included.
  *
+ * **A time is only replaced where the API can read what is left.** A patch that
+ * touches `start` or `end` of an object whose stored `TZID` the resolver cannot
+ * read is the fixed 422 unless it replaces *both* — otherwise the merged object
+ * would pair a time the API can compute with one it cannot, and the write would
+ * be the only place that ever saw the difference (INV-02, E05-R09). A patch that
+ * leaves the time fields alone keeps such a stored object byte for byte.
+ *
  * @param {ICAL.Component} calendar
  * @param {object} changes
- * @param {{date?: string, utc?: string} | null} [changes.start]
- * @param {{date?: string, utc?: string} | null} [changes.end]
+ * @param {{date?: string, utc?: string, local?: string, tzid?: string} | null} [changes.start]
+ * @param {{date?: string, utc?: string, local?: string, tzid?: string} | null} [changes.end]
  * @param {string | null} [changes.rrule]
  * @param {{trigger: string} | null} [changes.alarm]
  * @param {string | null} [changes.envelopeSha256]
@@ -455,17 +557,33 @@ export function build(fields) {
 export function patch(calendar, changes) {
   const event = master(calendar);
   if (event === undefined) throw new IcalError('no-event');
+  const touchesTime = changes.start !== undefined || changes.end !== undefined;
+  if (
+    touchesTime &&
+    hasUnreadableZone(event) &&
+    (changes.start === undefined || changes.end === undefined)
+  ) {
+    throw new IcalError('invalid-timezone');
+  }
 
   if (changes.dtstamp !== undefined) {
-    setTime(event, 'dtstamp', instant(changes.dtstamp, 'invalid-dtstamp'));
+    setTime(calendar, event, 'dtstamp', {
+      time: instant(changes.dtstamp, 'invalid-dtstamp'),
+    });
   }
   if (changes.start !== undefined) {
-    setTime(event, 'dtstart', timeField(changes.start, 'invalid-start'));
+    setTime(
+      calendar,
+      event,
+      'dtstart',
+      timeField(changes.start, 'invalid-start'),
+    );
   }
   if (changes.end !== undefined) {
     // `null` is how a caller says "this event has no `DTEND`"; a `DTSTART` is
     // not optional, so `null` there is refused by `timeField`.
     setTime(
+      calendar,
       event,
       'dtend',
       changes.end === null ? null : timeField(changes.end, 'invalid-end'),
@@ -518,14 +636,21 @@ function instant(value, kind) {
 }
 
 /**
- * One time field of a request: `{date}` (`YYYY-MM-DD`, all-day) or `{utc}`
- * (`YYYYMMDDTHHMMSSZ`, an instant) — exactly one member, and nothing else. A
- * `TZID` is refused with the same kind: until E05-R09 lands, a write carrying
- * one is a 422 (INV-04), while a stored `TZID` time is read and round-tripped
- * untouched.
+ * One time field of a request, in exactly one of three forms:
+ *
+ *   * `{date}` — `YYYY-MM-DD`, an all-day `VALUE=DATE`;
+ *   * `{utc}` — `YYYYMMDDTHHMMSSZ`, an instant;
+ *   * `{local, tzid}` — an IANA zone plus the wall clock that zone reads, which
+ *     is written as `DTSTART;TZID=<tzid>:<local>` (RFC 5545 § 3.3.5 form 3).
+ *
+ * Anything else is the caller's fixed 422: a floating `{local}` without a
+ * `tzid`, a `tzid` beside `utc` or `date`, a zone that is not an IANA name in
+ * its exact spelling (`europe/berlin`, `W. Europe Standard Time`) or that ICU
+ * cannot resolve, an impossible wall clock, and two or more members at once.
+ *
  * @param {unknown} value
  * @param {string} kind
- * @returns {ICAL.Time}
+ * @returns {{time: ICAL.Time, tzid?: string} | null}
  */
 function timeField(value, kind) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -533,30 +658,142 @@ function timeField(value, kind) {
   }
   const field = /** @type {Record<string, unknown>} */ (value);
   const members = Object.keys(field);
-  if (members.length !== 1) throw new IcalError(kind);
-  if (members[0] === 'date') {
-    const match = typeof field.date === 'string' ? DATE.exec(field.date) : null;
-    if (!match) throw new IcalError(kind);
-    const date = ICAL.Time.fromDateString(/** @type {string} */ (field.date));
-    // `fromDateString` rolls an impossible date forward (`2026-02-30` becomes
-    // 2 March), so the value has to come back out of the library as it went in.
-    if (dateOf(date) !== field.date) throw new IcalError(kind);
-    return date;
+  if (members.length === 1) {
+    if (members[0] === 'date') {
+      const match =
+        typeof field.date === 'string' ? DATE.exec(field.date) : null;
+      if (!match) throw new IcalError(kind);
+      const date = ICAL.Time.fromDateString(/** @type {string} */ (field.date));
+      // `fromDateString` rolls an impossible date forward (`2026-02-30` becomes
+      // 2 March), so the value has to come back out of the library as it went in.
+      if (dateOf(date) !== field.date) throw new IcalError(kind);
+      return { time: date };
+    }
+    if (members[0] === 'utc') return { time: instant(field.utc, kind) };
+    throw new IcalError(kind);
   }
-  if (members[0] === 'utc') return instant(field.utc, kind);
+  if (
+    members.length === 2 &&
+    members.includes('local') &&
+    members.includes('tzid')
+  ) {
+    return zonedTime(field.local, field.tzid, kind);
+  }
   throw new IcalError(kind);
 }
 
 /**
- * Replaces a time property, or removes it when the value is null.
+ * A `{local, tzid}` field: the zone has to be an IANA name in its exact spelling
+ * that ICU resolves, and the wall clock has to be a reading the zone's own
+ * calendar holds — `20260230T100000` and `20261014T250000` are refused before
+ * `ical.js` sees them, and a reading that does not exist on a spring-forward day
+ * is *not* (RFC 5545 § 3.3.5 form 3 reads it with the offset before the gap;
+ * `instantOf` is that reader, and the E15-R02 table is the contract). The
+ * reading's instant also has to lie inside `COVERED` — the window the embedded
+ * `VTIMEZONE` is generated for — so an object never carries a time its own
+ * definition would read differently; a `Z` time names its instant by itself and
+ * is written whatever the date.
+ *
+ * The value written is the wall clock the caller sent, as a floating `ical.js`
+ * time, with the `TZID` parameter beside it. It is deliberately **not** the
+ * value's zone: registering a zone in `ical.js`'s `TimezoneService` is
+ * process-wide (E04-R04), and the object's own `VTIMEZONE` is what a reader uses.
+ * @param {unknown} local
+ * @param {unknown} tzid
+ * @param {string} kind
+ * @returns {{time: ICAL.Time, tzid: string}}
+ */
+function zonedTime(local, tzid, kind) {
+  if (typeof tzid !== 'string' || !isIanaZone(tzid)) {
+    throw new IcalError(kind);
+  }
+  const match = typeof local === 'string' ? LOCAL.exec(local) : null;
+  if (!match) throw new IcalError(kind);
+  /** @type {string} */
+  let instant;
+  try {
+    instant = instantOf(/** @type {string} */ (local), tzid);
+  } catch (error) {
+    if (!(error instanceof ZoneError)) throw error;
+    throw new IcalError(kind);
+  }
+  // The instant has to be one the embedded definition can read back, or the
+  // object would say one thing to us and another to every client that reads its
+  // own `VTIMEZONE` (`COVERED`, HORIZON).
+  const epoch = epochOfInstant(instant);
+  if (epoch < COVERED.from || epoch > COVERED.to) throw new IcalError(kind);
+  const time = ICAL.Time.fromDateTimeString(
+    `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`,
+  );
+  // The library keeps the fields it was given, an impossible one included, so
+  // the reading has to come back out of it as it went in.
+  if (compact(time.toJSON()) !== local) throw new IcalError(kind);
+  return { time, tzid };
+}
+
+/**
+ * Whether the master carries a `DTSTART`/`DTEND` whose `TZID` the resolver
+ * cannot read — the Microsoft zone of the E15-R01 corpus is one. Such a clock is
+ * read as its wall clock and nothing more, and a patch that touches a time field
+ * must replace both (see `patch`).
+ * @param {ICAL.Component} event
+ * @returns {boolean}
+ */
+function hasUnreadableZone(event) {
+  for (const name of ['dtstart', 'dtend']) {
+    const tzid = event.getFirstProperty(name)?.getParameter('tzid');
+    if (typeof tzid === 'string' && tzid !== '' && !resolves(tzid)) return true;
+  }
+  return false;
+}
+
+/**
+ * Replaces a time property, or removes it when the field is null. A `TZID` field
+ * carries its zone as a parameter **and** in the object: the zone is embedded as
+ * a `VTIMEZONE` unless the object already defines it, so the object stands on its
+ * own wherever it is read (E15-R01's gate refuses a `TZID` an object does not
+ * define), and a definition that is already there — a stock app's own, byte for
+ * byte — is never replaced (INV-02).
+ * @param {ICAL.Component} calendar
  * @param {ICAL.Component} event
  * @param {string} name
- * @param {ICAL.Time | null} value
+ * @param {{time: ICAL.Time, tzid?: string} | null} field
  */
-function setTime(event, name, value) {
+function setTime(calendar, event, name, field) {
   event.removeAllProperties(name);
-  if (value === null) return;
-  event.addPropertyWithValue(name, value);
+  if (field === null) return;
+  const property = event.addPropertyWithValue(name, field.time);
+  if (field.tzid === undefined) return;
+  property.setParameter('tzid', field.tzid);
+  defineZone(calendar, field.tzid);
+}
+
+/**
+ * Embeds the generated `VTIMEZONE` for a zone the object does not define yet.
+ * The component is built from the module's own text, so the object carries
+ * exactly the definition `instantOf` was held to. A definition the object
+ * already carries — a stock app's own, byte for byte — is never replaced
+ * (INV-02), and one is embedded per zone however many times the zone is written.
+ * @param {ICAL.Component} calendar
+ * @param {string} tzid
+ */
+function defineZone(calendar, tzid) {
+  const defined = calendar
+    .getAllSubcomponents('vtimezone')
+    .some((zone) => zone.getFirstPropertyValue('tzid') === tzid);
+  if (defined) return;
+  const zone = new ICAL.Component(ICAL.parse(vtimezoneFor(tzid, HORIZON)));
+  // `ical.js` only appends (`addSubcomponent`) and its component list is cached
+  // by index, so the definition is put in front by re-adding the components
+  // rather than splicing it into `jCal` behind the cache's back. RFC 5545 fixes
+  // no order — the `ours/` fixture and tzurl.org put the `VTIMEZONE` first, and
+  // every reader finds it either way.
+  // `getAllSubcomponents` answers with the component cache itself, which
+  // `removeAllSubcomponents` empties, so the list is copied before it is moved.
+  const components = [...calendar.getAllSubcomponents()];
+  calendar.removeAllSubcomponents();
+  calendar.addSubcomponent(zone);
+  for (const component of components) calendar.addSubcomponent(component);
 }
 
 /**
@@ -613,7 +850,10 @@ function hash(value, kind) {
  * none of them twice — an unknown part is a 422 rather than something the
  * library drops silently. `COUNT` and `UNTIL` are mutually exclusive, and
  * `UNTIL` has the value type of the start: a `DATE` for an all-day rule, a UTC
- * `DATE-TIME` for a timed one. Two families `ical.js` 2.2.1 expands wrongly are
+ * `DATE-TIME` for a timed one — a `TZID` start included, because a timed start
+ * with a zone reference takes a UTC `UNTIL` (§ 3.3.10), which is why a `{local,
+ * tzid}` start accepts `UNTIL=20261015T090000Z` and refuses `UNTIL=20261015`.
+ * Two families `ical.js` 2.2.1 expands wrongly are
  * refused rather than expanded (`spec/ical-fixtures/RULINGS.md`): any rule
  * naming `BYWEEKNO`, and a yearly rule whose start is 29 February.
  *

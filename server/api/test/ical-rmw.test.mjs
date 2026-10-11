@@ -37,6 +37,7 @@ import {
   patch,
   serialise,
 } from '../src/ical-rmw.mjs';
+import { resolves } from '../src/zones.mjs';
 
 const corpus = fixtures();
 
@@ -63,6 +64,31 @@ const valueOf = (text, name) =>
       line.path === 'VCALENDAR/VEVENT[0]' &&
       line.name === name,
   )?.value;
+
+/**
+ * One property's parameters, from the master `VEVENT`.
+ * @param {string} text @param {string} name
+ * @returns {string[]}
+ */
+const parametersOf = (text, name) =>
+  rawLines(text).find(
+    (line) =>
+      line.kind === 'property' &&
+      line.path === 'VCALENDAR/VEVENT[0]' &&
+      line.name === name,
+  )?.parameters ?? [];
+
+/** Every content line of a component path, for comparing a kept component. */
+const componentLines = (
+  /** @type {string} */ text,
+  /** @type {string} */ path,
+) =>
+  rawLines(text)
+    .filter((line) => line.path === path || line.path.startsWith(`${path}/`))
+    .map(
+      (line) =>
+        `${line.kind} ${line.name} ${line.parameters.join(';')} ${line.value ?? ''}`,
+    );
 
 /** A minimal skeleton the field tests can patch. */
 const create = (/** @type {Record<string, unknown>} */ fields = {}) =>
@@ -119,21 +145,25 @@ test('every fixture: patching the start changes the start and nothing else', () 
     const before = describe(parse(text));
     // Patch with the kind the fixture already carries, so the *only* difference
     // a `TZID` fixture can show is the zone parameter the new instant does not
-    // name — a `TZID` write is a 422 until E05-R09 lands, and a read-modify-write
-    // never invents one.
+    // name. A fixture whose stored zone the resolver cannot read (the Microsoft
+    // one) is the exception: E05-R09 refuses a patch that touches a time field
+    // of such an object unless it replaces *both*, so this one moves both.
     const zoned = before.start.tzid !== undefined;
-    const changes = zoned
-      ? { start: { utc: '20300601T120000Z' } }
-      : before.start.date !== undefined
-        ? { start: { date: '2030-06-01' } }
-        : { start: { utc: '20300601T120000Z' } };
+    const unreadable = zoned && !resolves(before.start.tzid);
+    const changes = unreadable
+      ? { start: { utc: '20300601T120000Z' }, end: { utc: '20300601T130000Z' } }
+      : zoned
+        ? { start: { utc: '20300601T120000Z' } }
+        : before.start.date !== undefined
+          ? { start: { date: '2030-06-01' } }
+          : { start: { utc: '20300601T120000Z' } };
     const produced = roundTripWith(changes)(text);
     const violations = checkRoundTrip({
       id: fixture.id,
       text,
       roundTrip: roundTripWith(changes),
     });
-    const expected = zoned ? 2 : 1;
+    const expected = unreadable ? 4 : zoned ? 2 : 1;
     assert.equal(
       violations.length,
       expected,
@@ -142,7 +172,7 @@ test('every fixture: patching the start changes the start and nothing else', () 
     for (const violation of violations) {
       assert.match(
         violation,
-        /^[^:]+: VCALENDAR\/VEVENT\[0\]: DTSTART\[0\]: (value 0 differs|parameter TZID)/,
+        /^[^:]+: VCALENDAR\/VEVENT\[0\]: DT(?:START|END)\[0\]: (value 0 differs|parameter TZID)/,
         violation,
       );
     }
@@ -150,7 +180,7 @@ test('every fixture: patching the start changes the start and nothing else', () 
     // that never applied.
     const after = describe(parse(produced));
     assert.notDeepEqual(after.start, before.start);
-    assert.deepEqual(after.end, before.end ?? null);
+    if (!unreadable) assert.deepEqual(after.end, before.end ?? null);
   }
 });
 
@@ -289,8 +319,79 @@ test('every field the module cannot write is refused by kind', () => {
     [{ start: { utc: '20261014T090000' } }, 'invalid-start'],
     [{ start: { utc: '2026-10-14T09:00:00Z' } }, 'invalid-start'],
     [{ start: { utc: '20261340T090000Z' } }, 'invalid-start'],
+    // The zone a write may name is an IANA zone, in its exact spelling, that the
+    // resolver reads (E05-R09, INV-04).
+    [{ start: { local: '20261014T100000' } }, 'invalid-start'],
     [
-      { start: { tzid: 'Europe/Berlin', local: '20261014T100000' } },
+      { start: { tzid: 'europe/berlin', local: '20261014T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'EUROPE/BERLIN', local: '20261014T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'US/EASTERN', local: '20261014T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'W. Europe Standard Time', local: '20261014T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Mars/Olympus', local: '20261014T100000' } },
+      'invalid-start',
+    ],
+    [{ start: { tzid: '', local: '20261014T100000' } }, 'invalid-start'],
+    [{ start: { tzid: 5, local: '20261014T100000' } }, 'invalid-start'],
+    [
+      {
+        start: {
+          tzid: 'Europe/Berlin',
+          local: '20261014T100000',
+          utc: '20261014T090000Z',
+        },
+      },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', utc: '20261014T090000Z' } },
+      'invalid-start',
+    ],
+    [{ start: { tzid: 'Europe/Berlin', date: '2026-10-14' } }, 'invalid-start'],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '2026-10-14T10:00:00' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '20261014t100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '20260230T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '20261014T250000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '20261014T1000' } },
+      'invalid-start',
+    ],
+    [{ start: { tzid: 'Europe/Berlin', local: 5 } }, 'invalid-start'],
+    // The embedded `VTIMEZONE` covers 1970–2100 (`HORIZON`): a reading outside
+    // it would be an object whose own definition disagrees with `parsed`.
+    [
+      { start: { tzid: 'Europe/Berlin', local: '19691014T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '19700101T100000' } },
+      'invalid-start',
+    ],
+    [
+      { start: { tzid: 'Europe/Berlin', local: '21020101T100000' } },
       'invalid-start',
     ],
     [{ end: '20261014T100000Z' }, 'invalid-end'],
@@ -408,17 +509,270 @@ test('an invalid time pair is refused on the merged object, and the corpus state
     );
   }
 
-  // A `Z` instant beside a `TZID` wall clock is left alone: comparing the two
-  // would be the zone maths E05-R09 owns, and the corpus' own `TZID` objects are
-  // patched that way by the field-by-field test above.
+  // A `Z` instant beside a `TZID` wall clock is compared through the zone now:
+  // `20261014T100000` in `Europe/Berlin` is `20261014T080000Z`, so a `Z` start
+  // after it is the same 422 as any other inverted pair, and one before it is
+  // the same 200.
   const zoned = /** @type {any} */ (
     corpus.find((entry) => entry.id === 'ours/private-timed-tzid')
   );
+  const zonedText = readFixture(zoned);
+  assert.throws(
+    () =>
+      assertOrder(
+        patch(parse(zonedText), { start: { utc: '20300601T120000Z' } }),
+      ),
+    (/** @type {any} */ error) =>
+      error instanceof IcalError && error.kind === 'invalid-times',
+    'a Z start after the stored TZID end',
+  );
   assert.doesNotThrow(() =>
     assertOrder(
-      patch(parse(readFixture(zoned)), { start: { utc: '20300601T120000Z' } }),
+      patch(parse(zonedText), { start: { utc: '20261014T070000Z' } }),
     ),
   );
+
+  // A `TZID` pair whose zone the resolver cannot read is left alone (the
+  // Microsoft fixture of the corpus), and so is a floating pair — neither names
+  // an instant this API can compute (INV-02).
+  const windows = /** @type {any} */ (
+    corpus.find((entry) => entry.id === 'synthetic/microsoft-windows-zone-name')
+  );
+  assert.doesNotThrow(() => assertOrder(parse(readFixture(windows))));
+});
+
+test('a TZID write carries its zone as a parameter and embeds one VTIMEZONE', () => {
+  const calendar = () =>
+    build({
+      uid: '22222222-2222-4222-8222-222222222222',
+      dtstamp: '20261014T080000Z',
+      start: { local: '20261014T100000', tzid: 'Europe/Berlin' },
+      end: { local: '20261014T110000', tzid: 'Europe/Berlin' },
+      envelopeSha256: 'a'.repeat(64),
+    });
+  const text = serialise(calendar());
+  assert.equal(valueOf(text, 'DTSTART'), '20261014T100000');
+  assert.deepEqual(parametersOf(text, 'DTSTART'), ['TZID=Europe/Berlin']);
+  assert.deepEqual(parametersOf(text, 'DTEND'), ['TZID=Europe/Berlin']);
+  // One definition, in front of the events, and it is the generated one.
+  const begins = rawLines(text).filter(
+    (line) => line.kind === 'begin' && line.name === 'VTIMEZONE',
+  );
+  assert.equal(begins.length, 1);
+  assert.ok(
+    text.indexOf('BEGIN:VTIMEZONE') < text.indexOf('BEGIN:VEVENT'),
+    'the VTIMEZONE comes after the events',
+  );
+  assert.match(text, /^TZID:Europe\/Berlin$/m);
+  assert.match(text, /^X-LIC-LOCATION:Europe\/Berlin$/m);
+  // The reading comes back as the wall clock the object spells, with the
+  // instant a client should show for it (E05-R09).
+  assert.deepEqual(describe(parse(text)).start, {
+    tzid: 'Europe/Berlin',
+    local: '20261014T100000',
+    utc: '20261014T080000Z',
+  });
+
+  // A second write of the same zone adds no second definition, and the one that
+  // is there comes back byte for byte (INV-02).
+  const again = serialise(
+    patch(parse(text), {
+      start: { local: '20261014T120000', tzid: 'Europe/Berlin' },
+    }),
+  );
+  assert.equal(
+    again.match(/BEGIN:VTIMEZONE/g)?.length,
+    1,
+    'a second VTIMEZONE was embedded',
+  );
+  assert.deepEqual(
+    componentLines(again, 'VCALENDAR/VTIMEZONE[0]'),
+    componentLines(text, 'VCALENDAR/VTIMEZONE[0]'),
+  );
+
+  // A write into another zone embeds that zone too, in front of the events.
+  const other = serialise(
+    patch(parse(text), {
+      end: { local: '20261014T110000', tzid: 'America/New_York' },
+    }),
+  );
+  assert.equal(other.match(/BEGIN:VTIMEZONE/g)?.length, 2);
+  assert.match(other, /^TZID:America\/New_York$/m);
+  assert.ok(
+    other.indexOf('TZID:America/New_York') < other.indexOf('BEGIN:VEVENT'),
+  );
+  assert.deepEqual(describe(parse(other)).end, {
+    tzid: 'America/New_York',
+    local: '20261014T110000',
+    utc: '20261014T150000Z',
+  });
+
+  // A fixture that already defines its zone keeps that definition: only the
+  // value the patch named differs over the whole object.
+  const fixture = /** @type {any} */ (
+    corpus.find((entry) => entry.id === 'ours/private-timed-tzid')
+  );
+  const fixtureText = readFixture(fixture);
+  const changes = {
+    start: { local: '20261101T090000', tzid: 'Europe/Berlin' },
+  };
+  const violations = checkRoundTrip({
+    id: fixture.id,
+    text: fixtureText,
+    roundTrip: roundTripWith(changes),
+  });
+  assert.equal(violations.length, 1, violations.join(' | '));
+  assert.match(violations[0] ?? '', /DTSTART\[0\]: value 0 differs/);
+});
+
+test('a patch of an object whose stored TZID cannot be read keeps it or replaces both', () => {
+  const fixture = /** @type {any} */ (
+    corpus.find((entry) => entry.id === 'synthetic/microsoft-windows-zone-name')
+  );
+  const text = readFixture(fixture);
+  // A read reports the wall clock and the name it cannot resolve, and no instant.
+  const before = describe(parse(text));
+  assert.equal(before.start.tzid, 'W. Europe Standard Time');
+  assert.equal(before.start.local, '20261014T100000');
+  assert.equal(before.start.utc, undefined);
+
+  // A patch that does not name a time leaves the object as it is, the stored
+  // zone and its own VTIMEZONE included (INV-02).
+  const kept = roundTripWith({ summary: 'a later title' })(text);
+  assert.deepEqual(
+    componentLines(kept, 'VCALENDAR/VTIMEZONE[0]'),
+    componentLines(text, 'VCALENDAR/VTIMEZONE[0]'),
+  );
+  assert.deepEqual(parametersOf(kept, 'DTSTART'), [
+    'TZID=W. Europe Standard Time',
+  ]);
+
+  // Touching one time field is the fixed 422 ...
+  for (const changes of [
+    { start: { utc: '20300601T120000Z' } },
+    { end: { utc: '20300601T130000Z' } },
+    { start: { local: '20261014T120000', tzid: 'Europe/Berlin' } },
+  ]) {
+    assert.throws(
+      () => patch(parse(text), changes),
+      (/** @type {any} */ error) =>
+        error instanceof IcalError && error.kind === 'invalid-timezone',
+      JSON.stringify(changes),
+    );
+  }
+
+  // ... and replacing both is written, with the zone the object still defines
+  // left exactly where it was.
+  const replaced = serialise(
+    patch(parse(text), {
+      start: { utc: '20300601T120000Z' },
+      end: { utc: '20300601T130000Z' },
+    }),
+  );
+  assert.match(replaced, /^DTSTART:20300601T120000Z$/m);
+  assert.match(replaced, /^DTEND:20300601T130000Z$/m);
+  assert.match(replaced, /^TZID:W\. Europe Standard Time$/m);
+});
+
+test('a TZID write inside the horizon is written, and one outside it is not', () => {
+  // The ends of the window the embedded definition covers: the last instant of
+  // 2100 and the first days of 1970. A reading at the very start of the window
+  // is refused, because the definition's first change sits there.
+  const zoned = (/** @type {string} */ local) =>
+    describe(
+      parse(
+        serialise(
+          build({
+            uid: '55555555-5555-4555-8555-555555555555',
+            dtstamp: '20261014T080000Z',
+            start: { local, tzid: 'Europe/Berlin' },
+            envelopeSha256: 'a'.repeat(64),
+          }),
+        ),
+      ),
+    ).start;
+  assert.deepEqual(zoned('19700102T100000'), {
+    tzid: 'Europe/Berlin',
+    local: '19700102T100000',
+    utc: '19700102T090000Z',
+  });
+  assert.deepEqual(zoned('21001231T100000'), {
+    tzid: 'Europe/Berlin',
+    local: '21001231T100000',
+    utc: '21001231T090000Z',
+  });
+  // A `Z` time names its own instant and needs no definition, so it is written
+  // whatever the date.
+  const instant = serialise(
+    build({
+      uid: '66666666-6666-4666-8666-666666666666',
+      dtstamp: '20261014T080000Z',
+      start: { utc: '19600101T100000Z' },
+      envelopeSha256: 'a'.repeat(64),
+    }),
+  );
+  assert.equal(valueOf(instant, 'DTSTART'), '19600101T100000Z');
+  assert.deepEqual(describe(parse(instant)).start, {
+    utc: '19600101T100000Z',
+  });
+});
+
+test('driving the transition across the gap and back again', () => {
+  // The three write forms side by side, at the two transitions `Europe/Berlin`
+  // has in 2026: a local time is written as the wall clock the caller sent, and
+  // the instant it names is the RFC 5545 § 3.3.5 form 3 reading of it.
+  const zoned = (/** @type {string} */ local) =>
+    describe(
+      parse(
+        serialise(
+          build({
+            uid: '33333333-3333-4333-8333-333333333333',
+            dtstamp: '20261014T080000Z',
+            start: { local, tzid: 'Europe/Berlin' },
+            envelopeSha256: 'a'.repeat(64),
+          }),
+        ),
+      ),
+    ).start;
+  // The hour that does not exist is read with the offset before the gap ...
+  assert.deepEqual(zoned('20260329T023000'), {
+    tzid: 'Europe/Berlin',
+    local: '20260329T023000',
+    utc: '20260329T013000Z',
+  });
+  // ... and the hour that happens twice is its first occurrence.
+  assert.deepEqual(zoned('20261025T023000'), {
+    tzid: 'Europe/Berlin',
+    local: '20261025T023000',
+    utc: '20261025T003000Z',
+  });
+});
+
+test('an UNTIL beside a TZID start is a UTC instant, and is refused otherwise', () => {
+  const zoned = () =>
+    build({
+      uid: '44444444-4444-4444-8444-444444444444',
+      dtstamp: '20261014T080000Z',
+      start: { local: '20261014T100000', tzid: 'Europe/Berlin' },
+      end: { local: '20261014T110000', tzid: 'Europe/Berlin' },
+      envelopeSha256: 'a'.repeat(64),
+    });
+  for (const rrule of [
+    'FREQ=DAILY;UNTIL=20261015',
+    'FREQ=DAILY;UNTIL=20261015T090000',
+  ]) {
+    assert.throws(
+      () => patch(zoned(), { rrule }),
+      (/** @type {any} */ error) =>
+        error instanceof IcalError && error.kind === 'invalid-rrule',
+      rrule,
+    );
+  }
+  const written = serialise(
+    patch(zoned(), { rrule: 'FREQ=DAILY;UNTIL=20261015T090000Z' }),
+  );
+  assert.equal(valueOf(written, 'RRULE'), 'FREQ=DAILY;UNTIL=20261015T090000Z');
+  assert.doesNotThrow(() => assertOrder(parse(written)));
 });
 
 test('only the rule parts RFC 5545 names are written, and none ical.js mis-expands', () => {

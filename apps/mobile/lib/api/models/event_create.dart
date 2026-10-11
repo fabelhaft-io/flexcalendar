@@ -9,7 +9,7 @@ import 'event_time.dart';
 
 part 'event_create.g.dart';
 
-/// A create request. `start` is required; the API mints the `UID` and the `DTSTAMP`. On a Private calendar the content fields (`summary`, `description`, `location`, `attendees`) are a 422 and `envelopeSha256` is required — a Private object is a skeleton and the content lives in the sidecar (D-18, E03-R09). Any other member is a 422 as well.
+/// A create request. `start` is required; the API mints the `UID` and the `DTSTAMP`. A `local` time is written with its `TZID` and a generated `VTIMEZONE` for that zone embedded in the object (E05-R09). On a Private calendar the content fields (`summary`, `description`, `location`, `attendees`) are a 422 and `envelopeSha256` is required — a Private object is a skeleton and the content lives in the sidecar (D-18, E03-R09). Any other member is a 422 as well.
 @JsonSerializable()
 class EventCreate {
   const EventCreate({
@@ -30,7 +30,7 @@ class EventCreate {
   final EventTime start;
   final EventTime? end;
 
-  /// The recurrence rule, in the RFC 5545 § 3.3.10 form: `FREQ` first, only the parts the RFC names and each at most once, `COUNT` or `UNTIL` but not both, `UNTIL` with the value type of the start, and neither `BYWEEKNO` nor a yearly rule on a 29 February start. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.
+  /// The recurrence rule, in the RFC 5545 § 3.3.10 form: `FREQ` first, only the parts the RFC names and each at most once, `COUNT` or `UNTIL` but not both, `UNTIL` with the value type of the start — a UTC `DATE-TIME` for any timed start, a `TZID` one included, and a `DATE` for an all-day one — and neither `BYWEEKNO` nor a yearly rule on a 29 February start. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.
   final String? rrule;
   final EventAlarm? alarm;
 
