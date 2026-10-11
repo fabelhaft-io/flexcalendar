@@ -5,6 +5,7 @@
 import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 
+import '../models/calendar_changes.dart';
 import '../models/event.dart';
 import '../models/event_create.dart';
 import '../models/event_update.dart';
@@ -73,5 +74,21 @@ abstract class EventsClient {
     @Path('calendarId') required String calendarId,
     @Path('uid') required String uid,
     @Header('If-Match') required String ifMatch,
+  });
+
+  /// List what changed since a token.
+  ///
+  /// The incremental sync our own clients use. With no `since`, the whole collection is reported as present objects — the initial load; with one, only what changed since that token, a tombstone for each deletion.
+  /// The answer is pointers, never content: a change is a `uid`, an `etag` and whether the object is gone. Fetch the object itself for its bytes. `etag` is absent on a tombstone, so a deletion can never be mistaken for a stale copy.
+  /// `since` is an opaque token only this API mints: it names a point in one calendar's history and never leaves it. A value that is not one of ours, one minted for another calendar, and one that names a point the collection has never reached are all the same 410 — the client reloads fully, which is the only safe reading of a cursor that may have been skipped over. The response never echoes the token it refused.
+  /// Roles are the reading roles: `owner`, `editor` and `viewer` all read, and a caller who is not a member gets the 404 an unknown id gets.
+  ///
+  /// [calendarId] - The `calendars.id` uuid of the calendar.
+  ///
+  /// [since] - The `token` a previous answer to this operation returned, verbatim. Absent means the initial load, which reports the whole collection.
+  @GET('/calendars/{calendarId}/changes')
+  Future<CalendarChanges> listCalendarChanges({
+    @Path('calendarId') required String calendarId,
+    @Query('since') String? since,
   });
 }
