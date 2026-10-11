@@ -28,7 +28,7 @@ Input: optionally a requirement ID (`E02-R09`). Without one, take the next entry
 5. `agent-team/README.md` and `agent-team/src/prompts/guardrails.md`: the implementer's rules.
 6. [`review-checklist.md`](review-checklist.md) and [`environment.md`](environment.md), before the first review of the session.
 
-Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git switch main && git pull`, `git status` (clean apart from ignored files), `git worktree list`, then `cd agent-team && npm install && npm run typecheck`. If the repo disagrees with `follow-ups.md` (a PR merged, a requirement changed), trust the repo and fix the file.
+Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git switch main && git pull`, `git status` (clean apart from ignored files), `git worktree list`, then `cd agent-team && npm install && npm run typecheck`. If `php`, `composer`, `flutter` or `dart` is missing from `PATH`, run `make host-tools` once ([`environment.md`](environment.md)). If the repo disagrees with `follow-ups.md` (a PR merged, a requirement changed), trust the repo and fix the file.
 
 ## Hard rules
 
@@ -37,12 +37,12 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 - Never change a Pinned `D-*`. That needs the owner and an ADR.
 - Nothing outward-facing beyond pushing branches and opening PRs. Staging checks follow D-20 in `06`. The production server is off-limits until the owner has installed an SSH key, then only with their approval for each action, and you never ask for or use its password.
 - Never read or print secrets: `agent-team/.env`, tokens in container volumes, the password manager.
-- Don't stack branches: a requirement that needs another one's code waits until that PR is merged. Requirements that edit the same files (the root `Makefile`) wait too.
+- Stacking is allowed (the owner's decision of 2026-10-10, `follow-ups.md` § Queue): a requirement may start when each dependency is Done or has a branch whose review passed, and it is cut from that branch. **At most three reviewed PRs may wait for the owner's merge.** `make next-ready` counts them and stops you at the cap. The owner merges at their own pace, and a rejection at the bottom of a tall stack invalidates everything above it. Requirements that edit the same files (the root `Makefile`) wait for each other's merge.
 - Keep the owner posted with one short line per requirement: started, the review verdict, then the PR link or the blocker.
 
 ## The loop
 
-1. **Pick** the next queue entry that is **Ready**: every `Deps` entry is Done (the epic Status cells), every cited `D-*` is Pinned, and no PR it depends on is still unmerged. If something isn't Pinned, or the requirement is ambiguous or contradicts its spec doc, stop and ask the owner. Never guess.
+1. **Pick** with `make next-ready`. It ranks the requirements the queue names whose `Deps` are Done (or reviewed and waiting for a merge, so you can stack on them) and whose `D-*` are Pinned. Its last line, `NEXT:`, says to `start` some of them, to `wait` (the stack cap, or every implementer slot taken) or that `none` is ready. It reads git, not the working tree: Done means a PASS review doc on `origin/main`, and "waiting for a merge" means a `feat/<ID>-*` branch whose review doc says PASS. **It is advisory.** It cannot read the queue's prose or an epic's free-text dependencies, so read the queue item of what it picked and its "queue also says" notes (E08-R02, for one, waits for an ADR the script cannot see), and look at "Needs judgment". `--explain <ID>` shows one requirement's reasons. If something isn't Pinned, or the requirement is ambiguous or contradicts its spec doc, stop and ask the owner. Never guess.
 2. **Run** it in the background, logging to the scratch directory, and tell the owner it started:
 
    ```sh
@@ -51,6 +51,7 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 
    - `--paths`: a trailing `/` grants a tree; anything else exactly one file. Root files are listed one by one (`Makefile`, `package.json`, `pnpm-lock.yaml`, `.gitignore`, …). Grant the narrowest set the requirement plausibly needs. The coordinator always refuses `.git`, `agent-team/`, `.claude/`, `.agents/` (this skill) and secrets files.
    - The coordinator creates `feat/<ID>-<slug>` in `../calendar-flex-agent-<ID>`, cut from `main` and merged forward on reuse. It commits in-scope files only. Out-of-scope edits land in `agent-team/runs/<ID>/run-<n>/out-of-scope/`, which is the sign of a too-narrow `--paths`.
+   - When `NEXT:` names two requirements, start both: each has its own worktree and run directory. Cut a stacked one from the branch `make next-ready` shows after "stack on". The `follow-ups: N` count on a row is the number of lines in `follow-ups.md` that name it: those are what the brief below must carry.
    - A BLOCKED exit (code 1) can mean a failed handoff schema, not a real blocker. The reason is in `agent-team/runs/<ID>/run-<n>/implementer-handoff-error.txt`, next to the agent's final text. Review the branch anyway.
    - **Brief before run 1.** Follow-ups that belong to the requirement reach the implementer only through `docs/reviews/<ID>.md` on its branch, which the coordinator feeds into the prompt. So create the branch and worktree yourself (`git worktree add ../calendar-flex-agent-<ID> -b feat/<ID>-<slug> main`; the slug is the coordinator's: the requirement title lower-cased, runs of non-alphanumerics as `-`, at most 40 characters), commit the brief there as `doc(<ID>): brief before run 1`, and then run. Put in it: the follow-ups from `follow-ups.md`, facts you checked upstream (versions, peer ranges, whether a generator runs on the pinned toolchain), the design constraints you want, what the sandbox can't run and what to do about it (write everything, list the rest). The coordinator truncates the file at 12,000 characters (`MAX_FINDINGS_CHARS`), so keep the newest review and its fix requests at the top and older sections below.
 3. **Review** it in its worktree, by [`review-checklist.md`](review-checklist.md). Write `docs/reviews/<ID>.md`:
@@ -73,7 +74,20 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
    - commit as `doc(<ID>): review <n> (PASS)`. Every commit you make follows the `CONTRIBUTING.md` style, because GitHub squashes a single-commit PR with that commit's own message;
    - push and open the PR. Title `<type>(<ID>): <summary>`, with the type fitting the work (`feat`, `doc`, `fix`, `chore`, `infra`). The body summarises the change, links the findings with an **absolute** GitHub URL on the branch, and lists the follow-ups. Add whatever attribution line your tool requires. For `agent+review` requirements, state that human approval is required before merge, so the owner reviews it before arming auto-merge;
    - tell the owner: the verdict and the PR link.
-6. **While a merge is pending**, pick an independent Ready requirement or a queued chore, or tell the owner what is waiting on which merge. Leave the default local stack stopped (`make dev-down`) when you're done.
+6. **Pipeline, don't wait.** The implementer run is the long part, and reviews are serial anyway (one local stack, fixed host ports). So start the next implementer before you review the one that just finished: while a run is going in the background, run `make next-ready` again, and if it says `start`, launch that requirement too. At most two implementers run at once (`--max-parallel`). Review in the order the runs finish. When a PR is open and nothing is ready, tell the owner what is waiting on which merge. Leave the default local stack stopped (`make dev-down`) when you're done. Nobody has run two coordinators at once yet: the first time two overlap, watch for contention on the shared caches in `~/.cache/calendar-flex-agent-team/`, and fall back to one at a time if a run fails for a reason that looks like it.
+
+## Running unattended
+
+When the owner asks for the loop to run on its own ("keep going", "run the queue"), repeat the loop until a stop condition holds, and say which one stopped you. Stop and tell the owner when:
+
+- `make next-ready` says `wait` because of the stack cap. Report which PRs wait for the owner's merge, then stop; don't keep polling for it.
+- It says `none`, or only "Needs judgment" entries are left.
+- A `D-*` the requirement cites is not Pinned, the spec is ambiguous or contradicts its doc, or the answer is the owner's to give.
+- A requirement has used its three implementer runs.
+- A step would need the production server, a secret, a merge or a force-push (Hard rules).
+- The environment is broken in a way you can't fix: the toolchain (`make host-tools`), the stack, or authentication.
+
+An `agent+review` PR is not a stop. Open it, say that human approval is needed, and carry on with something independent; it counts toward the cap.
 
 ## Things you may do yourself
 

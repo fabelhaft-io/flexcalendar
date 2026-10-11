@@ -84,6 +84,13 @@ host-tools: ## Install the pinned PHP, Composer, Flutter and Dart as shims in ~/
 	@test -d agent-team/node_modules || (cd agent-team && npm ci --no-audit --no-fund)
 	cd agent-team && npm run --silent host-tools -- $(ARGS)
 
+.PHONY: next-ready
+
+# Advisory: it reads git, not the working tree. Pass ARGS='--all', '--json', '--next',
+# '--explain <ID>', '--max-stack <n>' or '--max-parallel <n>'; see infra/scripts/next-ready.mjs.
+next-ready: ## Rank the queued requirements that are ready to start (reads git; see the orchestrate skill)
+	@node infra/scripts/next-ready.mjs $(ARGS)
+
 .PHONY: token zitadel-plan test-zitadel
 
 token: export CALFLEX_TOKEN_USER = $(USER)
