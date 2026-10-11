@@ -81,8 +81,11 @@ test('the CalDAV mapping covers every kind and never forwards a body', () => {
     ].join('\n'),
   );
   const cases = [
-    // A CalDAV 401 is an API 401; nothing about the reason leaves.
-    [new CalDavError('unauthorized', 401), 'unauthorized'],
+    // A CalDAV 401 is **not** the caller's 401 (E05-R03): the bearer token was
+    // verified before the route ran, so a refusal from the listener means our
+    // own delegation failed. Answering 401 would sign a validated client out,
+    // so it is a 502 like every other unreadable upstream answer.
+    [new CalDavError('unauthorized', 401), 'bad-gateway'],
     [new CalDavError('not-found', 404), 'not-found'],
     [new CalDavError('conflict', 409), 'conflict'],
     [new CalDavError('precondition-failed', 412), 'precondition-failed'],

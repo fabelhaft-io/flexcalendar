@@ -19,6 +19,13 @@ info:
     is derived from the request or from an exception message. Every response
     carries a correlation ID in `X-Request-Id`, the same ID that goes to CalDAV
     and appears in the server logs.
+
+    Until Phase 4 every calendar is Private (ADR 0003). A Private calendar's
+    name and colour exist only inside a client-sealed metadata envelope under
+    the CCK (D-18): the API stores `metaEnvelope` opaquely in
+    `calendars.meta_envelope`, gives the CalDAV collection the fixed display
+    name `Private calendar`, and refuses a plaintext `name` or `color` with
+    422. The API links no content-crypto library and never decrypts (INV-07).
 servers:
   - url: https://api.flexcalendar.de
     description: production
@@ -48,6 +55,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /me:
     get:
       tags: [users]
@@ -154,6 +167,486 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /calendars:
+    get:
+      tags: [calendars]
+      operationId: listCalendars
+      summary: The caller's calendars
+      description: >-
+        Every calendar the caller is a member of, oldest first. A calendar the
+        caller cannot see is not listed, and a Private calendar's name and
+        colour are inside `metaEnvelope` — the API never opens one (D-18).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The calendars the caller is a member of
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarList'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The issuer does not report the user's email as verified
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The user's handle or email address is already taken
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      tags: [calendars]
+      operationId: createCalendar
+      summary: Create a calendar
+      description: >-
+        Requires an explicit `mode`; there is no default (ADR 0001). Until
+        Phase 4 only `private` is accepted (ADR 0003), and a Private calendar
+        is created with `metaEnvelope` and `metaEpoch` instead of a plaintext
+        `name` or `color` (D-18). The API checks the envelope's header (version
+        `0x01`, the CCK epoch that `metaEpoch` names, at least the 45 bytes of
+        fixed fields) and its size (at most 4096 bytes), stores it opaquely, and
+        gives the CalDAV collection the fixed display name `Private calendar`
+        (E03-R09). The `calendars` row and the owner's `calendar_members` row
+        are committed before the collection is made, and removed again if that
+        fails. Every rule of this list is a 422, never a 400.
+
+        The request body is validated by the route rather than by a schema: a
+        schema-refused body is a 400, and the rules above must answer 422.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalendarCreate'
+      responses:
+        '201':
+          description: The calendar and its CalDAV collection were created
+          headers:
+            Location:
+              description: The created calendar's path, `/calendars/{id}`.
+              schema:
+                type: string
+            ETag:
+              description: The created calendar's version, quoted.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Calendar'
+        '400':
+          description: >-
+            The request body is not well-formed JSON. A body that parses but is
+            not a JSON object is a 422, not a 400
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The issuer does not report the user's email as verified
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The user's handle or email address is already taken
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: The request body is larger than the service accepts
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: The request body's media type is not supported
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            A rule of the operation was broken: the body is not a JSON object;
+            `mode` is absent; `mode` is not `private`; `metaEnvelope` or
+            `metaEpoch` is absent or not an envelope this service stores (a bad
+            version byte, an epoch that disagrees with the header, more than
+            4096 bytes, or an encoding that is not standard base64); a plaintext
+            `name` or `color` was sent for a Private calendar; or the body
+            carries a member the operation does not take. The body never names a
+            value.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: >-
+            An unexpected server-side failure; the calendar row is not left
+            behind
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /calendars/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The `calendars.id` uuid.
+        schema:
+          type: string
+    patch:
+      tags: [calendars]
+      operationId: replaceCalendarMetadata
+      summary: Rename or recolour a calendar
+      description: >-
+        A rename and a recolour are one act: both replace the sealed
+        `metaEnvelope` and the `metaEpoch` it names. The request must carry
+        `If-Match` with the version it read; a version that has moved on is a
+        412, a missing `If-Match` a 428, and the CalDAV collection keeps the
+        fixed display name `Private calendar` whatever the envelope holds
+        (D-18). Only the owner may do it; a member who is not the owner gets a
+        403, and a caller who is not a member a 404, exactly like an id that
+        exists nowhere.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: The version the client read, quoted; `*` accepts any version.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalendarMeta'
+      responses:
+        '200':
+          description: The calendar's metadata was replaced
+          headers:
+            ETag:
+              description: The calendar's new version, quoted.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Calendar'
+        '400':
+          description: >-
+            The request body is not well-formed JSON. A body that parses but is
+            not a JSON object is a 422, not a 400
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            The issuer does not report the user's email as verified, or the
+            caller is a member of the calendar but not its owner
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: >-
+            No calendar the caller is a member of has that id, which is also the
+            answer for an id that exists nowhere
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The user's handle or email address is already taken
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '412':
+          description: The `If-Match` version is not the calendar's current version
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: The request body is larger than the service accepts
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: The request body's media type is not supported
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            A rule of the operation was broken: the body is not a JSON object;
+            `metaEnvelope` or `metaEpoch` is absent or not an envelope this
+            service stores; a plaintext `name` or `color` was sent for a Private
+            calendar; or the body carries a member the operation does not take,
+            `mode` included. The body never names a value.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '428':
+          description: >-
+            The request carries no `If-Match`, so there is no version to be
+            optimistic against
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: An unexpected server-side failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    delete:
+      tags: [calendars]
+      operationId: deleteCalendar
+      summary: Delete a calendar
+      description: >-
+        Removes the CalDAV collection and every row the calendar owns; the
+        membership row cascades from the `calendars` row. Only the owner may do
+        it; a member who is not the owner gets a 403, and a caller who is not a
+        member a 404, exactly like an id that exists nowhere. A collection that
+        is already gone is not an error: the request wanted it gone.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: The collection and the calendar's rows are gone
+        '401':
+          description: >-
+            Missing, duplicated, malformed, opaque, expired, wrongly addressed
+            or otherwise unverifiable access token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            The issuer does not report the user's email as verified, or the
+            caller is a member of the calendar but not its owner
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: >-
+            No calendar the caller is a member of has that id, which is also the
+            answer for an id that exists nowhere
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: The method is not allowed on this path
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The user's handle or email address is already taken
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: >-
+            Too many requests from this client address inside the window; the
+            service answers again after `Retry-After`
+          headers:
+            Retry-After:
+              description: Seconds until the client's allowance is restored.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: >-
+            An unexpected server-side failure; the collection is already gone, so
+            a retry completes the delete
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: The identity provider or the CalDAV service could not be read
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            No audience is configured yet, or the issuer has no usable signing
+            keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: A CalDAV call ran past its deadline
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -189,6 +682,108 @@ components:
           type: string
         email:
           type: string
+    Calendar:
+      type: object
+      description: One calendar the caller is a member of. A Private calendar carries its sealed metadata envelope; the API never opens it (D-18).
+      required:
+        [id, mode, role, version, metaEnvelope, metaEpoch, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: The `calendars.id` uuid, which is also the CalDAV collection href.
+        mode:
+          type: string
+          description: The calendar mode. Until Phase 4 every calendar is `private` (ADR 0003).
+        role:
+          type: string
+          description: "The caller's role in `calendar_members`: `owner`, `editor` or `viewer`."
+        version:
+          type: integer
+          description: The optimistic-concurrency version; also the `ETag`.
+        metaEnvelope:
+          type: string
+          description: "A Private calendar's client-sealed metadata envelope, standard base64. Opaque to the API."
+        metaEpoch:
+          type: integer
+          description: "The CCK epoch inside the envelope's header."
+        createdAt:
+          type: string
+          description: When the calendar was created, ISO 8601.
+        updatedAt:
+          type: string
+          description: When the calendar last changed, ISO 8601.
+    CalendarList:
+      type: object
+      description: The calendars the caller is a member of.
+      required: [calendars]
+      additionalProperties: false
+      properties:
+        calendars:
+          type: array
+          description: Oldest first. A Private calendar the caller cannot see is not listed.
+          items:
+            $ref: '#/components/schemas/Calendar'
+    CalendarCreate:
+      type: object
+      description: >-
+        A create request. `mode` is required and has no default (ADR 0001);
+        until Phase 4 only `private` is accepted (ADR 0003). A Private calendar
+        takes `metaEnvelope` and `metaEpoch` and no plaintext `name` or `color`
+        (D-18). The API answers 422 for every rule of this list; a member the
+        operation does not take is a 422 too.
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          description: The calendar mode. Until Phase 4, `private` is the only accepted value.
+        metaEnvelope:
+          type: string
+          format: byte
+          description: >-
+            The client-sealed metadata envelope (version `0x01`, the CCK epoch
+            as a big-endian uint32, a 24-byte nonce, ciphertext and a 16-byte
+            tag), standard base64, at most 4096 bytes.
+        metaEpoch:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: >-
+            The CCK epoch the envelope's header carries. The header field is a
+            uint32, but the API accepts only what `calendars.meta_epoch` holds
+            (an `integer`); anything above it is a 422, never a database error.
+        name:
+          type: string
+          description: >-
+            A plaintext display name. Refused with 422 on a Private calendar
+            (D-18); Shared calendars take one from Phase 4.
+        color:
+          type: string
+          description: >-
+            A plaintext colour. Refused with 422 on a Private calendar (D-18);
+            Shared calendars take one from Phase 4.
+    CalendarMeta:
+      type: object
+      description: >-
+        A rename or recolour: it replaces the sealed envelope and the epoch it
+        names, and it carries no plaintext `name` or `color` — those are a 422
+        on a Private calendar (D-18), and so is any other member, `mode`
+        included.
+      additionalProperties: false
+      properties:
+        metaEnvelope:
+          type: string
+          format: byte
+          description: >-
+            The replacing metadata envelope, in the same layout and encoding as
+            on create.
+        metaEpoch:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: >-
+            The CCK epoch the replacing envelope's header carries, in the same
+            range as on create.
     Problem:
       type: object
       description: An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`.
