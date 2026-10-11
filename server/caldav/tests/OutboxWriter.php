@@ -8,8 +8,9 @@ declare(strict_types=1);
 //
 // Usage: php outbox-writer.php <config.json>, with the CALFLEX_DATABASE_URL of
 // the CalDAV test role. Config keys: mode (create|update|delete), kill, calendar
-// and instance (sabredav.calendarinstances columns), uri, base64 payload, and an
-// optional barrier {dir, index, count} for the concurrency test.
+// and instance (sabredav.calendarinstances columns), uri, base64 payload,
+// principal (the acting users.id whose calendar_members row authorizes the
+// write), and an optional barrier {dir, index, count} for the concurrency test.
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -19,7 +20,7 @@ while (ob_get_level() > 0) {
     ob_end_flush();
 }
 
-/** @var array{mode: string, kill: bool, calendar: int, instance: int, uri: string, payload: string, barrier?: array{dir: string, index: int, count: int}} $config */
+/** @var array{mode: string, kill: bool, calendar: int, instance: int, uri: string, payload: string, principal: string, barrier?: array{dir: string, index: int, count: int}} $config */
 $config = json_decode((string) file_get_contents((string) ($argv[1] ?? '')), true, 512, JSON_THROW_ON_ERROR);
 
 $barrier = $config['barrier'] ?? null;
@@ -41,7 +42,7 @@ if ($payload === false) {
 
 $pdo = \Calflex\Database::connect(getenv('CALFLEX_DATABASE_URL') ?: '');
 $guard = \Calflex\WriteGuard::fromPdo($pdo);
-$backend = $config['kill'] ? new \Calflex\Tests\KillingCalendars($pdo, $guard) : new \Calflex\GuardedCalendars($pdo, $guard);
+$backend = $config['kill'] ? new \Calflex\Tests\KillingCalendars($pdo, $guard, $config['principal']) : new \Calflex\GuardedCalendars($pdo, $guard, $config['principal']);
 $calendarId = [$config['calendar'], $config['instance']];
 
 switch ($config['mode']) {
