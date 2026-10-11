@@ -436,6 +436,35 @@ export function createMemoryCalDavStore(seed = {}) {
         },
 
         /**
+         * `calendar-query` over a time range, as `src/occurrence-routes.mjs`
+         * uses it. The double answers the **whole collection**: the real
+         * service narrows the report with its own engine (`sabre/vobject`) and
+         * this API's exact filter is `src/occurrences.mjs`, which the suites
+         * exercise on its own — a double that narrowed with a second
+         * implementation would hide exactly that. The requested range is
+         * recorded, so a test can hold the padding the route asks CalDAV for.
+         * @param {string} calendarId
+         * @param {{start: string, end: string}} range
+         */
+        async listObjects(calendarId, range) {
+          events.push({
+            op: 'listObjects',
+            calendarId,
+            start: range?.start,
+            end: range?.end,
+          });
+          guard('listObjects');
+          const prefix = keyOf(calendarId, '');
+          return [...objects.entries()]
+            .filter(([key]) => key.startsWith(prefix))
+            .map(([key, object]) => ({
+              href: hrefOf(calendarId, key.slice(prefix.length)),
+              etag: object.etag,
+              data: object.ics,
+            }));
+        },
+
+        /**
          * `sync-collection`, as SabreDAV answers it (RFC 6578). Without a token
          * the whole collection, each present object with its ETag and data; with
          * one, exactly the objects whose latest change is newer than the number

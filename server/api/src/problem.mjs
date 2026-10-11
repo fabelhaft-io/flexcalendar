@@ -50,6 +50,7 @@ export const PROBLEM_TYPES = {
     title: 'Unsupported media type',
   },
   'invalid-input': { status: 422, title: 'Rejected input' },
+  'window-too-large': { status: 422, title: 'Window too large' },
   'precondition-required': {
     status: 428,
     title: 'Precondition required',
@@ -160,8 +161,10 @@ export function sendProblem(reply, slug, options = {}) {
 
 /**
  * The one kind per HTTP status. Three kinds share 403 — a generic refusal and
- * the two Private-write preconditions — and only the generic one is chosen by
- * status alone: the adapter's `preconditions` decide the other two.
+ * the two Private-write preconditions — and two share 422, the generic rejected
+ * input and the occurrence window this API refuses for its size (E05-R05); only
+ * the generic one of each is chosen by status alone, and the others are sent by
+ * the route that means them.
  */
 export const PROBLEM_STATUS = new Map([
   [400, 'bad-request'],

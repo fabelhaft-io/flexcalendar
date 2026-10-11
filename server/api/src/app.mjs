@@ -21,6 +21,10 @@
 // `GET /calendars/{calendarId}/changes`, with the API's own calendar-bound token
 // and a 410 for one the collection never reached.
 //
+// E05-R05 adds the occurrence window (`src/occurrence-routes.mjs` and
+// `src/occurrences.mjs`): `GET /calendars/{calendarId}/occurrences?from&to&tz`,
+// the windowed expansion over `calendar-query`.
+//
 // E05-R10 owns the error model and the observability hooks:
 //
 //   * Every error is an RFC 9457 problem document (`src/problem.mjs`), never
@@ -52,6 +56,7 @@ import { createCalDavAdapter } from './caldav/adapter.mjs';
 import { registerCalendarRoutes } from './calendars.mjs';
 import { registerChangeRoutes } from './changes.mjs';
 import { registerEventRoutes } from './events.mjs';
+import { registerOccurrenceRoutes } from './occurrence-routes.mjs';
 import { readConfig } from './config.mjs';
 import { UnavailableError, createOidcClient } from './oidc.mjs';
 import { problemForStatus, problemResponse, sendProblem } from './problem.mjs';
@@ -385,6 +390,7 @@ export function buildApp({
   registerCalendarRoutes(app, dependencies);
   registerEventRoutes(app, dependencies);
   registerChangeRoutes(app, dependencies);
+  registerOccurrenceRoutes(app, dependencies);
 
   // An unknown path is a 404; a known path under a method it does not register
   // is a 405 with the methods it does (`Allow`), which is why this handler asks

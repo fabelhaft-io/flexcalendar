@@ -278,12 +278,15 @@ export function describe(calendar) {
 }
 
 /**
- * Reads a time property back in the shape `src/events.mjs` writes one.
+ * Reads a time property back in the shape `src/events.mjs` writes one. It is
+ * exported because the occurrence expansion (`src/occurrences.mjs`) reads the
+ * stored times of a `VEVENT` — an override's `RECURRENCE-ID` included — through
+ * exactly this reader, so there is one answer to "what does the object spell".
  * @param {ICAL.Component} event
  * @param {string} name
  * @returns {{date: string} | {utc: string} | {local: string, tzid?: string, utc?: string} | null}
  */
-function timeOf(event, name) {
+export function timeOf(event, name) {
   const property = event.getFirstProperty(name);
   if (!property) return null;
   const value = property.getFirstValue();

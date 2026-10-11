@@ -42,6 +42,13 @@ and hit CalDAV directly (CLAUDE.md).
   whether the object is gone, beside an opaque token the API mints for that
   calendar. A token the collection never reached — malformed, another calendar's,
   or ahead of it — is the fixed `410`, which tells the client to reload fully.
+- **Occurrence window (E05-R05):** see [Occurrences](#occurrences).
+  `GET /calendars/{calendarId}/occurrences?from&to&tz` returns the expanded
+  instances of a half-open window, computed with `ical.js` from the masters and
+  their overrides and each tagged with the master `uid`, the instance's
+  `recurrenceId` and whether an override defines it. An object the expansion
+  cannot answer for honestly is reported in `unsupported` rather than guessed
+  at.
 - **Error model and observability (E05-R10):** see [Errors](#errors) and
   [Logging](#logging). Every error is an RFC 9457 problem document, every
   response carries a correlation ID, and no request-derived value — a path, a
@@ -444,6 +451,70 @@ client could redefine `Europe/Berlin` for every request (E04-R04's note).
   for byte — `test/events.test.mjs` and `test/ical-rmw.test.mjs` hold the
   Microsoft fixture of E15-R01 to that.
 
+## Occurrences
+
+One operation (`src/occurrence-routes.mjs`, with the expansion itself in
+`src/occurrences.mjs`), behind the bearer hook, declared in
+`spec/openapi.yaml` first: the windowed expansion our own clients cache, and the
+one place a `RRULE` becomes instances for the API.
+
+| Operation | Answer |
+|---|---|
+| `GET /calendars/{calendarId}/occurrences?from&to&tz` | `200` with the occurrences of the window and the objects that were left out; `404` for a calendar the caller is not a member of; `422` for a window this API does not answer |
+
+```json
+{
+  "occurrences": [
+    {
+      "uid": "6f1c0a2e-6a0e-4a2f-8a4b-1d3a5c7e9f01",
+      "recurrenceId": { "tzid": "Europe/Berlin", "local": "20261021T100000", "utc": "20261021T080000Z" },
+      "override": false,
+      "start": { "utc": "20261021T080000Z", "local": "20261021T100000", "tzid": "Europe/Berlin" },
+      "end": { "utc": "20261021T090000Z", "local": "20261021T110000", "tzid": "Europe/Berlin" },
+      "allDay": false,
+      "envelopeSha256": "ef2d…"
+    }
+  ],
+  "unsupported": []
+}
+```
+
+- **The client never expands a rule** (ADR 0002, INV-05). The instances come
+  from the masters and their override `VEVENT`s, `ical.js` does the recurrence
+  arithmetic on wall clocks, and every instant is computed from Node's own zone
+  database (`src/zones.mjs`) — never from the library, which has no zone
+  database and is wrong on a local time that does not exist or occurs twice.
+- **An edit is an intent.** `recurrenceId` is the instance's *original* start in
+  the form the object stores it, and it is what E05-R06/R07 send back to address
+  "this occurrence". `override` says whether an override `VEVENT` defines it,
+  and the master's own instance is gone from the window when one does.
+- **The window is half-open**: `from` included, `to` excluded, and an instance
+  is in when its interval overlaps it. Both bounds are instants in the API's own
+  form (`YYYYMMDDTHHMMSSZ`), `to` later than `from`, and at most 1830 days
+  apart. `tz` is the IANA zone every instant is reported in (absent: `UTC`), and
+  an all-day occurrence is a `date` whose instants are that zone's midnights —
+  which is why a transition day is 23, 24 or 25 hours long.
+- **`from`, `to` and `tz` are the whole query.** A member the operation does not
+  take, a `tz` that is not an IANA name in its exact spelling, a `from` that is
+  not an instant — all one fixed `422`, sent before the store or CalDAV is
+  asked, and never echoing the value that was refused.
+- **A window that is too big is refused, not sliced.** More than 10 000
+  occurrences in one answer is the `422` `window-too-large`: there is no
+  pagination, and a client that asks for five years of a minutely rule is told
+  to ask for less rather than handed a slice it cannot tell from the whole.
+- **`unsupported` is not an error.** An object whose rule is one `ical.js`
+  expands wrongly (`BYWEEKNO`, a yearly rule anchored on 29 February:
+  `spec/ical-fixtures/RULINGS.md`), one that names a `TZID` no zone database can
+  read (a Windows name a stock app wrote), and one whose expansion would not
+  stop inside the API's own bound are reported with a `reason` and contribute no
+  occurrences. The rest of the window is answered as usual; a wrong expansion is
+  never invented.
+- **The CalDAV read is wider than the window.** The `calendar-query` asks for
+  `from − 1 day` to `to + 1 day`, so an all-day day or a ±14 h offset cannot be
+  filtered out by the service's own recurrence engine; the exact filter is this
+  module's. The answer carries a `uid`, a `recurrenceId`, two times and an
+  envelope hash — never a `SUMMARY`, a description, a location or an attendee.
+
 ## Changes
 
 One operation (`src/changes.mjs`), behind the bearer hook, declared in
@@ -466,9 +537,9 @@ place the API speaks WebDAV-Sync (RFC 6578).
 ```
 
 - **The answer is pointers, never content.** No `ical`, no `parsed`, no envelope:
-  a client fetches what it needs with `GET …/events/{uid}` (which E05-R05 will
-  window), and a tombstone carries no `etag` at all — not `null`, not the last
-  one — so a deletion cannot be mistaken for a stale copy.
+  a client fetches what it needs with `GET …/events/{uid}` (and windows it with
+  `GET …/occurrences`, E05-R05), and a tombstone carries no `etag` at all — not
+  `null`, not the last one — so a deletion cannot be mistaken for a stale copy.
 - **No `since` is the initial load:** the whole collection, every object
   `deleted: false` with its `ETag`, and a token to carry into the next call. The
   client caches nothing else (`docs/02` § Offline cache).
@@ -584,11 +655,12 @@ the e-mail address it names.
 | `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed, a stale calendar version or a stale event `ETag` included; an event write carries the current representation in `current` (E05-R04), or the `not-found` above when the object is gone |
 | `payload-too-large` | 413 | The body exceeds the service's limit |
 | `unsupported-media-type` | 415 | The body's media type is not accepted |
-| `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04): a member the operation does not take, a value it cannot write, a rule part RFC 5545 does not name, a `start`/`end` pair the RFC forbids, or a `PATCH` that names nothing |
+| `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04): a member the operation does not take, a value it cannot write, a rule part RFC 5545 does not name, a `start`/`end` pair the RFC forbids, or a `PATCH` that names nothing — and by the occurrence window (E05-R05): a `from`/`to`/`tz` this API does not answer, or a query member the operation does not take |
+| `window-too-large` | 422 | The occurrence window would answer more than 10 000 occurrences (E05-R05); the client narrows it, and there is no pagination |
 | `precondition-required` | 428 | A write carried no `If-Match`, so there is no version to be optimistic against (E05-R03, E05-R04) |
 | `rate-limited` | 429 | Over `CALFLEX_RATE_LIMIT_MAX`; `Retry-After` is set |
 | `internal-error` | 500 | Ours to fix; the body says nothing more |
-| `bad-gateway` | 502 | CalDAV or the IdP could not be read; a CalDAV `401` included, which is never the caller's `401` — and an event object the API cannot describe (E05-R04) |
+| `bad-gateway` | 502 | CalDAV or the IdP could not be read; a CalDAV `401` included, which is never the caller's `401` — and an event object the API cannot describe (E05-R04), an occurrence object included (E05-R05) |
 | `unavailable` | 503 | Not configured, or the IdP's keys are unusable |
 | `upstream-timeout` | 504 | A CalDAV call ran past its deadline |
 
@@ -731,6 +803,40 @@ collection and echoes it. `test/integration-imports.test.mjs` reads the imports
 of every stack suite, transitively, and fails on a bare specifier that is not a
 production dependency: that is how a suite the `api-test` image cannot load is
 caught in the unit suite instead of at `make test-api-caldav`.
+
+The E05-R05 suites need nothing but Node either, except the last one.
+`test/occurrences.test.mjs` is the expansion module on its own: the half-open
+window at both edges and one second either side of them, a zero-length instance,
+an all-day day placed by the requested zone's midnights in a zone ahead of UTC
+and one behind it (and Berlin's 23-hour transition day), an unbounded weekly,
+monthly and all-day rule, a `DTSTART` years before the window, a multi-day event
+that starts before it, an `EXDATE` and an `RDATE`, the E15-R01 skeleton with its
+override, an override moved into and out of the window, one whose
+`RECURRENCE-ID` names nothing, the two rule families `ical.js` expands wrongly,
+the bound that reports `too-many-instances`, the pending ruling's reading, the
+sort order, determinism, and a canary that reaches the answer from nowhere.
+`test/occurrences-dst.test.mjs` is the API's runner for E15-R02's table: every
+case read from the file, built with its zone's own `VTIMEZONE` so nothing is
+resolved through the library, and compared with `expected` — with `view-zone`
+also holding the viewer's wall clock, `all-day` holding the day's exact window,
+and `daily-skipped` accepting either reading, saying which one it matched and
+staying `todo` because the ruling is pending. `test/occurrences-corpus.test.mjs`
+is the API's runner for E15-R03's corpus: all 34 fixtures through the module,
+normalised to the golden's form and compared with E15-R03's own helpers, with the
+two families `RULINGS.md` names left out and their ruling required to name
+`vobject` as the correct engine. `test/occurrences-route.test.mjs` drives the
+operation through the real app against the in-memory stores: every malformed
+window as the one fixed `422` before the store or CalDAV is asked, the padded
+`calendar-query` range, the default zone, all three roles, the `unsupported`
+answer, the `window-too-large` refusal and the narrower window that fits, the
+404s, the `405` with `Allow`, and a canary from a hostile store, a hostile
+adapter and an unreadable object that reaches neither a body nor a log line.
+`test/integration/occurrences.test.mjs` (inside the stack, `make
+test-api-caldav`) creates a Berlin weekly event and a UTC daily one across the
+2026-10-25 fall-back through the API and asserts the window's instants and the
+viewer's wall clocks, then takes an object the API itself wrote, adds the
+`EXDATE` and the override `VEVENT` its own field set never writes, puts that
+through the **live** guard and reads the window that covers the override.
 
 The E05-R10 suites also need nothing but Node. `test/problem.test.mjs` holds the
 problem table, the status normaliser and the CalDAV mapping (hostile body
