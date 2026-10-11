@@ -19,10 +19,14 @@ and hit CalDAV directly (CLAUDE.md).
   ([E02-R03](../../docs/epics/E02-repo-tooling-ci.md)):** the `api` service of
   [`infra/dev/compose.yaml`](../../infra/dev/compose.yaml) is built from the
   [`Dockerfile`](Dockerfile) here and runs [`src/server.mjs`](src/server.mjs).
-  It answers `GET /healthz` and `GET /me`, and nothing but the readiness probe
-  is reachable without an access token.
+  It answers `GET /healthz`, `GET /me` and the calendars routes below, and
+  nothing but the readiness probe is reachable without an access token.
 - **OIDC bearer auth (E05-R01):** see [Authentication](#authentication). The
   service never decrypts and stores no event content.
+- **Calendars API (E05-R03):** see [Calendars](#calendars). A Private calendar's
+  name and colour exist only inside the envelope the client seals (D-18): the
+  API checks its header and its size, stores it opaquely, and never opens one
+  (INV-07).
 - **Error model and observability (E05-R10):** see [Errors](#errors) and
   [Logging](#logging). Every error is an RFC 9457 problem document, every
   response carries a correlation ID, and no request-derived value — a path, a
@@ -149,6 +153,84 @@ does a `CALFLEX_LOG_LEVEL` outside the list above.
 
 `GET /healthz` touches none of them and stays database-free.
 
+## Calendars
+
+Four operations (`src/calendars.mjs`), all behind the bearer hook, all declared
+in `spec/openapi.yaml` first:
+
+| Operation | Answer |
+|---|---|
+| `GET /calendars` | `200` with the calendars the caller is a **member** of, oldest first |
+| `POST /calendars` | `201` with `Location: /calendars/{id}` and `ETag: "<version>"` |
+| `PATCH /calendars/{id}` | `200`; replaces the metadata envelope, needs `If-Match` |
+| `DELETE /calendars/{id}` | `204`; removes the collection and the rows |
+
+### Identity, roles and the envelope
+
+- **Identity.** The caller's `users.id` comes from the one `resolveUser` in
+  `src/auth.mjs` that `GET /me` uses; there is no second lookup. A new
+  `calendars.id` is `crypto.randomUUID()` (INV-03) and the collection href is
+  `/calendars/<ownerId>/<calendarId>/`.
+- **Mode.** Create requires an explicit `mode` and has no default (ADR 0001);
+  until Phase 4 only `private` is accepted (ADR 0003). `published` is created
+  through E06-R06, `shared` arrives with Phase 4.
+- **The envelope (D-18).** A Private calendar takes `metaEnvelope` and
+  `metaEpoch` instead of `name`/`color`. `metaEnvelope` is **standard base64**
+  (OpenAPI `format: byte`) of the bytes the client sealed: version `0x01`, the
+  CCK epoch as a big-endian uint32, a 24-byte nonce, ciphertext, a 16-byte tag.
+  The API checks only what a server without a key can — the version byte, that
+  the epoch equals `metaEpoch`, the 45 bytes of fixed fields, and at most 4096
+  bytes (`src/calendar-envelope.mjs`) — stores the bytes in
+  `calendars.meta_envelope`, and gives the CalDAV collection the fixed display
+  name `Private calendar` (E03-R09). Everything after byte 45 is opaque, and the
+  envelope is never logged, echoed in a problem or decoded further (INV-07).
+- **Rename and recolour** are one act: `PATCH` replaces the envelope and the
+  epoch it names. It is rows-only — nothing is written to CalDAV, so the
+  collection keeps its display name — and it must carry `If-Match: "<version>"`:
+  a stale version is a `412`, a missing one a `428`. The version bumps in the
+  same statement that writes the row, so a lost update is impossible.
+- **Who may do what.** Only the owner renames, recolours or deletes. A member
+  who is not the owner gets `403`; a caller who is not a member gets `404`, the
+  same answer an id that exists nowhere gets (E03-R01).
+- **An id that is not a UUID is that same `404`**, and the route decides it
+  before the store is asked: `calendars.id` is a `uuid` column, so `not-a-uuid`
+  would raise `22P02` and turn a request whose real answer is "no such calendar"
+  into a `500`. Only the canonical lowercase form this API mints is accepted
+  (INV-03).
+- **The version** is the `version` column the E05-R03 migration adds
+  (`integer NOT NULL DEFAULT 1`, `CHECK (version >= 1)`), and it is the `ETag`.
+
+### Create and delete: which order, and what happens when a step fails
+
+- **Create is rows first, collection second.** The CalDAV service answers `404`
+  for a collection whose `calendars` row is not committed (E03-R08), so
+  `POST /calendars` (1) inserts the `calendars` row and the owner's
+  `calendar_members` row in one transaction and **commits**, (2) calls
+  `MKCALENDAR`, and (3) if that fails, deletes the row again — the membership row
+  cascades — and answers through the CalDAV mapping. A compensation that itself
+  fails logs both error names and answers `500`: the row is still there, which is
+  what a 5xx means here.
+- **Delete is the other way round.** (1) `DELETE` the collection while the owner
+  can still reach it, a CalDAV `404` counting as already gone, then (2) delete
+  the rows. A failure at (2) answers `500` and leaves the collection gone, so the
+  client's retry finishes the job.
+- **No request-body schema, deliberately.** A body that fails Fastify's schema
+  validation is a `400`, and the rules of this section must answer `422`, so the
+  calendars operations declare none: they check the request's own fields, and
+  every refusal is the same `422` `invalid-input` problem with a fixed body —
+  never a value, never an envelope byte. A member the operation does not take is
+  refused rather than ignored, so a misspelled `name` cannot look like a
+  successful rename.
+- **`405`, not `404`.** A known path under a method it does not register is a
+  `405` with an `Allow` header, for every registered path: `src/allow.mjs`
+  records Fastify's route table through `onRoute` and the not-found handler asks
+  it first. An unknown path stays a `404`, without an `Allow`.
+- **A CalDAV `401` is not the caller's `401`.** The bearer token was verified
+  before the route ran, so a refusal from the listener means our delegation
+  failed — a bad key, or a service whose database is down — and it is answered as
+  a `502` like every other unreadable upstream answer. A `401` there would sign a
+  correctly authenticated client out (E03-R01, `src/problem.mjs`).
+
 ## Errors
 
 Every error the API answers with is an **RFC 9457 problem document**:
@@ -183,20 +265,21 @@ no `detail`; a `pg` unique violation never echoes the e-mail address it names.
 |---|---|---|
 | `bad-request` | 400 | A malformed or schema-refused request body |
 | `unauthorized` | 401 | Missing, malformed, expired or unverifiable token |
-| `forbidden` | 403 | The issuer reports the e-mail as unverified |
+| `forbidden` | 403 | The issuer reports the e-mail as unverified, or the caller is a member of the calendar but not its owner |
 | `private-skeleton-only` | 403 | A Private write carried content; the `property` member names it |
 | `unmapped-collection` | 403 | The collection has no `calendars` row |
-| `not-found` | 404 | No such resource, path or method |
-| `method-not-allowed` | 405 | The method is not allowed on the path |
+| `not-found` | 404 | No such resource or path — or a calendar the caller is not a member of, which is deliberately the same answer (E03-R01) |
+| `method-not-allowed` | 405 | The method is not allowed on the path; `Allow` names the ones that are |
 | `conflict` | 409 | The handle or e-mail address is already taken |
 | `gone` | 410 | The resource is gone |
-| `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed |
+| `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed, a stale calendar version included |
 | `payload-too-large` | 413 | The body exceeds the service's limit |
 | `unsupported-media-type` | 415 | The body's media type is not accepted |
-| `invalid-input` | 422 | Input refused by a write path's own rules (E05-R04) |
+| `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04) |
+| `precondition-required` | 428 | A rename carried no `If-Match`, so there is no version to be optimistic against (E05-R03) |
 | `rate-limited` | 429 | Over `CALFLEX_RATE_LIMIT_MAX`; `Retry-After` is set |
 | `internal-error` | 500 | Ours to fix; the body says nothing more |
-| `bad-gateway` | 502 | CalDAV or the IdP could not be read |
+| `bad-gateway` | 502 | CalDAV or the IdP could not be read; a CalDAV `401` included, which is never the caller's `401` |
 | `unavailable` | 503 | Not configured, or the IdP's keys are unusable |
 | `upstream-timeout` | 504 | A CalDAV call ran past its deadline |
 
@@ -256,6 +339,17 @@ cannot. `test/auth-db.test.mjs` needs the same rootless
 Podman as the migration tests, and exercises `public.users` through
 `test/support/postgres.mjs`.
 
+The E05-R03 suites split the same way. `test/calendar-envelope.test.mjs` holds
+the envelope's version byte, epoch, fixed fields, 4 KiB ceiling and encoding;
+`test/allow.test.mjs` holds the `405` table; `test/calendars.test.mjs` drives
+the four operations through the real app against the in-memory store in
+`test/support/calendar-store.mjs` and a fake adapter — every `422` rule, the
+UUIDv4 id and href (INV-03), `If-Match` (428/412 and a lost update), the roles,
+the compensation in both failure orders, the `405` and the hostile-exception
+canary. `test/calendars-db.test.mjs` needs Podman: it holds the create
+transaction, its rollback, the committed-before-`MKCALENDAR` row, the version
+and the cascade against the real schema.
+
 The E05-R10 suites also need nothing but Node. `test/problem.test.mjs` holds the
 problem table, the status normaliser and the CalDAV mapping (hostile body
 included); `test/logging.test.mjs` drives the real app with a captured log
@@ -268,4 +362,9 @@ suite's copy of it together.
 `test/integration/caldav-adapter.test.mjs` (inside the stack, `make
 test-api-caldav`) sends markers through the adapter into CalDAV — a content
 property, envelope bytes and a request body — and asserts the refusals name the
-property and never the value.
+property and never the value. `test/integration/calendars.test.mjs` (the same
+target) runs the four operations against the real CalDAV service: the collection
+exists with the display name `Private calendar`, a second user sees neither the
+collection nor the row, a rename leaves the collection untouched, a delete
+leaves it answering `404`, and a marker inside a refused `metaEnvelope` reaches
+neither a body nor a log line.

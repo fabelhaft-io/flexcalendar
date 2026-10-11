@@ -12,6 +12,7 @@
 // without them the service answers 503 rather than accepting a request.
 
 import { buildApp } from './app.mjs';
+import { createCalendarStore } from './calendar-store.mjs';
 import { readConfig } from './config.mjs';
 import { createPool, createUserStore } from './store.mjs';
 
@@ -20,7 +21,11 @@ const config = readConfig();
 // boots and keeps answering its readiness probe, and an idle client the
 // database drops is handled by the pool rather than by an unhandled `error`.
 const pool = createPool({ connectionString: config.databaseUrl });
-const app = buildApp({ config, store: createUserStore(pool) });
+const app = buildApp({
+  config,
+  store: createUserStore(pool),
+  calendars: createCalendarStore(pool),
+});
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';
 

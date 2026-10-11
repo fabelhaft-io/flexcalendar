@@ -355,10 +355,14 @@ test('every error body validates against the spec Problem schema', async () => {
       await call(app, { token: '' }), // 401
       await call(app, { token: 'xxx.yyy.zzz' }), // 401
       await call(app, { url: '/not-a-route' }), // 404
-      await call(app, { method: 'POST', url: '/me' }), // 404 (no route)
+      await call(app, { method: 'POST', url: '/me' }), // 405, with `Allow`
     ];
     assert.equal((await call(limited.app)).statusCode, 200);
     responses.push(await call(limited.app)); // 429
+    // The one that is not 401/404/429: a known path under a method it does not
+    // register, with the methods it does (E05-R03).
+    assert.equal(responses[3].statusCode, 405, responses[3].body);
+    assert.equal(responses[3].headers.allow, 'GET, HEAD');
     for (const response of responses) {
       assert.ok(response.statusCode >= 400, response.body);
       assert.match(
