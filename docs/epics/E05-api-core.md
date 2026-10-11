@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 (R01–R05, R08–R10); 3 (R07); 4 (R06), per ADR 0003 |
-| Status | In progress: R01 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E05-R01-oidc-bearer-auth/docs/reviews/E05-R01.md), [PR #51](https://github.com/fabelhaft-io/flexcalendar/pull/51)) and R02 passed review ([findings](https://github.com/fabelhaft-io/flexcalendar/blob/feat/E05-R02-caldav-client-adapter/docs/reviews/E05-R02.md), [PR #53](https://github.com/fabelhaft-io/flexcalendar/pull/53), stacked on #51), Done once merged; R03 and R04 follow R02, the rest follow R01 and R02. R07 also waits for E13-R02 |
+| Status | In progress: R01 ([PR #51](https://github.com/fabelhaft-io/flexcalendar/pull/51)) and R02 ([PR #53](https://github.com/fabelhaft-io/flexcalendar/pull/53)) Done, 2026-10-11; R03 and R04 follow R02, the rest follow R01 and R02. R07 also waits for E13-R02 |
 | Executor | `agent` (`agent+review` for R01) |
 | Depends on | E02-R03, E02-R07, E02-R09, E03-R01, E04; D-01, D-03, D-05, D-18 |
 | Spec | `01-architecture.md` § API layer, `02` § Backend and § Recurrence, ADR 0002 |
