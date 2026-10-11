@@ -1,0 +1,1 @@
+- **E07:** `calflex_api` has `SELECT` only on `caldav_changes` (the CalDAV service writes the outbox). The grants its worker needs go into E07's own migration.

@@ -1,0 +1,5 @@
+- **Text nits on `main`**, for whoever touches the file next:
+  - `infra/zitadel/README.md` § state tells "existing local installations" to remove an old `zitadel-state` volume; that volume existed only during E02-R09's review, never on `main`;
+  - `CONTRIBUTING.md` says the harness writes the new subject "once PR #6 is merged", which is stale;
+  - `pnpm-workspace.yaml` calls `packages/crypto_dart` "README-only" (it has a pubspec);
+  - the `gradle-daemon-jvm.properties` comment overstates "Gradle resolves a matching toolchain itself" (it only detects an installed JDK 21).

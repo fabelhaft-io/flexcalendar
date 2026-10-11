@@ -1,0 +1,4 @@
+- **Migrations (E04-R01 review 3, E04-R02):**
+  - whoever adds the first `down = false` migration: the "down to zero" cases in `migrate.test.mjs` and `schema.test.mjs` must stop at it;
+  - `server/api/migrate.config.json` holds dashed keys only: node-pg-migrate 9.0.0 reads those from the file, lets the file override the command line, and takes `single-transaction` and `lock` from its CLI defaults (`true`), which the rollback cases guard;
+  - the role-exists guard at the top of `1791496692783_core-tables-and-roles.mjs` has no test; a regression there only costs a worse error message.

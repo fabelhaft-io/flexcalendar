@@ -623,6 +623,32 @@ test('the queue prose around an ID and its follow-ups are shown with it', () => 
   });
 });
 
+test('follow-ups in docs/reviews/follow-ups/ count like those in follow-ups.md', () => {
+  withRepo((repo) => {
+    repo.commit({ 'docs/reviews/E01-R01.md': review('PASS') }, 'R01 Done');
+    const before = repo.run();
+    assert.equal(row(before, 'E01-R02').followUps, 1);
+    assert.equal(row(before, 'E01-R08').followUps, 0);
+    repo.commit(
+      {
+        'docs/reviews/follow-ups/from-E01-R01.md':
+          '- **E01-R02:** a note.\n- **E01-R02, E01-R08:** another.\n',
+        // not Markdown: ignored
+        'docs/reviews/follow-ups/scratch.txt': '- **E01-R08:** not counted.\n',
+      },
+      'follow-ups, one file per source',
+    );
+    const after = repo.run();
+    assert.equal(row(after, 'E01-R02').followUps, 3);
+    assert.equal(row(after, 'E01-R08').followUps, 1);
+    assert.deepEqual(
+      after.rows.map((r) => r.id),
+      before.rows.map((r) => r.id),
+      'a follow-ups file names requirements, but it is never a queue entry',
+    );
+  });
+});
+
 test('an unknown ref is an empty answer, not a crash', () => {
   withRepo((repo) => {
     const result = analyze(gitSource(repo.dir), { ref: 'no-such-ref' });

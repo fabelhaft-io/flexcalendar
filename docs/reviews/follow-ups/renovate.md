@@ -1,0 +1,1 @@
+- **Renovate (when it is set up):** group `analyzer` with `build_runner`, and `openapi-typescript` with its `typescript` 5.x pin in `packages/api-client-ts`.
