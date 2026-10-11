@@ -23,7 +23,7 @@ description: Run calendar-flex's implementation loop as orchestrator and reviewe
 
 ## Running unattended with /loop
 
-`/loop /orchestrate`, with no interval, makes you pace yourself. One firing is one pass of the loop in the neutral skill: `make next-ready`, start what it says, review what has finished, open the PR, then schedule the next firing. Each firing starts from the repo, not from memory: `docs/reviews/follow-ups.md` and `make next-ready` are the state.
+The brief for such a session is [`kickoff.md`](../../../.agents/skills/orchestrate/kickoff.md); start it with `/loop Run /orchestrate unattended. Follow .agents/skills/orchestrate/kickoff.md.` A `/loop` without an interval makes you pace yourself. One firing is one pass of the loop in the neutral skill: `make next-ready`, start what it says, review what has finished, open the PR, then schedule the next firing. Each firing starts from the repo, not from memory: `docs/reviews/follow-ups.md` and `make next-ready` are the state.
 
 - Hand the same `/loop /orchestrate` prompt back to `ScheduleWakeup` each time, with `noop: true` on a firing where nothing changed.
 - Don't schedule a short wake-up to poll a background run: the harness re-invokes you when it finishes. Set a fallback of 1200 s or more, so the loop survives a run that hangs.
