@@ -12,6 +12,9 @@ Problem _$ProblemFromJson(Map<String, dynamic> json) => Problem(
   status: (json['status'] as num).toInt(),
   instance: json['instance'] as String,
   property: json['property'] as String?,
+  current: json['current'] == null
+      ? null
+      : Event.fromJson(json['current'] as Map<String, dynamic>),
 );
 
 Map<String, dynamic> _$ProblemToJson(Problem instance) => <String, dynamic>{
@@ -20,4 +23,5 @@ Map<String, dynamic> _$ProblemToJson(Problem instance) => <String, dynamic>{
   'status': instance.status,
   'instance': instance.instance,
   'property': instance.property,
+  'current': instance.current,
 };

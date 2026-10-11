@@ -4,6 +4,8 @@
 
 import 'package:json_annotation/json_annotation.dart';
 
+import 'event.dart';
+
 part 'problem.g.dart';
 
 /// An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`.
@@ -15,6 +17,7 @@ class Problem {
     required this.status,
     required this.instance,
     this.property,
+    this.current,
   });
 
   factory Problem.fromJson(Map<String, Object?> json) =>
@@ -25,6 +28,7 @@ class Problem {
   final int status;
   final String instance;
   final String? property;
+  final Event? current;
 
   Map<String, Object?> toJson() => _$ProblemToJson(this);
 }
