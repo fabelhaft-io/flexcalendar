@@ -1,4 +1,4 @@
 - **From the E03-R10 reviews, for later requirements** (R10 itself is in PR #50):
-  - **E05-R08, E07:** `sync_token` in `caldav_changes` is the number `sync-collection` reports (`calendarchanges.synctoken + 1`): E05-R08 and E07 hand it to clients as "changed up to";
+  - **E07:** `sync_token` in `caldav_changes` is the number `sync-collection` reports (`calendarchanges.synctoken + 1`), and E05-R08's delta token carries it as "changed up to" (`from-E05-R08.md`);
   - **E07:** one outbox row per object change. Deleting a collection writes no per-object rows (they cascade with the `public.calendars` row), and a `MOVE` between calendars is two rows in two transactions; the 30 s `sync-collection` fallback covers what the outbox misses;
   - **whoever next edits `GuardedCalendars`:** mutation V8 survives. Moving the `COMMIT` ahead of the outbox insert passes every test, because the kill seam sits before the commit. A second seam after the insert, killed there (nothing may persist), would catch it; the implementer's own notes expected the existing tests to catch it. The owner can also ask for a fourth run of E03-R10 to add it.
