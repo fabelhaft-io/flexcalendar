@@ -76,6 +76,14 @@ verify-corpus: ## Run registered corpus checks against the local stack
 verify-%:
 	node infra/scripts/verify.mjs $*
 
+.PHONY: host-tools
+
+# `make verify` and `make gen` need PHP, Composer, Flutter and Dart on PATH, and the
+# dev host has none. Pass ARGS='--bin-dir <dir>' or ARGS=--skip-flutter to adjust.
+host-tools: ## Install the pinned PHP, Composer, Flutter and Dart as shims in ~/.local/bin (no root)
+	@test -d agent-team/node_modules || (cd agent-team && npm ci --no-audit --no-fund)
+	cd agent-team && npm run --silent host-tools -- $(ARGS)
+
 .PHONY: token zitadel-plan test-zitadel
 
 token: export CALFLEX_TOKEN_USER = $(USER)

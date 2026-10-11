@@ -48,15 +48,15 @@ function hasHash(file: string, expected: string): boolean {
   return fs.existsSync(file) && sha256(file) === expected;
 }
 
-function download(url: string, dest: string): void {
+export function download(url: string, dest: string, timeoutMs = 5 * 60 * 1000): void {
   const r = spawnSync('curl', ['--fail', '--silent', '--show-error', '--location', '--output', dest, url], {
     encoding: 'utf8',
-    timeout: 5 * 60 * 1000,
+    timeout: timeoutMs,
   });
   if (r.error || r.status !== 0) throw new Error(`download of ${url} failed: ${r.error?.message ?? r.stderr.trim()}`);
 }
 
-function verified(file: string, expected: string, what: string): void {
+export function verified(file: string, expected: string, what: string): void {
   const actual = sha256(file);
   if (actual !== expected) throw new Error(`${what}: SHA-256 ${actual}, expected ${expected}; refusing to use it`);
 }

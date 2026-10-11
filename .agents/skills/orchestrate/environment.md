@@ -6,22 +6,10 @@
 - Java 27 is the default; JDK 21 is at `/usr/lib/jvm/java-21-openjdk`.
 - `plantuml`; `gh`, logged in as the repo owner.
 - Containers: rootless Podman. `podman compose` hands the file to docker-compose over the user socket. There is no Docker daemon.
-- PHP, Composer, Dart and Flutter are **not** on the host. Run them in containers: `php:8.4-cli` (copy `composer` out of `composer:2`, or use that image for installs), and `dart:<pinned>`. For Flutter there is no `ghcr.io/cirruslabs/flutter` tag for our pin. Download the official tarball into the scratch directory, `https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_<version>-stable.tar.xz`, and check its SHA-256 against the `stable` entry for that version in `https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json`.
-- Shims in a directory on `PATH` let `make verify` and `make gen` run on the host. `php` runs with `--network host`, because the tooling tests reach host ports; `composer` is below. `flutter` and `dart` are shims too, not an exported `HOME`, because corepack and pnpm need the real one:
-
-  ```sh
-  #!/bin/sh
-  # composer
-  exec podman run --rm -v "$PWD":/app:Z -v <scratch>/composer:/usr/local/bin/composer:ro,Z -w /app <php image> composer "$@"
-  ```
-
-  ```sh
-  #!/bin/sh
-  # flutter (the dart shim is the same with .../flutter/bin/dart)
-  HOME=<scratch>/home PUB_CACHE=<scratch>/pub-cache FLUTTER_SUPPRESS_ANALYTICS=true DART_SUPPRESS_ANALYTICS=true CI=true exec <scratch>/flutter/bin/flutter "$@"
-  ```
-
-- **`pdo_pgsql`.** `server/caldav/composer.json` requires `ext-pdo_pgsql`, and neither `php:8.4-cli` nor `composer:2` has it (checked 2026-10-07). A `vendor/` installed by a PHP that does (the implementer sandbox's) embeds a platform check that fails under the plain image ("Composer detected issues in your platform"). Either install `vendor/` with `composer install --ignore-platform-req=ext-pdo_pgsql`, which leaves the extension out of the check, or build a derived image (`FROM docker.io/library/php:8.4-cli`, `apt-get install -y libpq-dev unzip git`, `docker-php-ext-install pdo_pgsql`) and use it in the `php` and `composer` shims. `php:8.4-cli` has no `unzip`, so install `vendor/` with `composer:2` or the derived image.
+- PHP, Composer, Dart and Flutter are **not** installed system-wide. **Run `make host-tools` once per machine** (again when a pin changes): it puts the pinned ones on `PATH` as shims in `~/.local/bin`, with no root and no containers, so `make verify` and `make gen` run on the host. It is idempotent, and it never overwrites a file in the bin directory that it did not write.
+  - PHP and Composer are the implementer sandbox's pinned static build (`agent-team/src/lib/toolchains.ts`, hash-checked), kept in `~/.cache/calendar-flex-agent-team-tools/`. It includes `pdo_pgsql`, so the platform check in a `vendor/` installed by the sandbox also passes on the host. The shims point `PHPRC` at a `php.ini` with `memory_limit = -1`, because a static PHP has none and PHPStan's workers crash at the 128M default. PHPStan prints "Unable to load dynamic library … phpstan_turbo" on this PHP; the warning is harmless.
+  - Flutter is the version in `apps/mobile/.fvmrc`, checked against the SHA-256 in Google's `releases_linux.json`, kept in `~/.cache/calendar-flex-host-tools/`. Dart is the one inside it. The two shims run with a private `HOME` and pub cache, because corepack and pnpm need the real `HOME` and Flutter's own state doesn't belong in it; Gradle's home and the Android SDK stay the real ones.
+  - Container PHP is no substitute: `php:8.4-cli` and `composer:2` have no `pdo_pgsql` (checked 2026-10-07), so Composer's platform check fails on a `vendor/` built with it unless you pass `--ignore-platform-req=ext-pdo_pgsql`.
 - `make verify-tooling` runs `php` and binds host ports 8080 and 3000: keep them free and `php` on `PATH`.
 - Since E02-R07 `make verify` and `make gen` need the pinned Flutter on `PATH`. `flutter pub get` and `flutter analyze` in `apps/mobile` leave an untracked `apps/mobile/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`. Remove it and the empty directories before you re-run the coordinator, which refuses a dirty worktree.
 - The implementer sandbox has its own pinned static PHP and Composer (`agent-team/src/lib/toolchains.ts`), no Podman, and no stack access.
