@@ -73,11 +73,13 @@ export function bearerToken(request) {
 
 /**
  * The per-request identity the hook attaches: the token's `sub`, plus the
- * `users.id` once a route has resolved the row.
+ * `users.id` once a route has resolved the row. Exported because
+ * `src/calendars.mjs` continues the same identity (`{id, sub}`) rather than
+ * reading the decoration a second way.
  * @param {import('fastify').FastifyRequest} request
  * @returns {{id?: string, sub?: string}}
  */
-function identity(request) {
+export function identity(request) {
   return /** @type {any} */ (request).user ?? {};
 }
 
@@ -96,6 +98,10 @@ export function isHealthProbe(request) {
 /**
  * Resolves the token's subject to a `users` row, creating it on first sight
  * from the issuer's userinfo. Every refusal explains nothing about the token.
+ *
+ * This is the one lookup: `GET /me` and the calendars routes
+ * (`src/calendars.mjs`, E05-R03) both call it, so the first-sight rules and
+ * every refusal live in one place (E05-R01's review).
  * @param {object} options
  * @param {import('fastify').FastifyRequest} options.request
  * @param {import('fastify').FastifyReply} options.reply
@@ -103,7 +109,7 @@ export function isHealthProbe(request) {
  * @param {{userinfo: Function}} options.oidc
  * @returns {Promise<{id: string, handle: string, email: string} | undefined>}
  */
-async function resolveUser({ request, reply, store, oidc }) {
+export async function resolveUser({ request, reply, store, oidc }) {
   const subject = identity(request).sub;
   if (!subject) {
     unauthorized(reply);

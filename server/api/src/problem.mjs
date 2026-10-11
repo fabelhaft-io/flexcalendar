@@ -48,6 +48,10 @@ export const PROBLEM_TYPES = {
     title: 'Unsupported media type',
   },
   'invalid-input': { status: 422, title: 'Rejected input' },
+  'precondition-required': {
+    status: 428,
+    title: 'Precondition required',
+  },
   'rate-limited': { status: 429, title: 'Too many requests' },
   'internal-error': { status: 500, title: 'Internal server error' },
   'bad-gateway': { status: 502, title: 'Upstream request failed' },
@@ -164,6 +168,7 @@ export const PROBLEM_STATUS = new Map([
   [413, 'payload-too-large'],
   [415, 'unsupported-media-type'],
   [422, 'invalid-input'],
+  [428, 'precondition-required'],
   [429, 'rate-limited'],
   [500, 'internal-error'],
   [502, 'bad-gateway'],
@@ -198,6 +203,13 @@ export function problemForStatus(status) {
  * it and the adapter's already-filtered `preconditions` may add the offending
  * property name — the CalDAV body itself is never forwarded, and nothing here
  * reads a message, a URL or a response body.
+ *
+ * A CalDAV `401` is **not** the caller's 401 (E03-R01): the bearer token was
+ * already verified before any route ran, so a 401 from the listener means our
+ * own delegation failed — a bad key, or a service whose database is down and
+ * which "answers 401 like a denial". Answering 401 here would sign a correctly
+ * authenticated client out, so it is a 502 like every other unreadable upstream
+ * answer.
  *
  * @param {unknown} error a `CalDavError`-shaped value
  * @returns {{problem: string, property?: string}}
@@ -243,7 +255,7 @@ export function classifyCalDavError(error) {
 
   switch (status) {
     case 401:
-      return { problem: 'unauthorized' };
+      return { problem: 'bad-gateway' };
     case 404:
       return { problem: 'not-found' };
     case 409:

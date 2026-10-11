@@ -1,4 +1,4 @@
-// --- flexcalendar API service (E05-R01, E05-R10) -----------------------------
+// --- flexcalendar API service (E05-R01, E05-R03, E05-R10) --------------------
 //
 // A thin Fastify service that fronts CalDAV for our own clients (D-01). Every
 // route is declared here and in `spec/openapi.yaml`; the contract test proves
@@ -6,6 +6,12 @@
 // `onRequest` hooks, installed in this order: the rate limiter, then the OIDC
 // bearer hook (`src/auth.mjs`). An unauthenticated flood is therefore counted
 // before a single token is verified, and a refused request is a 429.
+//
+// E05-R03 adds the calendars routes (`src/calendars.mjs`) and the two things
+// they needed here: the CalDAV adapter (built on first use, so a service that
+// cannot reach the listener still boots) and a route table that turns "known
+// path, unregistered method" into a 405 with `Allow` instead of Fastify's 404
+// (`src/allow.mjs`).
 //
 // E05-R10 owns the error model and the observability hooks:
 //
@@ -24,6 +30,7 @@
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
+import { createAllowRegistry } from './allow.mjs';
 import { createAudienceSource } from './audience.mjs';
 import {
   createAuthHook,
@@ -31,9 +38,11 @@ import {
   registerAuthRoutes,
   userSchema,
 } from './auth.mjs';
+import { createCalDavAdapter } from './caldav/adapter.mjs';
+import { registerCalendarRoutes } from './calendars.mjs';
 import { readConfig } from './config.mjs';
 import { UnavailableError, createOidcClient } from './oidc.mjs';
-import { problemForStatus, sendProblem } from './problem.mjs';
+import { problemForStatus, problemResponse, sendProblem } from './problem.mjs';
 
 /** The readiness probe body; also the spec's Health schema. */
 export const healthSchema = {
@@ -133,6 +142,46 @@ const noIssuer = {
 };
 
 /**
+ * A calendars store with no database: the routes that need one answer a 500
+ * through the error handler rather than pretending a calendar exists.
+ */
+const noCalendars = {
+  async listForMember() {
+    throw new Error('no database configured');
+  },
+  async findMembership() {
+    throw new Error('no database configured');
+  },
+  async createPrivate() {
+    throw new Error('no database configured');
+  },
+  async replaceMeta() {
+    throw new Error('no database configured');
+  },
+  async remove() {
+    throw new Error('no database configured');
+  },
+};
+
+/**
+ * The CalDAV adapter, built on first use. Building it validates the origin and
+ * the delegation keys, so a service that cannot reach CalDAV still boots and
+ * answers its readiness probe; the first request that needs CalDAV is the one
+ * that gets the configuration error, as a problem document.
+ * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function}}}
+ */
+function createLazyAdapter() {
+  /** @type {ReturnType<typeof createCalDavAdapter> | undefined} */
+  let adapter;
+  return {
+    forUser(userId, options) {
+      adapter ??= createCalDavAdapter();
+      return adapter.forUser(userId, options);
+    },
+  };
+}
+
+/**
  * How many client keys the limiter's in-memory store keeps, so a flood cannot
  * grow it without bound. One API instance runs on the one VPS (D-10); the
  * README says what a second instance would need.
@@ -177,6 +226,8 @@ function createRateLimitHook(app, options) {
  * @param {object} [options]
  * @param {ReturnType<typeof readConfig>} [options.config] defaults to the environment
  * @param {{findBySubject: Function, createFirstSight: Function}} [options.store]
+ * @param {{listForMember: Function, findMembership: Function, createPrivate: Function, replaceMeta: Function, remove: Function}} [options.calendars]
+ * @param {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function}}} [options.caldav] the adapter; built from the environment on first use
  * @param {{verify: Function, userinfo: Function}} [options.oidc]
  * @param {{current: Function, refresh: Function}} [options.audience]
  * @param {import('fastify').onRouteHookHandler} [options.onRoute] used by the contract test
@@ -185,6 +236,8 @@ function createRateLimitHook(app, options) {
 export function buildApp({
   config = readConfig(),
   store,
+  calendars,
+  caldav,
   oidc,
   audience,
   onRoute,
@@ -208,6 +261,14 @@ export function buildApp({
     // Behind Caddy, `request.ip` is the client; directly exposed, it is the
     // socket address and `X-Forwarded-For` is ignored.
     trustProxy: trustProxy(config.trustedProxyHops),
+  });
+
+  // The 405 table (E05-R03): every registered route, recorded as Fastify
+  // registers it, so the not-found handler can tell an unknown path from a
+  // known one under another method.
+  const allow = createAllowRegistry();
+  app.addHook('onRoute', (route) => {
+    allow.add(route.url, route.method);
   });
 
   if (onRoute) app.addHook('onRoute', onRoute);
@@ -238,7 +299,10 @@ export function buildApp({
     '/healthz',
     {
       config: { bearerAuth: false },
-      schema: { response: { 200: healthSchema } },
+      // A method other than GET/HEAD is a 405 like everywhere else — it just
+      // needs a token first, because the readiness exemption is exactly those
+      // two methods (E05-R01).
+      schema: { response: { 200: healthSchema, 405: problemResponse() } },
     },
     async () => ({ status: 'ok', service: 'api' }),
   );
@@ -246,6 +310,8 @@ export function buildApp({
   const dependencies = {
     config,
     store: store ?? noDatabase,
+    calendars: calendars ?? noCalendars,
+    caldav: caldav ?? createLazyAdapter(),
     oidc:
       oidc ??
       (config.issuer
@@ -279,10 +345,19 @@ export function buildApp({
   app.addHook('onRequest', createAuthHook(dependencies));
 
   registerAuthRoutes(app, dependencies);
+  registerCalendarRoutes(app, dependencies);
 
-  // An unknown path and an unknown method on a known path both answer here; the
-  // body is a problem document and never Fastify's default JSON.
+  // An unknown path is a 404; a known path under a method it does not register
+  // is a 405 with the methods it does (`Allow`), which is why this handler asks
+  // the route table before it answers (E05-R03). Either way the body is a
+  // problem document and never Fastify's default JSON.
   app.setNotFoundHandler((request, reply) => {
+    const methods = allow.allowFor(request.raw?.url ?? request.url ?? '');
+    if (methods !== undefined) {
+      reply.header('allow', methods.join(', '));
+      sendProblem(reply, 'method-not-allowed', { instance: request.id });
+      return;
+    }
     sendProblem(reply, 'not-found', { instance: request.id });
   });
 
