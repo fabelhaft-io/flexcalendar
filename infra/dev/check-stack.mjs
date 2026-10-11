@@ -311,6 +311,14 @@ check('`make seed` runs the one-shot seed service', () =>
   /^\t\$\(COMPOSE\) --profile seed run --rm seed$/m.test(makefile) ? true : 'no seed run',
 );
 
+check('`make test-api-caldav` migrates and then runs the API test job (E05-R02)', () =>
+  /^test-api-caldav: migrate\b/m.test(makefile)
+    ? /^\t\$\(COMPOSE\) --profile test run --build --rm -T api-test$/m.test(makefile)
+      ? true
+      : 'the target does not run api-test'
+    : 'the target does not depend on `migrate`',
+);
+
 // E03-R01 trust-boundary structure (runtime isolation is tested on the stack).
 const caldavConfig = await readFile(path.join(repository, 'server/caldav/Caddyfile'), 'utf8');
 check('FrankenPHP uses classic mode', !/\bworker\b/i.test(withoutComments(caldavConfig)));
@@ -319,12 +327,12 @@ check('internal listener binds its dedicated address', /:8081\s*\{\s*bind\s+172\
 const networkNames = (service) => Array.isArray(service?.networks)
   ? service.networks
   : Object.keys(service?.networks ?? {});
-check('only API, CalDAV and test join delegation network',
+check('only the API, CalDAV and their two test jobs join the delegation network',
   Object.entries(services)
     .filter(([, service]) => networkNames(service).includes('delegation'))
     .map(([name]) => name)
     .sort()
-    .join(',') === 'api,caldav,caldav-test');
+    .join(',') === 'api,api-test,caldav,caldav-test');
 check('CalDAV has the internal static address', services.caldav?.networks?.delegation?.ipv4_address === '172.30.91.2');
 check('dedicated network subnet matches bind', compose.networks?.delegation?.ipam?.config?.[0]?.subnet === '172.30.91.0/24');
 check('CalDAV publishes no host port', (services.caldav?.ports ?? []).length === 0);
@@ -376,6 +384,70 @@ check('the API reaches Zitadel over the internal network, plain HTTP', () =>
   'http://zitadel-api:8080'
     ? true
     : 'CALFLEX_OIDC_BASE_URL is not the internal Zitadel address',
+);
+
+// --- the API's CalDAV adapter suite (E05-R02) ---------------------------------
+
+const apiTest = services['api-test'];
+
+check('`api-test` builds the API image\'s `test` target', () => {
+  const build = apiTest?.build;
+  return build?.dockerfile === 'server/api/Dockerfile' && build?.target === 'test' && build?.context === '../..'
+    ? true
+    : `got ${JSON.stringify(build)}`;
+});
+
+check('the API test job is a one-shot behind the `test` profile', () => {
+  if (!apiTest) return 'no api-test service';
+  if (!(apiTest.profiles ?? []).includes('test')) return 'not behind the `test` profile';
+  if (apiTest.restart !== undefined && apiTest.restart !== 'no') return 'a restart policy would loop a one-shot job';
+  return true;
+});
+
+check('the API test job reaches the internal listener the API uses', () =>
+  String(apiTest?.environment?.CALFLEX_CALDAV_ORIGIN ?? '') === 'http://caldav-internal:8081'
+    ? true
+    : 'CALFLEX_CALDAV_ORIGIN is not the internal listener',
+);
+
+check('the API test job signs with the same delegation keys', () =>
+  String(apiTest?.environment?.CALFLEX_DELEGATION_KEYS ?? '') ===
+  String(services.caldav?.environment?.CALFLEX_DELEGATION_KEYS ?? '')
+    ? true
+    : 'the test job and the CalDAV service disagree about the keys',
+);
+
+check('the API test job connects as calflex_api', () =>
+  String(apiTest?.environment?.CALFLEX_DATABASE_URL ?? '').includes('postgresql://calflex_api:')
+    ? true
+    : 'missing dedicated database login',
+);
+
+const apiDockerfile = await readFile(path.join(repository, 'server/api/Dockerfile'), 'utf8');
+
+check('the API image has a `test` stage for the adapter suite', () =>
+  /^FROM node:24-alpine AS test$/m.test(apiDockerfile) ? true : 'no `test` stage',
+);
+
+check('that stage carries the tests, the E03-R01 vectors and the suite command', () => {
+  const from = apiDockerfile.indexOf(' AS test\n');
+  if (from === -1) return 'no `test` stage';
+  const rest = apiDockerfile.slice(from);
+  const end = rest.indexOf('\nFROM ');
+  const body = end === -1 ? rest : rest.slice(0, end);
+  for (const source of [
+    'server/api/test',
+    'server/caldav/tests/Fixtures/delegation-vectors.json',
+  ]) {
+    if (!body.includes(`COPY ${source} `)) return `the test stage does not COPY ${source}`;
+  }
+  return /^ENTRYPOINT \["node", "--test", "test\/integration\/\*\.test\.mjs"\]$/m.test(body)
+    ? true
+    : 'the test stage does not run the integration suite';
+});
+
+check('the runtime image stays the default build target', () =>
+  /\nFROM node:24-alpine\n/.test(apiDockerfile) ? true : 'the last stage is not an unnamed runtime stage',
 );
 
 // --- verdict -----------------------------------------------------------------

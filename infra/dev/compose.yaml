@@ -405,6 +405,26 @@ services:
     mem_limit: 256m
     networks: [stack, delegation]
 
+  # The API's CalDAV adapter against the real listener (E05-R02), profile
+  # `test`. The internal listener has no published port, so this suite only
+  # exists inside the network — exactly like `caldav-test` above. It uses the
+  # same variables the API service does, read by the adapter itself.
+  api-test:
+    profiles: [test]
+    build:
+      context: ../..
+      dockerfile: server/api/Dockerfile
+      target: test
+    environment:
+      CALFLEX_CALDAV_ORIGIN: http://caldav-internal:8081
+      CALFLEX_DELEGATION_KEYS: '${CALFLEX_DELEGATION_KEYS:-development:Y2FsZmxleC1sb2NhbC1kZWxlZ2F0aW9uLW9ubHktMzJieXRlcw==}'
+      CALFLEX_DATABASE_URL: 'postgresql://calflex_api:${CALFLEX_API_PASSWORD:-calflex_api_dev}@postgres:5432/${CALFLEX_POSTGRES_DB:-caldav}'
+    depends_on:
+      caldav:
+        condition: service_healthy
+    mem_limit: 256m
+    networks: [stack, delegation]
+
 networks:
   delegation:
     internal: true

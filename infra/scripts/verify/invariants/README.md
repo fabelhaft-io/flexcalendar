@@ -106,3 +106,13 @@ INV-06 remains deferred to E07-R04, where the push payload builder is added.
 `E03-R01.json` runs `make test-caldav`: migrates, builds the one-off PHPUnit
 test image, exercises the internal listener and rejects canaries in service logs.
 This requires rootless Podman outside the agent sandbox.
+
+## E05-R02
+
+`E05-R02.json` runs `make test-api-caldav`: migrates, builds the API image's
+`test` stage and runs the CalDAV adapter suite in the one-off `api-test`
+service. That service is on the `delegation` network because the internal
+listener has no published port, so — like E03-R01 — this needs rootless Podman
+outside the agent sandbox. The adapter's container-free unit tests, including
+the E03-R01 signing vectors and the `tsdav` lint rule, run in `make
+verify-server-api` and need no stack.

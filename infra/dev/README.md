@@ -240,3 +240,13 @@ rotatable keys from the secret store, never reuses this value.
 `make test-caldav` applies migrations and runs the profile `test` service built
 from the PHPUnit image stage, then checks CalDAV logs for leakage. Run twice
 against the local stack; `composer test` intentionally runs host unit tests only.
+
+`make test-api-caldav` (E05-R02) applies migrations and runs the profile `test`
+service `api-test`, built from the API image's `test` stage. That suite drives
+the API's CalDAV adapter — the one module that talks to `caldav-internal:8081` —
+as two seeded users: each creates a Private collection, writes and reads a
+skeleton, is refused another user's object, gets `412` on a stale precondition
+and `403` with `cf:private-skeleton-only` when a content property is smuggled
+in. It joins the `delegation` network, because the internal listener has no
+published port. The adapter's container-free unit tests are part of
+`make verify-server-api`.

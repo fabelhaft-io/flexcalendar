@@ -110,7 +110,10 @@ migrate-down: ## Destructive dev-only rollback of ONE migration
 	$(COMPOSE) up --detach --wait postgres
 	$(COMPOSE) --profile migrate run --build --rm -T migrate node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 --database-url-var CALFLEX_MIGRATE_DATABASE_URL -f migrate.config.json
 
-.PHONY: test-caldav
+.PHONY: test-api-caldav
+
+test-api-caldav: migrate ## Test the API's CalDAV adapter against the internal listener (E05-R02)
+	$(COMPOSE) --profile test run --build --rm -T api-test
 
 test-caldav: migrate ## Test internal CalDAV protocol/auth and check redacted logs
 	@status=0; $(COMPOSE) --profile test run --build --rm -T caldav-test || status=$$?; \

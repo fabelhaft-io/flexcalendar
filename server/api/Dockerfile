@@ -21,6 +21,26 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY server/api/package.json server/api/
 RUN corepack pnpm install --frozen-lockfile --prod --filter @calendar-flex/api
 
+# The CalDAV adapter's integration suite (`make test-api-caldav`). It has to run
+# inside the stack: the delegated listener has no published port, so nothing on
+# the host can reach it. This stage carries the tests and the E03-R01 signing
+# vectors; the vectors are read from the CalDAV service's fixtures, never copied
+# into this package, so both suites are held to one file.
+FROM node:24-alpine AS test
+ENV NODE_ENV=production
+WORKDIR /repo
+COPY --from=dependencies /repo/node_modules ./node_modules
+COPY --from=dependencies /repo/server/api/node_modules ./server/api/node_modules
+COPY --from=dependencies /repo/server/api/package.json ./server/api/package.json
+COPY server/api/src ./server/api/src
+COPY server/api/test ./server/api/test
+COPY server/caldav/tests/Fixtures/delegation-vectors.json ./server/caldav/tests/Fixtures/delegation-vectors.json
+WORKDIR /repo/server/api
+USER node
+ENTRYPOINT ["node", "--test", "test/integration/*.test.mjs"]
+
+# The runtime image is the last stage, so `dockerfile: server/api/Dockerfile`
+# without a target still builds the service.
 FROM node:24-alpine
 ENV NODE_ENV=production
 WORKDIR /repo
