@@ -14,6 +14,11 @@
 //
 // The envelope is opaque here (INV-07): it is stored as the bytes the client
 // sent, read back base64-encoded, and never inspected.
+//
+// `deletedUidsBetween` (E05-R08) is the one read of `public.caldav_changes`, the
+// CalDAV service's own outbox (E03-R10). It exists so a tombstone can name a
+// `UID` when the object's name is not it — a stock app's object, Phase 4 — and
+// it never writes that table: the CalDAV service owns it.
 
 /**
  * The columns every calendar answer is built from. `role` comes from the
@@ -48,6 +53,12 @@ function calendarRow(row) {
     updatedAt: iso(row.updated_at),
   };
 }
+
+/** @param {any} row */
+const deletedChangeRow = (row) => ({
+  syncToken: String(row.sync_token),
+  uid: String(row.uid),
+});
 
 /**
  * The API's view of `public.calendars` and `public.calendar_members`. The API
@@ -151,6 +162,35 @@ export function createCalendarStore(pool) {
         [calendarId, metaEnvelope, metaEpoch, expectedVersion],
       );
       return rows[0] ? calendarRow(rows[0]) : undefined;
+    },
+
+    /**
+     * The `uid`s the CalDAV service's outbox (E03-R10) reports as deleted in the
+     * sync window `(from, to]` for one calendar. It answers exactly the shape
+     * `src/changes.mjs` needs for a tombstone whose object name is not the
+     * `UID`: a stock app names an object something other than its `UID`, and
+     * nothing but the outbox knows which `uid` that name held.
+     *
+     * Read-only, and the API role already holds `SELECT` on
+     * `public.caldav_changes` (E04-R02); the numbers are compared as `bigint` in
+     * SQL, so a sync number does not have to fit a JS number.
+     *
+     * @param {string} calendarId
+     * @param {string} from exclusive lower bound, a decimal sync number
+     * @param {string} to inclusive upper bound, a decimal sync number
+     */
+    async deletedUidsBetween(calendarId, from, to) {
+      const { rows } = await pool.query(
+        `SELECT sync_token, uid
+           FROM public.caldav_changes
+          WHERE calendar_id = $1
+            AND change_type = 'deleted'
+            AND sync_token > $2::bigint
+            AND sync_token <= $3::bigint
+          ORDER BY sync_token`,
+        [calendarId, from, to],
+      );
+      return rows.map(deletedChangeRow);
     },
 
     /**

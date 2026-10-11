@@ -7,6 +7,11 @@
 // assertion about state the store actually changed, not about a stub that
 // always succeeds.
 //
+// `deletedUidsBetween` (E05-R08) mirrors the one read of the CalDAV service's
+// outbox: a test can plant a deleted change and then see that a tombstone whose
+// object name is not its `UID` is named from the outbox, and that a window with
+// two candidates leaves the entry out rather than guessing.
+//
 // Every method can be made to fail (`fail('remove')`), because the interesting
 // paths of E05-R03 are the ones where a step breaks: a failing `MKCALENDAR`,
 // a failing compensation, a failing row delete after the collection is gone.
@@ -54,6 +59,13 @@ export function createMemoryCalendarStore(seed = {}) {
   const failures = new Map();
   /** @type {Record<string, unknown>[]} */
   const events = seed.events ?? [];
+  /**
+   * The `public.caldav_changes` rows a test cares about (E05-R08): the deleted
+   * entries the CalDAV service's outbox holds, which is the only place a
+   * tombstone's `UID` survives when the object name is not it.
+   * @type {{calendarId: string, syncToken: string, uid: string}[]}
+   */
+  const outbox = [];
 
   /** @param {any} row @param {string} userId */
   const visible = (row, userId) => {
@@ -205,6 +217,36 @@ export function createMemoryCalendarStore(seed = {}) {
       const removed = calendars.delete(calendarId);
       events.push({ op: 'remove', id: calendarId, removed });
       return removed;
+    },
+
+    /**
+     * Appends an outbox row, as the CalDAV service does inside the write's
+     * transaction (E03-R10). Only a test calls it; the API reads the table only.
+     * @param {string} calendarId @param {string | number} syncToken @param {string} uid
+     */
+    deletedChange(calendarId, syncToken, uid) {
+      outbox.push({ calendarId, syncToken: String(syncToken), uid });
+    },
+
+    /**
+     * The deleted outbox rows of one calendar inside a sync window, exactly as
+     * `src/calendar-store.mjs` selects them: `(from, to]`, by `bigint`.
+     * @param {string} calendarId @param {string} from @param {string} to
+     */
+    async deletedUidsBetween(calendarId, from, to) {
+      assertUuid(calendarId);
+      guard('deletedUidsBetween');
+      return outbox
+        .filter(
+          (row) =>
+            row.calendarId === calendarId &&
+            BigInt(row.syncToken) > BigInt(from) &&
+            BigInt(row.syncToken) <= BigInt(to),
+        )
+        .sort((left, right) =>
+          BigInt(left.syncToken) < BigInt(right.syncToken) ? -1 : 1,
+        )
+        .map((row) => ({ syncToken: row.syncToken, uid: row.uid }));
     },
   };
 }

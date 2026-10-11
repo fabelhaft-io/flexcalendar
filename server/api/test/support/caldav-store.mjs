@@ -24,6 +24,20 @@
 // class and its own suite. It is deliberately the same allow-list, so a field
 // this API starts writing that the guard would refuse fails here first.
 //
+// **Sync is E05-R08's half of this file.** Every write records a change and
+// bumps the collection's own number, and `syncChanges` answers what SabreDAV
+// answers: a numeric token per collection, **no** binding between a token and
+// the collection it came from (a token from elsewhere is accepted), and — the
+// part worth reading twice — a number ahead of the collection is *accepted*
+// too. SabreDAV's `CalDAV\Backend\PDO::getChangesForCalendar` only runs
+// `calendarchanges.synctoken >= <n>` and echoes the number back when nothing
+// matched; it never compares it to the collection's own token. The only token
+// SabreDAV refuses is one whose prefix is not `http://sabre.io/ns/sync/`. So a
+// double that refused an ahead number would be *easier* than the real service,
+// and the API — not the service — is what has to tell "in sync" from "never
+// minted" (E05-R08 does it against `currentSyncToken`). `make test-api-caldav`
+// runs the same cases against the live service.
+//
 // Every method can be made to fail (`fail('putObject', error)`), which is how
 // the suite reaches the paths where CalDAV refuses: a guard precondition, a
 // hostile exception carrying a canary, a timeout.
@@ -163,6 +177,59 @@ export function createMemoryCalDavStore(seed = {}) {
   /** @type {string[]} */
   const refusals = [];
   let etags = 0;
+  /**
+   * Per-collection sync state (E05-R08): the collection's own number and the
+   * journal of changes, each holding the number the change made current. A
+   * fresh collection starts at 1, which is what SabreDAV's `createCalendar`
+   * inserts.
+   * @type {Map<string, {token: number, changes: {name: string, token: number, deleted: boolean}[]}>}
+   */
+  const sync = new Map();
+
+  /** @param {string} calendarId */
+  const stateOf = (calendarId) => {
+    let state = sync.get(calendarId);
+    if (state === undefined) {
+      state = { token: 1, changes: [] };
+      sync.set(calendarId, state);
+    }
+    return state;
+  };
+
+  /**
+   * Records one change and moves the collection on, exactly as the service's
+   * outbox and SabreDAV's `addChange` do in one transaction (E03-R10): the
+   * collection's number *is* the number of its latest change.
+   * @param {string} calendarId @param {string} name @param {boolean} deleted
+   */
+  const recordChange = (calendarId, name, deleted) => {
+    const state = stateOf(calendarId);
+    state.token += 1;
+    state.changes.push({ name, token: state.token, deleted });
+  };
+
+  /** `http://sabre.io/ns/sync/<n>`, the token SabreDAV mints. */
+  const sabreToken = (/** @type {number} */ number) =>
+    `http://sabre.io/ns/sync/${number}`;
+
+  /**
+   * The number out of a SabreDAV token, or undefined for anything the service
+   * would refuse (`Sync\Plugin` checks the prefix before anything else).
+   * @param {unknown} value
+   */
+  const sabreNumber = (value) => {
+    if (typeof value !== 'string') return undefined;
+    const prefix = 'http://sabre.io/ns/sync/';
+    if (!value.startsWith(prefix)) return undefined;
+    const digits = value.slice(prefix.length);
+    return /^\d+$/.test(digits) ? Number(digits) : undefined;
+  };
+
+  /** The href a change for one object answers with. */
+  const hrefOf = (
+    /** @type {string} */ calendarId,
+    /** @type {string} */ name,
+  ) => `/calendars/${calendarId}/${name}`;
 
   /** @param {string} calendarId @param {string} name */
   const keyOf = (calendarId, name) => `${calendarId}\u0000${name}`;
@@ -198,11 +265,32 @@ export function createMemoryCalDavStore(seed = {}) {
     seed(calendarId, name, ics) {
       etags += 1;
       objects.set(keyOf(calendarId, name), { ics, etag: `"${etags}"` });
+      // An object that is there was created at some point: the journal says so,
+      // so the number the collection reports matches what it holds.
+      recordChange(calendarId, name, false);
       return `"${etags}"`;
     },
     /** @param {string} calendarId @param {string} name */
     stored(calendarId, name) {
       return objects.get(keyOf(calendarId, name));
+    },
+    /**
+     * Moves the collection on without changing an object, the way a `PROPPATCH`
+     * on the collection does (SabreDAV records it as a change of the collection
+     * itself, which a sync never reports as an object). It is how a test reaches
+     * "this client is behind, and nothing it can see has changed".
+     * @param {string} calendarId
+     */
+    touch(calendarId) {
+      recordChange(calendarId, '', false);
+    },
+    /**
+     * The number the collection currently reports, for a test that wants to
+     * build a token by hand.
+     * @param {string} calendarId
+     */
+    tokenOf(calendarId) {
+      return stateOf(calendarId).token;
     },
     /**
      * Makes one method throw from now on. Passing no error restores it.
@@ -282,6 +370,7 @@ export function createMemoryCalDavStore(seed = {}) {
           etags += 1;
           const etag = `"${etags}"`;
           objects.set(key, { ics, etag });
+          recordChange(calendarId, name, false);
           return { status: existing === undefined ? 201 : 204, etag };
         },
 
@@ -325,7 +414,95 @@ export function createMemoryCalDavStore(seed = {}) {
             throw new CalDavError('precondition-failed', 412);
           }
           objects.delete(key);
+          recordChange(calendarId, name, true);
           return { status: 204 };
+        },
+
+        /**
+         * `sync-collection`, as SabreDAV answers it (RFC 6578). Without a token
+         * the whole collection, each present object with its ETag and data; with
+         * one, exactly the objects whose latest change is newer than the number
+         * in it. A tombstone is a `404` entry with no ETag and no data.
+         *
+         * A token from another collection — or one ahead of this collection —
+         * is **accepted**, which is what the real service does (see the note at
+         * the top of this file); a token whose prefix is not SabreDAV's is the
+         * `403` its sync plugin throws.
+         *
+         * @param {string} calendarId
+         * @param {string} [token]
+         */
+        async syncChanges(calendarId, token) {
+          events.push({ op: 'syncChanges', calendarId, token });
+          guard('syncChanges');
+          const state = stateOf(calendarId);
+          if (token === undefined) {
+            return {
+              syncToken: sabreToken(state.token),
+              changed: [...objects.entries()]
+                .filter(([key]) => key.startsWith(keyOf(calendarId, '')))
+                .map(([key, object]) => ({
+                  href: hrefOf(
+                    calendarId,
+                    key.slice(keyOf(calendarId, '').length),
+                  ),
+                  status: 200,
+                  deleted: false,
+                  etag: object.etag,
+                  data: object.ics,
+                })),
+            };
+          }
+          const since = sabreNumber(token);
+          if (since === undefined) throw new CalDavError('forbidden', 403);
+          const matched = state.changes.filter(
+            (change) => change.token > since,
+          );
+          // SabreDAV's own loop: the last change of a name wins, in the order
+          // the names first changed, and a change of the collection itself is
+          // not an object change.
+          /** @type {Map<string, {name: string, token: number, deleted: boolean}>} */
+          const latest = new Map();
+          for (const change of matched) latest.set(change.name, change);
+          return {
+            // The number of the newest matched change, or the one asked for:
+            // SabreDAV echoes what it was given when nothing matched.
+            syncToken: sabreToken(
+              matched.length === 0 ? since : matched[matched.length - 1].token,
+            ),
+            changed: [...latest.values()]
+              .filter((change) => change.name !== '')
+              .map((change) => {
+                if (change.deleted) {
+                  return {
+                    href: hrefOf(calendarId, change.name),
+                    status: 404,
+                    deleted: true,
+                    etag: '',
+                    data: '',
+                  };
+                }
+                const object = objects.get(keyOf(calendarId, change.name));
+                return {
+                  href: hrefOf(calendarId, change.name),
+                  status: 200,
+                  deleted: false,
+                  etag: object?.etag ?? '',
+                  data: object?.ics ?? '',
+                };
+              }),
+          };
+        },
+
+        /**
+         * The collection's current number, the way the adapter's
+         * `currentSyncToken` reads it with a `PROPFIND` of `{DAV:}sync-token`.
+         * @param {string} calendarId
+         */
+        async currentSyncToken(calendarId) {
+          events.push({ op: 'currentSyncToken', calendarId });
+          guard('currentSyncToken');
+          return String(stateOf(calendarId).token);
         },
       };
     },

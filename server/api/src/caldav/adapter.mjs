@@ -37,8 +37,54 @@ import {
   createObject,
   deleteObject,
   makeCalendar,
+  propfind,
   syncCollection,
 } from 'tsdav';
+
+/**
+ * The prefix SabreDAV builds its sync tokens with (RFC 6578; `Sync\Plugin`
+ * `SYNCTOKEN_PREFIX`). `syncChanges` speaks it directly, and E05-R08's token
+ * carries the same number under the API's own encoding.
+ */
+export const SYNC_TOKEN_PREFIX = 'http://sabre.io/ns/sync/';
+
+/**
+ * A sync number: a canonical non-negative decimal of at most 18 digits, so it
+ * always fits the `bigint` the CalDAV service compares it as (a 19-digit value
+ * can exceed a signed 64-bit and would make Postgres raise). Anything longer is
+ * not a token this API minted and never reaches the service.
+ */
+const SYNC_NUMBER = /^(?:0|[1-9]\d{0,17})$/;
+
+/**
+ * `http://sabre.io/ns/sync/<n>` for a number that is already a canonical
+ * decimal. Throws rather than building a URI the service would refuse, so a
+ * caller can never hand CalDAV a value it did not mint here.
+ * @param {string} number
+ * @returns {string}
+ */
+export function syncTokenText(number) {
+  if (typeof number !== 'string' || !SYNC_NUMBER.test(number)) {
+    throw new CalDavError('invalid-token');
+  }
+  return `${SYNC_TOKEN_PREFIX}${number}`;
+}
+
+/**
+ * The number out of one of those URIs, or `undefined` for anything else — a
+ * numeric token of some other shape, a value that is not a string, and the
+ * empty string included. Nothing here parses a client's own token: the only
+ * strings this sees come back from the service.
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+export function syncTokenNumber(value) {
+  if (typeof value !== 'string' || !value.startsWith(SYNC_TOKEN_PREFIX)) {
+    return undefined;
+  }
+  const number = value.slice(SYNC_TOKEN_PREFIX.length);
+  return SYNC_NUMBER.test(number) ? number : undefined;
+}
 
 /** The fixed display name a Private collection carries (D-18). */
 export const PRIVATE_CALENDAR_DISPLAY_NAME = 'Private calendar';
@@ -962,6 +1008,42 @@ export function createCalDavAdapter(config = {}) {
                 data: textOf(response.props?.calendarData),
               })),
           };
+        },
+
+        /**
+         * The collection's current sync number, read with a `PROPFIND` of
+         * `{DAV:}sync-token` at depth 0 — the property SabreDAV's sync plugin
+         * answers with `http://sabre.io/ns/sync/<n>` and nothing else. It is the
+         * number a `sync-collection` reports after the collection's most recent
+         * change, so a client's token can be checked against it before it is
+         * trusted (E05-R08).
+         *
+         * The number comes back as a canonical decimal string: a sync token can
+         * exceed what a JS number holds exactly, and the caller compares it to
+         * another such string.
+         *
+         * @param {string} calendarId
+         * @returns {Promise<string>}
+         */
+        async currentSyncToken(calendarId) {
+          const url = absolute(collection(calendarId));
+          const responses = await (async () => {
+            try {
+              return await propfind({
+                url,
+                props: { 'd:sync-token': {} },
+                depth: '0',
+                fetch: signed,
+              });
+            } catch (error) {
+              throw asCalDavError(error);
+            }
+          })();
+          const number = syncTokenNumber(responses[0]?.props?.syncToken);
+          // A `207` that carries no sync token is a service this API cannot
+          // read, never a token: nothing derived from it leaves here.
+          if (number === undefined) throw new CalDavError('protocol');
+          return number;
         },
       };
     },
