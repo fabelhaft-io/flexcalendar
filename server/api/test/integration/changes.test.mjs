@@ -416,8 +416,9 @@ test('each kind of rejected token is a 410', async () => {
       const response = await changes(app, calendarId, value);
       assert.equal(response.statusCode, 410, `${value}: ${response.body}`);
       assertProblem(response.json(), 'gone');
-      // The refused token is never echoed back.
-      assert.ok(!response.body.includes(value));
+      // The refused token is never echoed back. The empty `since` is left out:
+      // every string contains it.
+      if (value !== '') assert.ok(!response.body.includes(value));
     }
 
     // The calendar is unharmed: its own token still answers.
