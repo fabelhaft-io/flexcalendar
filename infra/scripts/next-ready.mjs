@@ -13,6 +13,8 @@ import { parseArgs } from 'node:util';
 // tree, so a worktree on a requirement branch gets the same answer as main.
 //
 //   candidates  the IDs named in docs/reviews/follow-ups.md § Queue, in order
+//               (the follow-ups hints count the lines in docs/reviews/follow-ups/
+//               too: one file per source)
 //   Done        docs/reviews/<ID>.md on the ref, newest verdict PASS (a squash
 //               merge leaves the branch looking unmerged; the review doc is what
 //               lands on main)
@@ -236,6 +238,25 @@ export function followUpCounts(followUps) {
 }
 
 /**
+ * The loop's state text: docs/reviews/follow-ups.md (the queue, the open
+ * questions) followed by every Markdown file in docs/reviews/follow-ups/ (one
+ * file per source, so a requirement's PASS adds a new path instead of editing a
+ * shared line). The queue is the first `## Queue` section, which sits in the
+ * main file.
+ * @param {ReturnType<typeof gitSource>} source @param {string} ref @returns {string}
+ */
+export function readFollowUps(source, ref) {
+  const files = source
+    .list(ref, 'docs/reviews/follow-ups')
+    .filter((file) => file.endsWith('.md'))
+    .sort();
+  return [
+    source.read(ref, 'docs/reviews/follow-ups.md') ?? '',
+    ...files.map((file) => source.read(ref, file) ?? ''),
+  ].join('\n');
+}
+
+/**
  * Reads files and branches from a git ref.
  * @param {string} cwd
  */
@@ -315,7 +336,7 @@ export function analyze(source, { ref, maxStack = 3, maxParallel = 2 }) {
   const decisions = parseDecisions(
     source.read(ref, 'docs/06-implementation-backlog.md') ?? '',
   );
-  const followUps = source.read(ref, 'docs/reviews/follow-ups.md') ?? '';
+  const followUps = readFollowUps(source, ref);
   const queue = parseQueue(followUps);
   const followUpLines = followUpCounts(followUps);
   const reviewFiles = new Set(source.list(ref, 'docs/reviews'));

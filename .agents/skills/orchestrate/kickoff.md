@@ -6,7 +6,7 @@ The brief for a session that runs `/orchestrate` without the owner. Start it wit
 /loop Run /orchestrate unattended. Follow .agents/skills/orchestrate/kickoff.md.
 ```
 
-This file holds **no state**. The state is git, `gh`, `docs/reviews/follow-ups.md` and `make next-ready`: check them before you act, and trust them over this file. Where [`SKILL.md`](SKILL.md) says "ask the owner", this file says what to do instead.
+This file holds **no state**. The state is git, `gh`, `docs/reviews/follow-ups.md`, `docs/reviews/follow-ups/` and `make next-ready`: check them before you act, and trust them over this file. Where [`SKILL.md`](SKILL.md) says "ask the owner", this file says what to do instead.
 
 ## The contract
 
@@ -16,13 +16,13 @@ This file holds **no state**. The state is git, `gh`, `docs/reviews/follow-ups.m
 
 ## Start
 
-1. Read `SKILL.md`, `review-checklist.md`, `environment.md`, `CLAUDE.md` and `docs/reviews/follow-ups.md`.
+1. Read `SKILL.md`, `review-checklist.md`, `environment.md`, `CLAUDE.md` and `docs/reviews/follow-ups.md` (the files in `docs/reviews/follow-ups/` are read per requirement, for its brief).
 2. Check the state: `git fetch`, `git switch main && git pull --ff-only` (the main checkout stays clean), `gh pr list --state all --limit 10`, `git worktree list`. If `php`, `composer`, `flutter` or `dart` is missing from `PATH`, run `make host-tools`. Then `cd agent-team && npm install && npm run typecheck`, and `make next-ready`.
-3. **Reconcile the docs first**, as one small `doc:` PR from `main`, one commit, CONTRIBUTING style. A requirement that has merged but still reads "passed review" or "Done once merged" in an epic Status cell or in the queue becomes Done. Remove the follow-ups its merge resolved. Add the follow-ups that live only in the "for later requirements" sections of recently merged `docs/reviews/<ID>.md`. Skip this when there is nothing to reconcile.
+3. **Reconcile the docs first**, as one small `doc:` PR from `main`, one commit, CONTRIBUTING style. **This is the only PR that edits an epic Status cell, the queue or an existing follow-up line** (requirement branches never do, so they never conflict on them): a requirement that has merged but is not yet Done in its epic Status cell or in the queue becomes Done. Remove the follow-ups its merge resolved from `docs/reviews/follow-ups/`, and delete a file that has nothing left. Add the follow-ups that live only in the "for later requirements" section of a recently merged `docs/reviews/<ID>.md` and have no `follow-ups/from-<ID>.md`. Add the parked questions to "Open with the owner". Skip this when there is nothing to reconcile; with several merges to reconcile, do them in this one PR, and open no second reconcile PR while one is open.
 
 ## Deciding without the owner
 
-- **Park, don't stop.** For everything `SKILL.md` answers with "stop and ask the owner" (a `D-*` that isn't Pinned, an ambiguous spec, a spec that contradicts its doc, a decision that needs an ADR, a fourth implementer run), skip that requirement and go on with the next independent one. Keep a parked list in the scratchpad (`parked.txt`: ID, the exact question, what you checked), because every firing starts from the repo, not from memory. Parked questions go into your final report and under "Open with the owner" in `follow-ups.md` in the next PR you open.
+- **Park, don't stop.** For everything `SKILL.md` answers with "stop and ask the owner" (a `D-*` that isn't Pinned, an ambiguous spec, a spec that contradicts its doc, a decision that needs an ADR, a fourth implementer run), skip that requirement and go on with the next independent one. Keep a parked list in the scratchpad (`parked.txt`: ID, the exact question, what you checked), because every firing starts from the repo, not from memory. Parked questions go into your final report and under "Open with the owner" in `follow-ups.md`, in the next reconcile PR (not on a requirement branch).
 - **The queue's prose beats the script.** `make next-ready` cannot read it. Read the queue item of every requirement before you start it, and its "queue also says" notes; an ordering note there (R03 only after R10) overrides `NEXT:`. Never start something listed under "Ready but not named in the queue": that is the owner's call, and goes in the final report.
 - `agent+review` requirements run like any other. Their PR says that human approval is needed before merge, and the gate never merges it. They count toward the cap, and dependents may stack on them.
 - `--paths`: the narrowest set the requirement plausibly needs. A file under `out-of-scope/` means it was too narrow: widen it and re-run, which uses one of the three runs.

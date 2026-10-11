@@ -1,0 +1,8 @@
+- **Not in any requirement yet** (from E02-R04):
+  - Markdown is not linted, and stays that way: the owner decided on 2026-10-07 that a linter for `docs/` makes no sense (the docs are long-form prose with wide tables). Do not raise it again. The E02-R04 and E02-R08 reviews left it open;
+  - `infra/dev/*.mjs` (`check-stack`, the seed) and `infra/zitadel/*.mjs` (E02-R09; `make test-zitadel` exists but `make verify` doesn't run it) are in no format, lint or type gate;
+  - `CONTRIBUTING.md` and `infra/dev/compose.yaml` fail `prettier --check` on `main` (found in E04-R01 run 2); both are in no format gate, so nothing reformats them;
+  - `infra/dev/seed/seed.mjs:124` has an ESLint `no-useless-assignment` error that predates E02-R09;
+  - the tooling test `healthchecks.test.mjs` (E02-R06) binds host ports 8080 and 3000 and runs `php`, so `make verify` on a dev host needs those ports free and PHP on `PATH`, as `CONTRIBUTING.md` already requires;
+  - the skipped component matrix shows as `Component (${{ matrix.component }})` on full and docs-only runs (cosmetic).
+  - on pushes to `main`, `cancel-in-progress` cancels the earlier merge's run when two merges land seconds apart (2026-10-06, 22:24 UTC: #33's run, cancelled by #32's). The later run tests the combined tree. Restrict `cancel-in-progress` to pull requests if each merge commit should keep its own run;

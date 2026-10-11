@@ -1,0 +1,5 @@
+- **E10-R01 (Phase 3):**
+  - keep the Gradle 9.3.1 wrapper and `gradle/gradle-daemon-jvm.properties` after `flutter create`;
+  - `minSdk = 26` (the template default is 24);
+  - confirm Flutter's Gradle run honours the daemon JVM criteria;
+  - the `dev|staging|prod` flavors keep the one application ID `de.flexcalendar.app`, with no `applicationIdSuffix`: the redirect scheme is registered once (PR #16, owner-approved).

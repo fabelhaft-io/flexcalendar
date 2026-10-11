@@ -11,7 +11,7 @@ description: Run flexcalendar's implementation loop as orchestrator and reviewer
 
 ## Claude Code specifics
 
-- **Memory:** never write to auto-memory. Persistent notes go where the neutral skill says: `CLAUDE.md`, the skill, or `docs/reviews/follow-ups.md`, through a PR.
+- **Memory:** never write to auto-memory. Persistent notes go where the neutral skill says: `CLAUDE.md`, the skill, or `docs/reviews/follow-ups.md` and `docs/reviews/follow-ups/`, through a PR.
 - **Background runs:** start the harness with `run_in_background` and wait for the task notification. Foreground `sleep` is blocked, and polling is wasted turns.
 - **Scratch directory:** use the session's scratchpad for logs, shims and throwaway copies.
 - **PR attribution:** end PR bodies and commit messages with the attribution lines from your system prompt.
