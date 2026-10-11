@@ -1,7 +1,8 @@
 # `spec/ical-fixtures/` — iCalendar round-trip corpus
 
 **Owning epic:** [E15 — Interop and regression test program](../../docs/epics/E15-interop-regression.md),
-R01 for the round-trip half and R03 for the recurrence half below.
+R01 for the round-trip half, R02 for the DST table and R03 for the differential
+recurrence corpus below.
 
 - **One directory per source.** `ours/` holds hand-written objects shaped as the Private
   skeleton — `adr/0001` § Private calendars and the E03-R09 allow-list define it, and no writer
@@ -103,6 +104,25 @@ corpus gate, a ruling that no longer describes a real disagreement fails too,
 and an engine that is *known* wrong is pinned to exactly that deviation (so
 fixing it fails until the ruling is updated). A fixture here never carries real
 user data, and never changes to make two engines agree.
+
+## `dst/` — the DST table (E15-R02)
+
+`dst/cases.json` is the other half of the recurrence story: one engine-neutral
+table of DST cases — a skipped local time, a repeated local time, a daily
+recurrence across each transition (once at a time that exists every day, once at
+the skipped time), all-day events on the transition days, and events viewed from
+another zone — for `Europe/Berlin`, `America/New_York`, `America/Sao_Paulo`,
+`Australia/Sydney`, `Asia/Kolkata` and `Pacific/Chatham` on their 2026 and 2027
+transition days. Expected results are UTC instants, every case cites the RFC 5545
+section it follows, and the table carries no ICS, no engine name and no event
+text. `make verify-corpus` runs `infra/scripts/dst-table.mjs` over it
+(registered as `E15-R02.json`), which checks the table's shape and coverage and
+re-derives every expected instant from ICU and the RFC rules. Unlike `rrule/`,
+this directory is not expanded by an engine here: the API's runner is E05-R05's
+and each client runs the same table in E10-R04, E09-R02 and E11-R05, and all of
+them must agree with its expected results. `dst/README.md` documents the fields,
+the zones, the two nonexistent-time rules and which engines are known to miss
+which case.
 
 ## Adding a fixture
 
