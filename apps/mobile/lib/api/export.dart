@@ -22,8 +22,14 @@ export 'models/event_create.dart';
 export 'models/event_update.dart';
 export 'models/change.dart';
 export 'models/calendar_changes.dart';
+export 'models/occurrence_time.dart';
+export 'models/recurrence_id.dart';
+export 'models/occurrence.dart';
+export 'models/unsupported_object.dart';
+export 'models/occurrences.dart';
 export 'models/problem.dart';
 export 'models/health_status.dart';
 export 'models/health_service.dart';
+export 'models/unsupported_object_reason.dart';
 // Root client
 export 'rest_client.dart';
