@@ -1,3 +1,2 @@
 - **From the E03-R09 reviews, for later requirements** (R09 itself is in PR #47):
-  - **E05-R09:** a `VTIMEZONE` the API embeds must stay inside the allow-list (`TZID`, `LAST-MODIFIED`, `TZURL`, `X-LIC-LOCATION`; `STANDARD`/`DAYLIGHT` with `DTSTART`, `TZOFFSETFROM`, `TZOFFSETTO`, `RRULE`, `RDATE`, `TZNAME`). A zone copied from tzurl.org carries `X-PROLEPTIC-TZNAME` and is rejected;
   - the `make test-caldav` log scan greps `CALFLEX_GUARD_MARKER`: a marker that must not reach the log needs that prefix.
