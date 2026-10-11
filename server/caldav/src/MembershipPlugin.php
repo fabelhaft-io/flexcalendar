@@ -61,10 +61,15 @@ final class MembershipPlugin extends \Sabre\DAVACL\Plugin
     }
 
     /**
-     * Deleting a calendar is checked against the collection node, so only an
-     * owner passes the ACL layer; the backend re-checks it as well. For an
-     * object the parent calendar's `{DAV:}unbind` is the right check, which is
-     * what the DAVACL plugin's own handler does.
+     * Deleting a calendar is checked against the collection node as well, so a
+     * viewer is refused here. The DAVACL plugin's own handler only checks
+     * `{DAV:}unbind` on the parent home, and that home belongs to the acting
+     * user, so on its own it would let a viewer delete a collection they may
+     * only read; an editor holds `{DAV:}unbind` on the collection (it is how it
+     * deletes objects), passes this check and is then stopped by the backend's
+     * `deleteCalendar`, which requires the owner. For an object the parent
+     * calendar's `{DAV:}unbind` is the right check, which is what the DAVACL
+     * plugin's own handler does.
      *
      * @param string $uri
      *

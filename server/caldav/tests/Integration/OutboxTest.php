@@ -74,10 +74,12 @@ final class OutboxTest extends TestCase
         if (!isset($this->a)) {
             return;
         }
-        // Remove Sabre data through DAV as the owning principal.
+        // Remove Sabre data through DAV as the owning principal. A collection
+        // without a membership row is in nobody's home (E03-R08), so those rows
+        // go directly instead.
         $this->request('DELETE', $this->home() . $this->calendar . '/');
         foreach ($this->extraCollections as $path) {
-            $this->request('DELETE', $path);
+            $this->forget($path);
         }
         $q = $this->dav->prepare('DELETE FROM sabredav.propertystorage WHERE path LIKE ?');
         $q->execute(['calendars/' . $this->a . '/%']);
@@ -612,7 +614,16 @@ final class OutboxTest extends TestCase
         self::assertSame(4, $this->changeCount());
     }
 
-    public function testWriteIntoUnregisteredCollectionIsRefused(): void
+    /**
+     * E03-R08 changed what this case sees: the home is the membership, so a
+     * collection without a `public.calendars` row and without a
+     * `calendar_members` row is in nobody's home. Over HTTP every method on it,
+     * this `PUT` included, is a `404` -- never `403` -- and nothing is stored.
+     * The backend's `cf:unmapped-collection` refusal is the backstop for a call
+     * that reaches such a collection without the tree in front of it;
+     * `tests/Integration/BackendAccessTest.php` calls it directly.
+     */
+    public function testWriteIntoUnregisteredCollectionIsNotFound(): void
     {
         $uuid = self::uuid();
         $path = $this->home() . $uuid . '/';
@@ -621,12 +632,12 @@ final class OutboxTest extends TestCase
         $object = $path . self::uuid() . '.ics';
 
         $response = $this->request('PUT', $object, self::payload(self::uuid()), ['Content-Type' => 'text/calendar']);
-        self::assertSame(403, $response['status']);
+        self::assertSame(404, $response['status']);
         $xml = new \DOMDocument();
         self::assertTrue($xml->loadXML($response['body']));
         self::assertSame('DAV:', $xml->documentElement->namespaceURI);
         self::assertSame('error', $xml->documentElement->localName);
-        self::assertSame(1, $xml->getElementsByTagNameNS(self::PRECONDITION_NS, 'unmapped-collection')->length);
+        self::assertSame(0, $xml->getElementsByTagNameNS(self::PRECONDITION_NS, 'unmapped-collection')->length, 'The backend never ran: this is a 404, not a refusal');
         self::assertSame(0, $xml->getElementsByTagNameNS('http://sabredav.org/ns', 'message')->length);
         self::assertSame(0, $xml->getElementsByTagNameNS('http://sabredav.org/ns', 'exception')->length);
 
@@ -639,6 +650,31 @@ final class OutboxTest extends TestCase
         $query = $this->dav->prepare('SELECT count(*) FROM public.caldav_changes WHERE calendar_id = ?');
         $query->execute([$uuid]);
         self::assertSame(0, (int) $query->fetchColumn());
+    }
+
+    /**
+     * Deletes the SabreDAV rows of a collection the API never registered. It
+     * has no membership row, so it is in nobody's home and a `DELETE` over HTTP
+     * answers `404` like every other method (E03-R08); the suite still has to
+     * leave the tables as it found them.
+     */
+    private function forget(string $path): void
+    {
+        $query = $this->dav->prepare('SELECT calendarid FROM sabredav.calendarinstances WHERE uri = ?');
+        $query->execute([basename(rtrim($path, '/'))]);
+        $calendarId = $query->fetchColumn();
+        if (!is_int($calendarId) && !is_string($calendarId)) {
+            return;
+        }
+        foreach ([
+            'DELETE FROM sabredav.calendarobjects WHERE calendarid = ?',
+            'DELETE FROM sabredav.calendarchanges WHERE calendarid = ?',
+            'DELETE FROM sabredav.calendarinstances WHERE calendarid = ?',
+            'DELETE FROM sabredav.calendars WHERE id = ?',
+        ] as $sql) {
+            $delete = $this->dav->prepare($sql);
+            $delete->execute([$calendarId]);
+        }
     }
 
     private function barrierDir(): string

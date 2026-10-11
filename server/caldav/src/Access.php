@@ -55,12 +55,23 @@ final class Access
      * both are still confined by the E03-R09 Private skeleton guard, which is
      * what keeps dead object properties out of a Private collection.
      *
+     * The set is spelled out for the same reason as the collection's: a calendar
+     * object implements `IACL`, so `{DAV:}write` would also advertise
+     * `{DAV:}write-acl` on it. `{DAV:}write-content` is what the DAVACL plugin
+     * checks when an existing object is overwritten; creating and deleting one
+     * is `{DAV:}bind`/`{DAV:}unbind` on the collection above, which the editor
+     * and the owner already hold. `{DAV:}write-properties` is here because a
+     * `PROPPATCH` on the object is checked against the object: it is what lets
+     * the attempt reach the E03-R09 guard, which refuses every dead property of
+     * a Private object. Without it the ACL would answer first and E03-R09's
+     * object-property case would never run.
+     *
      * @var array<string, list<string>>
      */
     private const OBJECTS = [
         self::VIEWER => [self::READ],
-        self::EDITOR => [self::READ, self::WRITE],
-        self::OWNER => [self::READ, self::WRITE],
+        self::EDITOR => [self::READ, self::WRITE_CONTENT, self::WRITE_PROPERTIES],
+        self::OWNER => [self::READ, self::WRITE_CONTENT, self::WRITE_PROPERTIES],
     ];
 
     /** @return list<string> */

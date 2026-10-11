@@ -30,7 +30,8 @@ version or commit drift. Schema creation stays in the API migration chain.
 - Principal lookup/listing is restricted to the acting `public.users` row;
   principal data is read-only. ACL unauthenticated access is off and inaccessible
   nodes are hidden. Other users' homes/principals are 404. Ownership is Sabre's
-  `principaluri`; membership integration remains R08.
+  `principaluri`; what the acting user may reach is their
+  `public.calendar_members` row, read per request (E03-R08 below).
 - CalDAV, ACL, Sync, PropertyStorage and the already-authenticated identity plugin
   are installed. No Browser, Locks, Scheduling, Sharing, export or CardDAV plugin.
   Every PDO table and sequence is schema-qualified; CRUD integration exercises
@@ -67,6 +68,49 @@ redirect over a real HTTP server; `tests/Integration/DiscoveryTest.php` runs the
 same sequence over the listener, with hrefs compared whole, and proves the
 redirect on the public listener without a header and with a garbage one.
 Stock-app behaviour itself is not asserted here: E15-R05 checks that on staging.
+
+## Access (E03-R08)
+
+Access follows `public.calendar_members`, read from Postgres on every request
+with no cache. SabreDAV's `sabredav.calendarinstances` keeps no membership copy:
+the API owns the table, so there is nothing to keep in sync, and permissions
+never change through CalDAV.
+
+- The home **is** the membership. `GuardedCalendars::getCalendarsForUser` returns
+  one entry per `public.calendar_members` row of the acting user, so a member
+  sees every calendar they belong to at `/calendars/<users.id>/<calendars.id>/`
+  and no others. A collection that is not a row of theirs is not in their home:
+  every method on any of its hrefs answers `404`, never `403`.
+- Roles map to privileges, in one place (`Calflex\Access`, and nowhere else):
+  `viewer` has `{DAV:}read`; `editor` adds `{DAV:}write-content` and
+  `{DAV:}write-properties` on the objects and `{DAV:}bind`/`{DAV:}unbind` on the
+  collection, which is how it creates and deletes them; `owner` adds
+  `{DAV:}write-properties` on the collection and may delete the collection. Both
+  privilege sets are spelled out instead of using the `{DAV:}write` aggregate:
+  that aggregate contains `{DAV:}write-acl` for any node implementing `IACL`,
+  which a calendar and a calendar object both do. An object's
+  `{DAV:}write-properties` is not a grant of plaintext: it is what lets a
+  `PROPPATCH` on the object reach the E03-R09 guard, which refuses every dead
+  property of a Private object. A stock app draws the collection read-only for a
+  viewer from exactly this set.
+- `ACL` is refused with `403` for every role, the owner included, and so is a
+  `POST` that reaches a calendar collection (the sharing extension's
+  `share-resource`) until E03-R05 reconciles shares in Phase 4. The API is the
+  only writer of `calendar_members`.
+- Two layers enforce it. The node ACLs above decide over HTTP, and the backend
+  re-reads the role in every write method (`GuardedCalendars::createCalendarObject`,
+  `updateCalendarObject`, `deleteCalendarObject`, `updateCalendar`,
+  `deleteCalendar`, `createCalendar`), in front of the E03-R09 guard and the
+  E03-R10 transaction, so a path that skips the ACL plugin is still refused. The
+  ACL layer answers first over HTTP, so that second layer is pinned directly by
+  `tests/Integration/BackendAccessTest.php`; `tests/Unit/MembershipPluginTest.php`
+  pins the extra `{DAV:}unbind` check the plugin makes on the collection node
+  itself, which is what stops a viewer before the backend sees the delete.
+- Authorization answers before the write guard. Over HTTP a `PUT` body the
+  E03-R09 guard would reject is refused for a viewer by the ACL layer first
+  (`need-privileges`, no `cf:private-skeleton-only`), and only an editor or the
+  owner sees the guard's precondition. A direct backend call gets the role check
+  first for the same reason, which is what `BackendAccessTest` pins.
 
 ## Checks
 
@@ -148,8 +192,12 @@ clients as "changed up to".
 A collection without a `public.calendars` row (or without a UUID URI) is refused
 before any write with `403` and a `cf:unmapped-collection` precondition, because
 the outbox row's foreign key could not be satisfied; the object write and the
-outbox row are never split. `deleteCalendarObject` reads the `UID` before the
-delete; a `PUT` body without `UID` is stored with a `sabre-vobject-<uuid>` `UID`
+outbox row are never split. E03-R08 makes that row the membership as well, so
+over HTTP such a collection is in nobody's home and the request is a `404`
+before this backend runs: the refusal is what a backend call that reaches the
+collection without going through the tree still gets. `deleteCalendarObject`
+reads the `UID` before the delete; a `PUT` body without `UID` is stored with a
+`sabre-vobject-<uuid>` `UID`
 by SabreDAV's repair before the outbox sees it, so that generated `UID` is what
 the row records. The protected no-op `afterObjectWrite($calendarId, $objectUri)`
 seam runs between the parent write and the outbox insert and is overridden only

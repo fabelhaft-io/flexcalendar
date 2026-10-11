@@ -34,8 +34,16 @@ final class AccessTest extends TestCase
     public function testObjectPrivilegesFollowTheRole(): void
     {
         self::assertSame(['{DAV:}read'], Access::objects('viewer'));
-        self::assertSame(['{DAV:}read', '{DAV:}write'], Access::objects('editor'));
-        self::assertSame(['{DAV:}read', '{DAV:}write'], Access::objects('owner'));
+        self::assertSame(['{DAV:}read', '{DAV:}write-content', '{DAV:}write-properties'], Access::objects('editor'));
+        self::assertSame(['{DAV:}read', '{DAV:}write-content', '{DAV:}write-properties'], Access::objects('owner'));
+        foreach (['viewer', 'editor', 'owner'] as $role) {
+            // A calendar object implements IACL, so {DAV:}write would aggregate
+            // {DAV:}write-acl onto it. E03-R08 keeps every ACL change out of CalDAV.
+            self::assertNotContains('{DAV:}write', Access::objects($role));
+            self::assertNotContains('{DAV:}write-acl', Access::objects($role));
+            self::assertNotContains('{DAV:}bind', Access::objects($role));
+            self::assertNotContains('{DAV:}unbind', Access::objects($role));
+        }
     }
 
     public function testUnknownRoleIsRefused(): void

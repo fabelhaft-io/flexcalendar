@@ -305,6 +305,43 @@ final class MembershipTest extends TestCase
     }
 
     /**
+     * The object's advertised privilege set, exactly, for every role. A calendar
+     * object implements `IACL`, so the `{DAV:}write` aggregate would advertise
+     * `{DAV:}write-acl` and `{DAV:}unlock` on it; E03-R08 keeps every ACL change
+     * out of CalDAV for every role, and locking is not installed. An editor and
+     * the owner get `{DAV:}write-content` (the DAVACL check when an existing
+     * object is overwritten) and `{DAV:}write-properties` (the check a
+     * `PROPPATCH` on the object makes, which is what lets the E03-R09 guard
+     * refuse a Private object's dead properties); creating and deleting one is
+     * `{DAV:}bind`/`{DAV:}unbind` on the collection above, not on the object.
+     * `{DAV:}read` aggregates `{DAV:}read-acl` and
+     * `{DAV:}read-current-user-privilege-set`, which is why those two appear.
+     */
+    public function testAnObjectAdvertisesExactlyTheRolePrivileges(): void
+    {
+        $this->collect($this->calendar);
+        $stored = self::uuid() . '.ics';
+        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event())['status']);
+
+        $read = ['{DAV:}read', '{DAV:}read-acl', '{DAV:}read-current-user-privilege-set'];
+        $write = ['{DAV:}write-content', '{DAV:}write-properties'];
+        $expected = [
+            $this->viewer => $read,
+            $this->editor => array_merge($read, $write),
+            $this->owner => array_merge($read, $write),
+        ];
+        foreach ($expected as $actor => $want) {
+            $privileges = $this->privileges($this->memberPath($this->calendar, $actor) . $stored, $actor);
+            sort($want);
+            sort($privileges);
+            self::assertSame($want, $privileges, 'The object advertises exactly what the role grants');
+            foreach (['{DAV:}write', '{DAV:}write-acl', '{DAV:}bind', '{DAV:}unbind', '{DAV:}unlock'] as $absent) {
+                self::assertNotContains($absent, $privileges, 'An object must not advertise ' . $absent);
+            }
+        }
+    }
+
+    /**
      * An editor writes objects but not collection properties and not the
      * collection itself; that is the owner's.
      */
