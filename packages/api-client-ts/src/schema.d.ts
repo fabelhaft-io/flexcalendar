@@ -61,8 +61,13 @@ export interface components {
             handle: string;
             email: string;
         };
-        Error: {
-            error: string;
+        /** @description An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`. */
+        Problem: {
+            type: string;
+            title: string;
+            status: number;
+            instance: string;
+            property?: string;
         };
     };
     responses: never;
@@ -111,22 +116,49 @@ export interface operations {
                     "application/json": components["schemas"]["User"];
                 };
             };
+            /** @description The request could not be parsed: a malformed body, a body that is not JSON, or a payload the schema refuses */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
             401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description The issuer does not report the user's email as verified */
+            /** @description The issuer does not report the user's email as verified, or a Private calendar refused the write */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such resource, or no such operation on this path */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description The user's handle or email address is already taken */
@@ -135,7 +167,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than the service accepts */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's media type is not supported */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description The issuer's userinfo could not be read or contradicted the token */
@@ -144,7 +214,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description No audience is configured yet, or the issuer has no usable signing keys */
@@ -153,7 +223,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
