@@ -20,11 +20,12 @@ description: Run flexcalendar's implementation loop as orchestrator and reviewer
 - **The auto-mode classifier** blocks `git branch -D`, and has blocked reading harness run logs and editing memory. Don't work around a denial: report it to the user and carry on with what doesn't depend on it.
 - **Edit tools:** the Edit tool needs a Read of the file in this session first, including files in another worktree.
 - **Permissions:** the owner's `.claude/settings.local.json` allows the routine loop commands (exact `make` targets, `git add`/`commit`, `git push -u origin`, `gh pr create`). `make next-ready` needs `Bash(make next-ready)` there, and `make next-ready ARGS=…` needs `Bash(make next-ready *)`. The auto-mode classifier blocks you from editing your own permissions: ask the owner for the lines you need.
+- **Merging** (neutral skill, *Merging*) needs `Bash(gh pr merge * --squash)` in the owner's `.claude/settings.local.json`. `.claude/settings.json` denies `gh pr merge` with `--admin` or `--auto`, and a deny beats an allow. Without the allow line every PR is held for the owner: say so in the final report instead of looking for another way to merge.
 
 ## Running unattended with /loop
 
 The brief for such a session is [`kickoff.md`](../../../.agents/skills/orchestrate/kickoff.md); start it with `/loop Run /orchestrate unattended. Follow .agents/skills/orchestrate/kickoff.md.` A `/loop` without an interval makes you pace yourself. One firing is one pass of the loop in the neutral skill: `make next-ready`, start what it says, review what has finished, open the PR, then schedule the next firing. Each firing starts from the repo, not from memory: `docs/reviews/follow-ups.md` and `make next-ready` are the state.
 
 - Hand the same `/loop /orchestrate` prompt back to `ScheduleWakeup` each time, with `noop: true` on a firing where nothing changed.
-- Don't schedule a short wake-up to poll a background run: the harness re-invokes you when it finishes. Set a fallback of 1200 s or more, so the loop survives a run that hangs.
+- Don't schedule a short wake-up to poll a background run: the harness re-invokes you when it finishes. That covers `gh pr checks <n> --watch` for a PR waiting on CI: start it with `run_in_background`. Set a fallback of 1200 s or more, so the loop survives a run that hangs.
 - When a stop condition in *Running unattended* (neutral skill) holds, call `ScheduleWakeup` with `stop: true` and tell the owner why, instead of scheduling another firing.
