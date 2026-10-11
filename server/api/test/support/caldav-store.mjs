@@ -6,11 +6,13 @@
 // properties the routes depend on —
 //
 //   * `If-None-Match: *` creates only, `If-Match` updates or deletes only, and
-//     either mismatch is the `412` the real service answers with (SabreDAO;
+//     either mismatch is the `412` the real service answers with (SabreDAV;
 //     `server/caldav/tests/Integration/ServiceTest.php` holds the same three
 //     cases against the real thing);
-//   * a missing object is a `404` for a GET and a DELETE, exactly as Sabre's
-//     `getNodeForPath` refuses before any precondition is looked at;
+//   * a missing object is a `404` for a GET and for an unconditional `DELETE`,
+//     exactly as Sabre's `getNodeForPath` refuses before any precondition is
+//     looked at — and a `412` for a conditional one, which is what RFC 9110
+//     § 13.1.1 makes of `If-Match` on a resource that is not there;
 //   * **the write guard runs**: every PUT is checked against the Private
 //     skeleton allow-list of `server/caldav/src/PrivateSkeleton.php` (E03-R09),
 //     and a violation throws the `403` the service throws, with the
@@ -149,6 +151,9 @@ export function createMemoryCalDavStore(seed = {}) {
   /** One-shot failures: the next call of the method throws, then it is healed. */
   /** @type {Map<string, Error>} */
   const once = new Map();
+  /** How many calls of a method a one-shot failure still waits out. */
+  /** @type {Map<string, number>} */
+  const after = new Map();
   /** @type {Record<string, unknown>[]} */
   const events = seed.events ?? [];
   /** The users each view was built for, in order. */
@@ -166,8 +171,14 @@ export function createMemoryCalDavStore(seed = {}) {
   const guard = (method) => {
     const failure = once.get(method);
     if (failure) {
-      once.delete(method);
-      throw failure;
+      const waiting = after.get(method) ?? 0;
+      if (waiting > 0) {
+        after.set(method, waiting - 1);
+      } else {
+        once.delete(method);
+        after.delete(method);
+        throw failure;
+      }
     }
     const lasting = failures.get(method);
     if (lasting) throw lasting;
@@ -202,18 +213,21 @@ export function createMemoryCalDavStore(seed = {}) {
       return;
     },
     /**
-     * Makes the next call of one method throw, and only that one — the shape a
-     * race has: an object that was there when a request read it and is gone by
-     * the time the answer is assembled.
-     * @param {string} method @param {Error} [error]
+     * Makes one call of one method throw, and only that one — the shape a race
+     * has: an object that was there when a request read it and is gone by the
+     * time the answer is assembled. `after` skips that many calls first, so a
+     * failure can be aimed at the second look at an object.
+     * @param {string} method @param {Error} [error] @param {{after?: number}} [options]
      */
-    failOnce(method, error = new Error(`${method} failed`)) {
+    failOnce(method, error = new Error(`${method} failed`), options = {}) {
       once.set(method, error);
+      after.set(method, options.after ?? 0);
     },
     /** @param {string} method */
     heal(method) {
       failures.delete(method);
       once.delete(method);
+      after.delete(method);
     },
 
     /** @param {string} userId @param {{requestId?: string}} [options] */
@@ -294,7 +308,16 @@ export function createMemoryCalDavStore(seed = {}) {
           guard('deleteObject');
           const key = keyOf(calendarId, name);
           const object = objects.get(key);
-          if (object === undefined) throw new CalDavError('not-found', 404);
+          if (object === undefined) {
+            // SabreDAV looks the node up before it looks at the precondition, so
+            // a conditional `DELETE` of an object that is not there is the `412`
+            // of RFC 9110 § 13.1.1 — and an unconditional one the `404` of
+            // `getNodeForPath`. The API's re-read is what tells them apart.
+            if (options.ifMatch !== undefined) {
+              throw new CalDavError('precondition-failed', 412);
+            }
+            throw new CalDavError('not-found', 404);
+          }
           if (
             options.ifMatch !== undefined &&
             object.etag !== options.ifMatch

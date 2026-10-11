@@ -672,8 +672,9 @@ paths:
         The client sends fields, never iCalendar: the API mints the `UID`
         (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object
         with `ical.js` and writes it with `If-None-Match: *`, so two creates
-        cannot overwrite each other and a client can never write `EXDATE` or
-        `RECURRENCE-ID` (INV-05). The object name is `<uid>.ics`.
+        cannot overwrite each other and a client never writes the recurrence
+        itself — an exception or an occurrence override is an intent
+        (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
 
         The answer carries the raw iCalendar object (`ical`, byte for byte), the
         CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of
@@ -773,12 +774,15 @@ paths:
             A rule of the operation was broken: the body is not a JSON object;
             `start` is absent, or is not exactly one of `date`/`utc`, or names a
             time that does not exist; `end`, `rrule` or `alarm` is not a value
-            the API can write; `envelopeSha256` is absent or is not 64 lowercase
-            hex digits; a content field (`summary`, `description`, `location`,
-            `attendees`) was sent for a Private calendar; or the body carries a
-            member the operation does not take — `uid`, `exdate` and
-            `recurrenceId` included, which the API owns (INV-05). The body never
-            names a value.
+            the API can write — a rule part RFC 5545 does not name, `BYWEEKNO`,
+            a yearly 29-February start, an `UNTIL` whose value type is not its
+            start's, or an `end` that is not the same value type as its `start`
+            or is not later than it; `envelopeSha256` is absent or is not 64
+            lowercase hex digits; a content field (`summary`, `description`,
+            `location`, `attendees`) was sent for a Private calendar; or the body
+            carries a member the operation does not take — `uid` and the
+            recurrence itself, an exception or an occurrence override included,
+            which the API owns (INV-05). The body never names a value.
           content:
             application/problem+json:
               schema:
@@ -945,12 +949,14 @@ paths:
         overwrite. The 412 carries the current representation in the problem's
         `current` member, and nothing of the request that lost.
 
-        `rrule`, `uid`, `exdate` and `recurrenceId` are refused with 422: an
-        edit to a recurring event is an intent (E05-R06/R07), and a client never
-        writes the recurrence itself (INV-05). A member that is `null` removes
-        the property it names. Everything the change did not touch — an
-        override, a `VTIMEZONE`, an `X-` property — comes back unchanged
-        (INV-02). On a Private calendar the content fields are a 422 (D-18).
+        `rrule` and `uid` are refused with 422, and so is any member naming a
+        recurrence exception or an occurrence override: an edit to a recurring
+        event is an intent (E05-R06/R07), and a client never writes the
+        recurrence itself (INV-05). A member that is `null` removes the property
+        it names, and a body that carries no member at all is a 422 as well.
+        Everything the change did not touch — an override component, a
+        `VTIMEZONE`, an `X-` property — comes back unchanged (INV-02). On a
+        Private calendar the content fields are a 422 (D-18).
       security:
         - bearerAuth: []
       parameters:
@@ -1055,10 +1061,15 @@ paths:
         '422':
           description: >-
             A rule of the operation was broken: the body is not a JSON object;
-            `rrule`, `uid`, `exdate` or `recurrenceId` was sent, which the API
-            owns (INV-05); a field is not a value the API can write; a content
-            field was sent for a Private calendar; or the body carries a member
-            the operation does not take. The body never names a value.
+            `rrule` or `uid` was sent, or a member naming a recurrence exception
+            or an occurrence override, which the API owns (INV-05); a field is
+            not a value the API can write — a rule part RFC 5545 does not name,
+            `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type
+            is not its start's, or an `end` that is not the same value type as
+            its `start` or is not later than it; a content field was sent for a
+            Private calendar; a `PATCH` carried no member at all; or the body
+            carries a member the operation does not take. The body never names a
+            value.
           content:
             application/problem+json:
               schema:
@@ -1452,7 +1463,7 @@ components:
           $ref: '#/components/schemas/EventTime'
         rrule:
           type: ['null', string]
-          description: 'The recurrence rule, validated by `ical.js`. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.'
+          description: 'The recurrence rule, in the RFC 5545 § 3.3.10 form: `FREQ` first, only the parts the RFC names and each at most once, `COUNT` or `UNTIL` but not both, `UNTIL` with the value type of the start, and neither `BYWEEKNO` nor a yearly rule on a 29 February start. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes.'
         alarm:
           $ref: '#/components/schemas/EventAlarm'
         envelopeSha256:
@@ -1474,7 +1485,7 @@ components:
             type: string
     EventUpdate:
       type: object
-      description: 'A patch request: the same fields as a create, minus `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. `uid`, `rrule`, `exdate` and `recurrenceId` are a 422 — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18).'
+      description: 'A patch request: the same fields as a create, minus `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18).'
       additionalProperties: false
       properties:
         start:

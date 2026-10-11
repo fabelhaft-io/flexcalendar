@@ -27,6 +27,14 @@
 // `412` with the current representation in the problem's `current` member, so
 // the client can re-read, reapply and retry.
 //
+// **Only objects RFC 5545 allows are written.** `src/ical-rmw.mjs` refuses a
+// rule part the RFC does not name, and any rule `ical.js` 2.2.1 expands wrongly
+// (`BYWEEKNO`, a yearly 29-February start), rather than writing a rule it would
+// mis-expand; `assertOrder` is applied to the merged object — on a create and on
+// a patch, so a member a patch did not name is checked against the stored object
+// all the same. A `PATCH` body that names nothing is a 422, not a revision that
+// changed nothing.
+//
 // Two rules are policy, and live here rather than in the module: until Phase 4
 // every calendar is Private (ADR 0003), so a content field (`summary`,
 // `description`, `location`, `attendees`) is refused with the fixed 422 — a
@@ -51,6 +59,7 @@ import { identity, resolveUser } from './auth.mjs';
 import { eventSchema } from './event-schema.mjs';
 import {
   IcalError,
+  assertOrder,
   build,
   describe,
   parse,
@@ -446,6 +455,10 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
           location: body.location,
           attendees: body.attendees,
         });
+        // No field is wrong and the object still is: an all-day start with an
+        // instant end, or an end at or before its start, is the fixed 422
+        // (RFC 5545 § 3.8.2.2, INV-04).
+        assertOrder(calendar);
       });
       if (!built) return undefined;
       const ical = serialise(calendar);
@@ -525,7 +538,10 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
       const user = await authenticated(request, reply);
       if (!user) return undefined;
       const body = readBody(request.body, UPDATE_MEMBERS);
-      if (body === undefined) {
+      // A body that names nothing is a 422: a patch is a change, and an empty
+      // one would still move `SEQUENCE`, `DTSTAMP` and the `ETag` — every other
+      // client would see a revision that changed nothing.
+      if (body === undefined || Object.keys(body).length === 0) {
         invalidInput(reply, request);
         return undefined;
       }
@@ -584,7 +600,15 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
       // `SEQUENCE`, and `DTSTAMP` says when this revision was made.
       changes.sequence = before.sequence + 1;
       changes.dtstamp = utcStamp(new Date());
-      if (!applyFields(request, reply, () => patch(calendar, changes))) {
+      if (
+        !applyFields(request, reply, () => {
+          patch(calendar, changes);
+          // The merged object, not the members this request named: a `start`
+          // that lands after the stored `end`, or one that changes value type
+          // while the stored `end` keeps its own, is the fixed 422.
+          assertOrder(calendar);
+        })
+      ) {
         return undefined;
       }
       const ical = serialise(calendar);
@@ -655,8 +679,16 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
    * A `412` from CalDAV: the caller's `If-Match` no longer names the object the
    * collection holds. The answer carries what it holds now, in the problem's
    * `current` member, so the client can reapply its change — and nothing else:
-   * the request that lost the race is never in it. An object that vanished (or
-   * cannot be read back) is answered without `current`.
+   * the request that lost the race is never in it.
+   *
+   * SabreDAV answers `412` to a conditional write on an object that is not there
+   * at all (RFC 9110 § 13.1.1, through its `getNodeForPath`) — and the same race
+   * reaches us when an object is deleted between the read and the write. The
+   * re-read is what tells the two apart: when it finds nothing, the answer is
+   * the `404` an unknown `uid` gets, not a `412` without a representation. An
+   * object that cannot be read back for any other reason, or one the collection
+   * holds but this API cannot describe, is answered without `current` — the
+   * client's next `GET` says the rest.
    * @param {import('fastify').FastifyRequest} request
    * @param {import('fastify').FastifyReply} reply
    * @param {any} view
@@ -675,7 +707,11 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
     try {
       const stored = await view.getObject(calendarId, objectName(uid));
       current = representationOf(stored.data, stored.etag);
-    } catch {
+    } catch (error) {
+      if (/** @type {any} */ (error)?.status === 404) {
+        sendProblem(reply, 'not-found', { instance: request.id });
+        return;
+      }
       current = undefined;
     }
     sendProblem(reply, 'precondition-failed', {

@@ -253,7 +253,9 @@ only a canonical lowercase UUIDv4 can name one (INV-03), so anything else is the
 `404` an unknown `uid` gets, decided before CalDAV is asked — and a `uid` over
 `calendarobjects.uid`'s `VARCHAR(200)` never reaches it either (E03-R10). The
 router's `maxParamLength` is raised to 200 for that reason: a `uid` of that
-length gets this API's `404`, not the router's own `414`.
+length gets this API's `404`, not the router's own `414` — and one longer than
+that is a `404` too, from the `frameworkErrors` handler, rather than Fastify's
+own body naming the path.
 
 ### What an answer carries
 
@@ -303,8 +305,36 @@ iCalendar engine (D-01, ADR 0002) — and back:
   `422` until E05-R09 lands (INV-04); a stored `TZID` time is read and
   round-tripped untouched. An impossible date (`2026-02-30`) is refused rather
   than rolled forward, and so is an instant that is not `YYYYMMDDTHHMMSSZ`.
-- **Every value is parsed, never pasted.** An `rrule` is checked against
-  `ICAL.Recur` (an unknown `FREQ` is refused), an `alarm` trigger against
+- **The merged object is checked, not only the members the request named.** After
+  a create and after a patch, `start` and `end` must be the same value type — an
+  all-day `VALUE=DATE` with a `DATE`, a `DATE-TIME` with a `DATE-TIME`
+  (RFC 5545 § 3.8.2.2, INV-04) — and the end must be later than the start;
+  otherwise the fixed `422`. A patch that moves only `start` is therefore checked
+  against the *stored* `end`, and one that turns an instant start into a `DATE`
+  while the stored end stays an instant is refused. Two forms this module cannot
+  compare without a zone — a `Z` instant beside a `TZID` wall clock, or two
+  different `TZID`s — are left alone: E05-R09 owns zones, and a stored object may
+  legitimately mix them (INV-02).
+- **An `rrule` is exactly the parts RFC 5545 § 3.3.10 names.** `FREQ` is required
+  and first; `UNTIL`, `COUNT`, `INTERVAL`, `BYSECOND`, `BYMINUTE`, `BYHOUR`,
+  `BYDAY`, `BYMONTHDAY`, `BYYEARDAY`, `BYWEEKNO`, `BYMONTH`, `BYSETPOS` and `WKST`
+  are accepted, each at most once. Anything else — a misspelled part above all —
+  is a `422` rather than something `ical.js` drops while the write looks
+  successful. `COUNT` and `UNTIL` are mutually exclusive, and `UNTIL` has the
+  value type of the start: a `DATE` (`20261015`) for an all-day rule, a UTC
+  `DATE-TIME` (`20261015T090000Z`) for a timed one. Two families `ical.js` 2.2.1
+  expands **wrongly** are refused rather than expanded — any rule naming
+  `BYWEEKNO`, and a `FREQ=YEARLY` rule whose start is 29 February
+  (`spec/ical-fixtures/RULINGS.md`; neither engine may be patched here, and
+  `BYWEEKNO` is never hand-rolled). Nothing else is dropped in silence either:
+  `COUNT` and `INTERVAL` are positive integers, `WKST` is a weekday, and an
+  `UNTIL` the library would roll forward from a date that does not exist
+  (`20260230T090000Z`) is a `422`. The only part that may leave the written rule
+  is one whose value is the RFC's own default (`INTERVAL=1`, `WKST=MO`).
+  `test/ical-rmw.test.mjs` holds that against the whole
+  `spec/ical-fixtures/rrule/` corpus: every rule it carries is accepted except
+  the two `RULINGS.md` names.
+- **Every value is parsed, never pasted.** An `alarm` trigger is checked against
   `ICAL.Duration`, an envelope hash against 64 lowercase hex digits, and a text
   value against the control characters `ical.js` writes through unescaped — a
   carriage return above all, which would end a content line and let a value add
@@ -314,11 +344,19 @@ iCalendar engine (D-01, ADR 0002) — and back:
   store decides whether it still matches, which is why a stale read cannot
   overwrite a newer write. An update bumps `SEQUENCE` and `DTSTAMP`
   (RFC 5545 § 3.8.7.4).
+- **A `PATCH` body that names nothing is a `422`.** A patch is a change: an empty
+  one would still move `SEQUENCE`, `DTSTAMP` and the `ETag`, so every other client
+  would see a revision that changed nothing.
 - **A `412` answers with the current representation** in the problem's `current`
   member, so the client re-reads, reapplies and retries; the request that lost
   the race is never in the body. `current` is the representation a `GET` would
-  answer with, which on a Private calendar is the skeleton. An object that has
-  vanished by the time the answer is assembled is answered without `current`.
+  answer with, which on a Private calendar is the skeleton. SabreDAV answers
+  `412` to a conditional write on an object that is not there (RFC 9110
+  § 13.1.1), and the same race reaches us when an object is deleted between the
+  read and the write; the re-read tells the two apart, so an object that has
+  vanished is answered with the `404` an unknown `uid` gets — `test/support/`
+  `caldav-store.mjs` answers a conditional `DELETE` of a missing object the way
+  Sabre does for that reason.
 - **`PATCH` is a read-modify-write of the stored object**: `GET`, apply, `PUT`
   with the caller's `If-Match`. Everything the change did not name — an
   override, a `VTIMEZONE`, an `X-` property, a parameter — survives it untouched
@@ -357,7 +395,12 @@ on the status line; `instance` is `urn:uuid:<the request correlation ID>`.
 
 **Nothing in a body is derived from the request or from an exception.** No path,
 no query value, no header, no validation message, no `pg` message, no CalDAV
-body. Two extension members exist. `property` is the offending property name a
+body. Fastify's own framework refusals are here too: an over-long path parameter
+(`FST_ERR_MAX_PARAM_LENGTH`, which never names anything this API minted) and a
+URL that is not a URL (`FST_ERR_BAD_URL`) are answered by the `frameworkErrors`
+handler in `src/app.mjs` as the fixed `not-found` and `bad-request` problems, not
+with Fastify's default body — that one carries the request path.
+Two extension members exist. `property` is the offending property name a
 Private-skeleton write was refused for (`SUMMARY`, `X-CALFLEX-ENVELOPE-SHA256`,
 `UNLISTED`), never its value — and only because the CalDAV adapter already
 reduced it to that name (E03-R09). `current` is the representation the store
@@ -373,14 +416,14 @@ the e-mail address it names.
 | `forbidden` | 403 | The issuer reports the e-mail as unverified, or the caller is a member of the calendar but not its owner |
 | `private-skeleton-only` | 403 | A Private write carried content; the `property` member names it |
 | `unmapped-collection` | 403 | The collection has no `calendars` row |
-| `not-found` | 404 | No such resource or path — or a calendar the caller is not a member of, which is deliberately the same answer (E03-R01) |
+| `not-found` | 404 | No such resource or path — or a calendar the caller is not a member of, which is deliberately the same answer (E03-R01); a path parameter over the router's limit is one too |
 | `method-not-allowed` | 405 | The method is not allowed on the path; `Allow` names the ones that are |
 | `conflict` | 409 | The handle or e-mail address is already taken, or the `UID` a create minted is already in the collection |
 | `gone` | 410 | The resource is gone |
-| `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed, a stale calendar version or a stale event `ETag` included; an event write carries the current representation in `current` (E05-R04) |
+| `precondition-failed` | 412 | An `If-Match`/`If-None-Match` precondition failed, a stale calendar version or a stale event `ETag` included; an event write carries the current representation in `current` (E05-R04), or the `not-found` above when the object is gone |
 | `payload-too-large` | 413 | The body exceeds the service's limit |
 | `unsupported-media-type` | 415 | The body's media type is not accepted |
-| `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04) |
+| `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04): a member the operation does not take, a value it cannot write, a rule part RFC 5545 does not name, a `start`/`end` pair the RFC forbids, or a `PATCH` that names nothing |
 | `precondition-required` | 428 | A write carried no `If-Match`, so there is no version to be optimistic against (E05-R03, E05-R04) |
 | `rate-limited` | 429 | Over `CALFLEX_RATE_LIMIT_MAX`; `Retry-After` is set |
 | `internal-error` | 500 | Ours to fix; the body says nothing more |

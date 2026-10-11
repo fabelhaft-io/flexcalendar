@@ -288,7 +288,10 @@ test('create, read back byte for byte, patch on the right precondition, delete',
       'a',
       'PATCH',
       `/calendars/${calendarId}/events/${event.uid}`,
-      { start: { utc: '20301231T235900Z' } },
+      {
+        start: { utc: '20301231T235900Z' },
+        end: { utc: '20301231T235959Z' },
+      },
       { 'if-match': '"stale"' },
     );
     assert.equal(stale.statusCode, 412, stale.body);
@@ -311,19 +314,24 @@ test('create, read back byte for byte, patch on the right precondition, delete',
     );
     assert.equal(unconditional.statusCode, 428, unconditional.body);
 
-    // The write that wins: `SEQUENCE` and `DTSTAMP` move, the field changes,
+    // The write that wins: `SEQUENCE` and `DTSTAMP` move, the fields change,
     // and the envelope hash stays where the sidecar needs it.
     const patched = await request(
       app,
       'a',
       'PATCH',
       `/calendars/${calendarId}/events/${event.uid}`,
-      { start: { utc: '20261014T110000Z' }, alarm: null },
+      {
+        start: { utc: '20261014T110000Z' },
+        end: { utc: '20261014T113000Z' },
+        alarm: null,
+      },
       { 'if-match': event.etag },
     );
     assert.equal(patched.statusCode, 200, patched.body);
     const after = patched.json();
     assert.equal(valueOf(after.ical, 'DTSTART'), '20261014T110000Z');
+    assert.equal(valueOf(after.ical, 'DTEND'), '20261014T113000Z');
     assert.equal(valueOf(after.ical, 'SEQUENCE'), '1');
     assert.equal(valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'), HASH);
     assert.equal(valueOf(after.ical, 'TRIGGER'), undefined);

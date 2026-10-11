@@ -20,7 +20,9 @@
 // E05-R10 owns the error model and the observability hooks:
 //
 //   * Every error is an RFC 9457 problem document (`src/problem.mjs`), never
-//     Fastify's default body.
+//     Fastify's default body — Fastify's own framework refusals (an over-long
+//     path parameter, a URL that is not a URL) included, which `frameworkErrors`
+//     below turns into the same fixed problems.
 //   * Every request gets a correlation ID — a UUIDv4 we mint, or an inbound
 //     `X-Request-Id` only when it is already a lowercase v4 UUID. It is on every
 //     response and goes to CalDAV with the adapter (`forUser(id, {requestId})`).
@@ -268,6 +270,23 @@ export function buildApp({
     // an error, `error.message`. All three are refused here; `onResponse` below
     // emits the one line this service logs.
     logController: new Fastify.LogController({ disableRequestLogging: true }),
+    // Fastify's own refusals — a path parameter over the router's limit, a URL
+    // that is not a URL — happen before any route runs, and its default body is
+    // `{"error":…,"code":"FST_ERR_…","message":"'/calendars/…'"}`: not a problem
+    // document, and it carries the request path (E05-R10: nothing in a body is
+    // derived from the request). They are answered here as the same fixed
+    // problems the routes use.
+    frameworkErrors: (error, request, reply) => {
+      // A parameter longer than the router allows cannot name anything this API
+      // ever minted, which is the `404` a `uid` or a calendar id outside the
+      // canonical shape gets (E03-R10); a malformed URL and every other
+      // framework refusal follow their own status through the problem table.
+      const slug =
+        /** @type {any} */ (error)?.code === 'FST_ERR_MAX_PARAM_LENGTH'
+          ? 'not-found'
+          : problemForStatus(/** @type {any} */ (error)?.statusCode);
+      sendProblem(reply, slug, { instance: request.id });
+    },
     // Behind Caddy, `request.ip` is the client; directly exposed, it is the
     // socket address and `X-Forwarded-For` is ignored.
     trustProxy: trustProxy(config.trustedProxyHops),

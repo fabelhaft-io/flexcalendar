@@ -525,6 +525,8 @@ test('an owner and an editor write, a viewer is refused, and a stranger gets the
     }
     // An id that cannot name a row is the same 404, decided before the store:
     // the memory store raises Postgres' `22P02` for it, which would be a 500.
+    // It never reaches CalDAV either (E11).
+    const reached = caldav.events.length;
     const malformed = await call(app, {
       method: 'POST',
       url: '/calendars/not-a-uuid/events',
@@ -533,6 +535,7 @@ test('an owner and an editor write, a viewer is refused, and a stranger gets the
     });
     assert.equal(malformed.statusCode, 404, malformed.body);
     assertProblem(malformed.json(), 'not-found');
+    assert.equal(caldav.events.length, reached);
 
     // A calendar whose id is a UUID but names no row, likewise.
     const unknown = await call(app, {
@@ -556,7 +559,7 @@ test('an owner and an editor write, a viewer is refused, and a stranger gets the
 });
 
 test('a reader gets the stored bytes back byte for byte, and an unknown uid is a 404', async () => {
-  const { app, calendarId } = await setup();
+  const { app, caldav, calendarId } = await setup();
   try {
     const body = await created(app, calendarId);
     const response = await call(app, {
@@ -578,7 +581,9 @@ test('a reader gets the stored bytes back byte for byte, and an unknown uid is a
 
     // A `uid` that is not a UUIDv4 this API could have minted never reaches
     // CalDAV: `calendarobjects.uid` is VARCHAR(200), and only a UUIDv4 can name
-    // an object here (E03-R10).
+    // an object here (E03-R10). The call log is what says the refusal is the
+    // shape check and not a lookup that happened to miss.
+    const reached = caldav.events.length;
     for (const uid of [
       'not-a-uid',
       'a'.repeat(200),
@@ -592,6 +597,11 @@ test('a reader gets the stored bytes back byte for byte, and an unknown uid is a
       assert.equal(response.statusCode, 404, `${uid}: ${response.body}`);
       assertProblem(response.json(), 'not-found');
     }
+    assert.equal(
+      caldav.events.length,
+      reached,
+      `a refused uid reached CalDAV: ${JSON.stringify(caldav.events.slice(reached))}`,
+    );
   } finally {
     await app.close();
   }
@@ -633,11 +643,16 @@ test('a patch needs If-Match, forwards it, and changes only what it was asked to
       url,
       subject: 'owner',
       headers: { 'if-match': stored.etag },
-      payload: { start: { utc: '20261014T110000Z' }, alarm: null },
+      payload: {
+        start: { utc: '20261014T110000Z' },
+        end: { utc: '20261014T113000Z' },
+        alarm: null,
+      },
     });
     assert.equal(patched.statusCode, 200, patched.body);
     const after = patched.json();
     assert.match(after.ical, /^DTSTART:20261014T110000Z$/m);
+    assert.match(after.ical, /^DTEND:20261014T113000Z$/m);
     assert.ok(!/^BEGIN:VALARM$/m.test(after.ical), 'the alarm was not removed');
     assert.equal(valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'), HASH);
     // The revision moved, so `SEQUENCE` and `DTSTAMP` did too.
@@ -646,6 +661,7 @@ test('a patch needs If-Match, forwards it, and changes only what it was asked to
     assert.notEqual(after.ical, body.ical);
     assert.equal(after.parsed.alarm, null);
     assert.deepEqual(after.parsed.start, { utc: '20261014T110000Z' });
+    assert.deepEqual(after.parsed.end, { utc: '20261014T113000Z' });
 
     // The caller's own validator went on to CalDAV, unchanged.
     const put = caldav.events
@@ -709,7 +725,10 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
       url,
       subject: 'owner',
       headers: { 'if-match': '"stale"' },
-      payload: { start: { utc: '20301231T235900Z' } },
+      payload: {
+        start: { utc: '20301231T235900Z' },
+        end: { utc: '20301231T235959Z' },
+      },
     });
     assert.equal(response.statusCode, 412, response.body);
     const problem = assertProblem(response.json(), 'precondition-failed');
@@ -738,8 +757,10 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
     assert.equal(absent.statusCode, 404, absent.body);
     assertProblem(absent.json(), 'not-found');
 
-    // An object that vanished between the failed write and the re-read has no
-    // representation to hand back, so the problem simply carries none.
+    // SabreDAV answers 412 to a conditional write on an object that is not
+    // there (RFC 9110 § 13.1.1), so a 412 can mean "gone" as well as "stale".
+    // The re-read is what tells them apart: when it finds nothing, the answer is
+    // the 404 an unknown `uid` gets, not a 412 without a representation.
     caldav.failOnce('getObject', new CalDavError('not-found', 404));
     const vanished = await call(app, {
       method: 'DELETE',
@@ -747,9 +768,26 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
       subject: 'owner',
       headers: { 'if-match': '"stale"' },
     });
-    assert.equal(vanished.statusCode, 412, vanished.body);
-    const bare = assertProblem(vanished.json(), 'precondition-failed');
-    assert.ok(!Object.hasOwn(bare, 'current'), vanished.body);
+    assert.equal(vanished.statusCode, 404, vanished.body);
+    assertProblem(vanished.json(), 'not-found');
+
+    // The same race on a patch: the object was there for the read, the write
+    // loses, and the second look at the object finds nothing.
+    caldav.failOnce('getObject', new CalDavError('not-found', 404), {
+      after: 1,
+    });
+    const raced = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': '"stale"' },
+      payload: {
+        start: { utc: '20301231T235900Z' },
+        end: { utc: '20301231T235959Z' },
+      },
+    });
+    assert.equal(raced.statusCode, 404, raced.body);
+    assertProblem(raced.json(), 'not-found');
   } finally {
     await app.close();
   }
@@ -789,13 +827,25 @@ test('delete needs If-Match, answers 204, and 404s for an object that is not the
     });
     assert.equal(refused.statusCode, 403, refused.body);
 
+    // An object that is not there at all: SabreDAV answers `412` to the
+    // conditional delete (RFC 9110 § 13.1.1, through its `getNodeForPath`), and
+    // the API's re-read is what turns that into the `404` an unknown `uid` gets.
+    // The recorded calls are what says which of the two answered.
+    const absent = randomUUID();
     const gone = await call(app, {
       method: 'DELETE',
-      url: `/calendars/${calendarId}/events/${randomUUID()}`,
+      url: `/calendars/${calendarId}/events/${absent}`,
       subject: 'owner',
       headers: { 'if-match': '"1"' },
     });
     assert.equal(gone.statusCode, 404, gone.body);
+    assertProblem(gone.json(), 'not-found');
+    assert.deepEqual(
+      caldav.events
+        .filter((entry) => entry.name === `${absent}.ics`)
+        .map((entry) => entry.op),
+      ['deleteObject', 'getObject'],
+    );
 
     const deleted = await call(app, {
       method: 'DELETE',
@@ -955,6 +1005,306 @@ test('a canary in a write never reaches a body or a log line', async () => {
       assert.ok(!patch.body.includes(CANARY), what);
     }
     assert.ok(!capture.text().includes(CANARY), capture.text());
+  } finally {
+    await app.close();
+  }
+});
+
+test('only a valid start/end pair is written, on a create and against the stored object', async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    const collection = `/calendars/${calendarId}/events`;
+    /** @type {[string, Record<string, unknown>][]} */
+    const refused = [
+      [
+        'an instant end under an all-day start',
+        createBody({
+          start: { date: '2026-10-12' },
+          end: { utc: '20261012T100000Z' },
+        }),
+      ],
+      [
+        'an all-day end under an instant start',
+        createBody({
+          start: { utc: STAMP },
+          end: { date: '2026-10-13' },
+        }),
+      ],
+      [
+        'an end equal to the start',
+        createBody({ start: { utc: STAMP }, end: { utc: STAMP } }),
+      ],
+      [
+        'an end before the start',
+        createBody({
+          start: { utc: STAMP },
+          end: { utc: '20261014T083000Z' },
+        }),
+      ],
+    ];
+    for (const [what, payload] of refused) {
+      const response = await call(app, {
+        method: 'POST',
+        url: collection,
+        subject: 'owner',
+        payload,
+      });
+      assert.equal(response.statusCode, 422, `${what}: ${response.body}`);
+      assertProblem(response.json(), 'invalid-input');
+    }
+    // None of them was written, and CalDAV was never asked to write one. The
+    // double shares its call log with the calendar store, so only its own
+    // operations are counted.
+    assert.equal(caldav.objects.size, 0);
+    for (const op of ['forUser', 'putObject', 'getObject', 'deleteObject']) {
+      assert.equal(
+        opsOf(caldav.events).filter((entry) => entry === op).length,
+        0,
+        op,
+      );
+    }
+
+    // A valid pair of either value type is written.
+    const timed = await created(app, calendarId);
+    assert.match(timed.ical, /^DTSTART:20261014T090000Z$/m);
+    const allDay = await created(
+      app,
+      calendarId,
+      createBody({
+        start: { date: '2026-10-12' },
+        end: { date: '2026-10-13' },
+      }),
+    );
+    assert.match(allDay.ical, /^DTEND;VALUE=DATE:20261013$/m);
+
+    // A patch is checked against the merged object: one member moved past the
+    // stored other one, or one member changing value type while the stored
+    // other keeps its own, is the same fixed 422.
+    const url = `${collection}/${timed.uid}`;
+    const stored = caldav.stored(calendarId, `${timed.uid}.ics`);
+    assert.ok(stored);
+    const writes = opsOf(caldav.events).filter(
+      (op) => op === 'putObject',
+    ).length;
+    /** @type {[string, Record<string, unknown>][]} */
+    const badPatches = [
+      ['a start after the stored end', { start: { utc: '20261014T110000Z' } }],
+      ['a start that changes value type', { start: { date: '2026-10-14' } }],
+      ['an end before the stored start', { end: { utc: '20261014T083000Z' } }],
+    ];
+    for (const [what, payload] of badPatches) {
+      const response = await call(app, {
+        method: 'PATCH',
+        url,
+        subject: 'owner',
+        headers: { 'if-match': stored.etag },
+        payload,
+      });
+      assert.equal(response.statusCode, 422, `${what}: ${response.body}`);
+      assertProblem(response.json(), 'invalid-input');
+    }
+    // A refused patch writes nothing — it reads the object it would change, and
+    // the revision does not move.
+    assert.equal(
+      opsOf(caldav.events).filter((op) => op === 'putObject').length,
+      writes,
+    );
+    assert.equal(
+      caldav.stored(calendarId, `${timed.uid}.ics`)?.ics,
+      stored.ics,
+    );
+
+    // The control: the same members, moved together, are a 200.
+    const moved = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: {
+        start: { utc: '20261014T110000Z' },
+        end: { utc: '20261014T113000Z' },
+      },
+    });
+    assert.equal(moved.statusCode, 200, moved.body);
+    assert.match(moved.json().ical, /^DTSTART:20261014T110000Z$/m);
+    assert.match(moved.json().ical, /^DTEND:20261014T113000Z$/m);
+  } finally {
+    await app.close();
+  }
+});
+
+test('only the rule parts RFC 5545 names are written, and none ical.js mis-expands', async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    const collection = `/calendars/${calendarId}/events`;
+    /** @type {[string, string, Record<string, unknown>][]} */
+    const refused = [
+      ['a part the RFC does not name', 'FREQ=DAILY;EXDATE=20261015', {}],
+      ['a part the RFC does not name', 'FREQ=DAILY;BYEASTER=1', {}],
+      ['a part twice', 'FREQ=DAILY;COUNT=3;COUNT=4', {}],
+      [
+        'COUNT together with UNTIL',
+        'FREQ=DAILY;COUNT=3;UNTIL=20261015T090000Z',
+        {},
+      ],
+      ['FREQ not first', 'UNTIL=20261015T090000Z;FREQ=DAILY', {}],
+      ['FREQ absent', 'COUNT=3', {}],
+      [
+        'a rule ical.js expands wrongly',
+        'FREQ=YEARLY;BYWEEKNO=20;BYDAY=MO;COUNT=5',
+        {},
+      ],
+      [
+        'an instant UNTIL on an all-day start',
+        'FREQ=DAILY;UNTIL=20261015T090000Z',
+        { start: { date: '2026-10-12' }, end: { date: '2026-10-13' } },
+      ],
+      ['a date UNTIL on a timed start', 'FREQ=DAILY;UNTIL=20261015', {}],
+      ['a COUNT that is not a positive integer', 'FREQ=DAILY;COUNT=0', {}],
+      [
+        'an INTERVAL that is not a positive integer',
+        'FREQ=DAILY;INTERVAL=0',
+        {},
+      ],
+      ['a WKST that is not a weekday', 'FREQ=DAILY;WKST=XX', {}],
+      [
+        'an UNTIL on a date that does not exist',
+        'FREQ=DAILY;UNTIL=20260230T090000Z',
+        {},
+      ],
+      [
+        'a yearly rule anchored on 29 February',
+        'FREQ=YEARLY',
+        { start: { date: '2024-02-29' }, end: null },
+      ],
+    ];
+    for (const [what, rrule, over] of refused) {
+      const response = await call(app, {
+        method: 'POST',
+        url: collection,
+        subject: 'owner',
+        payload: createBody({ ...over, rrule }),
+      });
+      assert.equal(response.statusCode, 422, `${what}: ${response.body}`);
+      assertProblem(response.json(), 'invalid-input');
+    }
+    assert.equal(caldav.objects.size, 0);
+
+    // The rules a client may write are written as the engine reads them.
+    const daily = await created(
+      app,
+      calendarId,
+      createBody({ rrule: 'FREQ=DAILY;UNTIL=20261015T090000Z' }),
+    );
+    assert.match(daily.ical, /^RRULE:FREQ=DAILY;UNTIL=20261015T090000Z$/m);
+    // A part whose value is the RFC's own default is the one thing the library
+    // may leave out of what it writes back; everything else has to survive.
+    const weekly = await created(
+      app,
+      calendarId,
+      createBody({
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU,SU;WKST=MO',
+      }),
+    );
+    assert.match(weekly.ical, /^RRULE:FREQ=WEEKLY;COUNT=4;BYDAY=TU,SU$/m);
+    const allDay = await created(
+      app,
+      calendarId,
+      createBody({
+        start: { date: '2026-10-12' },
+        end: { date: '2026-10-13' },
+        rrule: 'FREQ=DAILY;UNTIL=20261015',
+      }),
+    );
+    assert.match(allDay.ical, /^RRULE:FREQ=DAILY;UNTIL=20261015$/m);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an empty PATCH is a 422 and leaves the stored revision alone', async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    const body = await created(app, calendarId);
+    const url = `/calendars/${calendarId}/events/${body.uid}`;
+    const stored = caldav.stored(calendarId, `${body.uid}.ics`);
+    assert.ok(stored);
+    const reached = caldav.events.length;
+
+    const response = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: {},
+    });
+    assert.equal(response.statusCode, 422, response.body);
+    assertProblem(response.json(), 'invalid-input');
+
+    // `SEQUENCE`, `DTSTAMP` and the `ETag` did not move: no revision was made.
+    assert.equal(caldav.events.length, reached);
+    assert.equal(caldav.stored(calendarId, `${body.uid}.ics`)?.ics, stored.ics);
+    assert.equal(
+      caldav.stored(calendarId, `${body.uid}.ics`)?.etag,
+      stored.etag,
+    );
+
+    // A body that is not a JSON object at all is the same 422.
+    const notAnObject = await call(app, {
+      method: 'PATCH',
+      url,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: [],
+    });
+    assert.equal(notAnObject.statusCode, 422, notAnObject.body);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a framework refusal is a problem document and never reaches CalDAV', async () => {
+  const { app, caldav, calendarId } = await setup();
+  try {
+    /** @type {[string, string, number, string][]} */
+    const cases = [
+      [
+        'an over-long calendar id',
+        `/calendars/${'a'.repeat(300)}/events`,
+        404,
+        'not-found',
+      ],
+      [
+        'an over-long uid',
+        `/calendars/${calendarId}/events/${'b'.repeat(300)}`,
+        404,
+        'not-found',
+      ],
+      ['a URL that is not a URL', '/%', 400, 'bad-request'],
+    ];
+    for (const [what, url, status, kind] of cases) {
+      const response = await call(app, { url, subject: 'owner' });
+      assert.equal(response.statusCode, status, `${what}: ${response.body}`);
+      assert.match(
+        String(response.headers['content-type']),
+        /^application\/problem\+json/,
+        what,
+      );
+      assertProblem(response.json(), kind);
+      // The fixed body carries nothing of the request — Fastify's own body
+      // names the path it refused.
+      assert.ok(!response.body.includes('aaaa'), response.body);
+      assert.ok(!response.body.includes('bbbb'), response.body);
+    }
+    // The router refused every one of them before a route or a hook ran, so no
+    // view was ever built.
+    for (const op of ['forUser', 'putObject', 'getObject', 'deleteObject']) {
+      assert.equal(
+        opsOf(caldav.events).filter((entry) => entry === op).length,
+        0,
+        op,
+      );
+    }
   } finally {
     await app.close();
   }

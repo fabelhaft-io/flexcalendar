@@ -29,6 +29,15 @@
 //     return above all — are refused. A value can therefore never become a
 //     content line of its own. The field checks below are what make that true.
 //
+// **Only objects RFC 5545 allows are written.** `assertOrder` holds the two
+// rules a field set can break without any one field being wrong: `start` and
+// `end` are the same value type and the end is the later one (§ 3.8.2.2), and
+// `setRecur` accepts exactly the rule parts § 3.3.10 names, refuses `BYWEEKNO`
+// and a yearly 29-February start (`spec/ical-fixtures/RULINGS.md`, where
+// `ical.js` 2.2.1 expands them wrongly) and checks `UNTIL`'s value type against
+// the start. The routes call the first after a create and after a patch, so a
+// patch is checked against the stored object too.
+//
 // Refusals are `IcalError`s. `kind` starts with `invalid-` when the caller's
 // field cannot be written (the route answers 422), and names anything else when
 // the *stored* text cannot be read (the route answers 502). A kind is a fixed
@@ -68,6 +77,48 @@ const FREQUENCIES = [
   'MONTHLY',
   'YEARLY',
 ];
+/**
+ * Every rule part RFC 5545 § 3.3.10 defines, and nothing else. A part outside
+ * this list is a 422 rather than something the library drops while the write
+ * looks successful: a misspelled part would change what the client meant without
+ * a word, and a client never writes the recurrence itself (INV-05).
+ */
+const RECUR_PARTS = [
+  'FREQ',
+  'UNTIL',
+  'COUNT',
+  'INTERVAL',
+  'BYSECOND',
+  'BYMINUTE',
+  'BYHOUR',
+  'BYDAY',
+  'BYMONTHDAY',
+  'BYYEARDAY',
+  'BYWEEKNO',
+  'BYMONTH',
+  'BYSETPOS',
+  'WKST',
+];
+/** `UNTIL` of an all-day rule: a `DATE` (§ 3.3.10, `VALUE=DATE`). */
+const UNTIL_DATE = /^\d{8}$/;
+/** `UNTIL` of a timed rule: a UTC `DATE-TIME`; a local one would need a `TZID`. */
+const UNTIL_INSTANT = /^\d{8}T\d{6}Z$/;
+/** A rule part, as `name=value`. The name is a run of letters, the value is not empty. */
+const RECUR_PART = /^([A-Za-z]+)=([^=]+)$/;
+/** A positive integer, which `COUNT` and `INTERVAL` are (`1` is their default). */
+const POSITIVE = /^[1-9]\d*$/;
+/** The seven weekday codes `BYDAY` and `WKST` are built from. */
+const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+/**
+ * The parts whose value is also RFC 5545's own default for it, so `ical.js`
+ * omits them from what it writes back — `INTERVAL=1` and `WKST=MO`. Every other
+ * part a client sent has to come back out; one the library cannot represent is a
+ * 422 rather than a rule the client did not ask for.
+ */
+/** @type {Record<string, string>} */
+const RECUR_DEFAULTS = { INTERVAL: '1', WKST: 'MO' };
+/** The `UNTIL` value of a rule `ical.js` wrote, or undefined. */
+const UNTIL_OF = /(?:^|;)UNTIL=([^;]+)/;
 /** A URI-shaped `cal-address`: a scheme, a colon, and no separator after it. */
 const CAL_ADDRESS = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s,;:]+$/;
 /**
@@ -262,6 +313,67 @@ function textOf(event, name) {
   if (!property) return null;
   const value = property.getFirstValue();
   return typeof value === 'string' ? value : null;
+}
+
+/**
+ * The clock a time property spells, as the object carries it: an all-day date,
+ * an instant, a `TZID` wall clock or a floating one. Two clocks are comparable
+ * only when they are the same shape: comparing across zones would be zone maths,
+ * which this module never does (`spec/ical-fixtures/dst/README.md`, E05-R09).
+ * `undefined` when the object carries no such property or holds a value that is
+ * not a time at all.
+ * @param {ICAL.Component} event
+ * @param {string} name
+ * @returns {{allDay: boolean, scale: string, key: string} | undefined}
+ */
+function clockOf(event, name) {
+  const property = event.getFirstProperty(name);
+  if (!property) return undefined;
+  const value = property.getFirstValue();
+  if (!(value instanceof ICAL.Time)) return undefined;
+  if (value.isDate) {
+    return {
+      allDay: true,
+      scale: 'date',
+      key: dateOf(value).replaceAll('-', ''),
+    };
+  }
+  const wall = compact(value.toJSON());
+  const tzid = property.getParameter('tzid');
+  if (typeof tzid === 'string' && tzid !== '') {
+    return { allDay: false, scale: `tzid:${tzid}`, key: wall };
+  }
+  return value.zone === ICAL.Timezone.utcTimezone
+    ? { allDay: false, scale: 'instant', key: `${wall}Z` }
+    : { allDay: false, scale: 'floating', key: wall };
+}
+
+/**
+ * Refuses a `DTSTART`/`DTEND` pair RFC 5545 forbids: the two are the same value
+ * type (§ 3.8.2.2 — an all-day `VALUE=DATE` start is never paired with a
+ * `DATE-TIME` end, or the other way round, INV-04), and the end is later than
+ * the start. An end at or before its start is refused as well: a zero-length or
+ * negative event is not something a client means to write.
+ *
+ * The routes call this after a create and after a patch, so a member the caller
+ * did not send is checked against the stored object all the same. Two clocks in
+ * forms this module cannot compare without a zone — a `Z` instant beside a
+ * `TZID` wall clock, or two different `TZID`s — are left alone: E05-R09 owns
+ * zone handling, and a stored object may legitimately mix them (INV-02).
+ *
+ * @param {ICAL.Component} calendar
+ * @returns {ICAL.Component}
+ */
+export function assertOrder(calendar) {
+  const event = master(calendar);
+  if (event === undefined) throw new IcalError('no-event');
+  const start = clockOf(event, 'dtstart');
+  const end = clockOf(event, 'dtend');
+  if (start === undefined || end === undefined) return calendar;
+  if (start.allDay !== end.allDay) throw new IcalError('invalid-times');
+  if (start.scale !== end.scale) return calendar;
+  if (end.key <= start.key) throw new IcalError('invalid-times');
+  return calendar;
 }
 
 /**
@@ -494,9 +606,24 @@ function hash(value, kind) {
 /**
  * Replaces the `RRULE`. The value is a rule string the client asked for; it is
  * parsed into an `ical.js` recurrence and serialised from that, so only the
- * grammar's own characters can reach the text, and an `FREQ` the library did not
- * recognise (`FREQ=null` for anything it cannot read) is refused rather than
- * written.
+ * grammar's own characters can reach the text.
+ *
+ * Every part is checked before the library sees it (RFC 5545 § 3.3.10):
+ * `FREQ` is required and first, only the parts the RFC names are accepted, and
+ * none of them twice — an unknown part is a 422 rather than something the
+ * library drops silently. `COUNT` and `UNTIL` are mutually exclusive, and
+ * `UNTIL` has the value type of the start: a `DATE` for an all-day rule, a UTC
+ * `DATE-TIME` for a timed one. Two families `ical.js` 2.2.1 expands wrongly are
+ * refused rather than expanded (`spec/ical-fixtures/RULINGS.md`): any rule
+ * naming `BYWEEKNO`, and a yearly rule whose start is 29 February.
+ *
+ * Nothing else is accepted silently: a part whose value is not the shape the
+ * RFC gives it (`COUNT` and `INTERVAL` are positive integers, `WKST` is a
+ * weekday), a part `ical.js` would drop rather than write — `COUNT=0` would turn
+ * a bounded rule unbounded — and an `UNTIL` the library rolls forward from an
+ * impossible date are all the same 422. Only a part whose value is the RFC's own
+ * default itself (`INTERVAL=1`, `WKST=MO`) may leave the written rule.
+ *
  * @param {ICAL.Component} event
  * @param {unknown} value
  */
@@ -506,6 +633,49 @@ function setRecur(event, value) {
   if (typeof value !== 'string' || !RECUR_VALUE.test(value)) {
     throw new IcalError('invalid-rrule');
   }
+  /** @type {Map<string, string>} */
+  const parts = new Map();
+  for (const [index, part] of value.split(';').entries()) {
+    const match = RECUR_PART.exec(part);
+    if (!match) throw new IcalError('invalid-rrule');
+    const name = match[1].toUpperCase();
+    if (!RECUR_PARTS.includes(name)) throw new IcalError('invalid-rrule');
+    if (parts.has(name)) throw new IcalError('invalid-rrule');
+    if (index === 0 && name !== 'FREQ') throw new IcalError('invalid-rrule');
+    parts.set(name, match[2]);
+  }
+  const freq = parts.get('FREQ');
+  if (freq === undefined || !FREQUENCIES.includes(freq.toUpperCase())) {
+    throw new IcalError('invalid-rrule');
+  }
+  if (parts.has('COUNT') && parts.has('UNTIL')) {
+    throw new IcalError('invalid-rrule');
+  }
+  if (parts.has('BYWEEKNO')) throw new IcalError('invalid-rrule');
+  for (const name of ['COUNT', 'INTERVAL']) {
+    const value = parts.get(name);
+    if (value !== undefined && !POSITIVE.test(value)) {
+      throw new IcalError('invalid-rrule');
+    }
+  }
+  const wkst = parts.get('WKST');
+  if (wkst !== undefined && !WEEKDAYS.includes(wkst.toUpperCase())) {
+    throw new IcalError('invalid-rrule');
+  }
+  const start = event.getFirstProperty('dtstart')?.getFirstValue();
+  if (!(start instanceof ICAL.Time)) throw new IcalError('invalid-rrule');
+  const until = parts.get('UNTIL');
+  if (until !== undefined) {
+    const shape = start.isDate ? UNTIL_DATE : UNTIL_INSTANT;
+    if (!shape.test(until)) throw new IcalError('invalid-rrule');
+  }
+  if (
+    freq.toUpperCase() === 'YEARLY' &&
+    start.month === 2 &&
+    start.day === 29
+  ) {
+    throw new IcalError('invalid-rrule');
+  }
   /** @type {ICAL.Recur} */
   let recur;
   try {
@@ -513,7 +683,18 @@ function setRecur(event, value) {
   } catch {
     throw new IcalError('invalid-rrule');
   }
-  if (!FREQUENCIES.includes(String(recur.freq))) {
+  const written = String(recur);
+  const kept = new Set(
+    written.split(';').map((part) => part.slice(0, part.indexOf('='))),
+  );
+  for (const [name, part] of parts) {
+    if (kept.has(name) || RECUR_DEFAULTS[name] === part.toUpperCase()) continue;
+    throw new IcalError('invalid-rrule');
+  }
+  // The library normalises a value it cannot represent in place — it rolls
+  // `20260230` to 2 March — so the one rule part this module writes verbatim has
+  // to come back out exactly as it went in.
+  if (until !== undefined && UNTIL_OF.exec(written)?.[1] !== until) {
     throw new IcalError('invalid-rrule');
   }
   event.addPropertyWithValue('rrule', recur);
