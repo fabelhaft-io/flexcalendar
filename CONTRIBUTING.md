@@ -48,10 +48,8 @@ Each epic in [`docs/epics/`](docs/epics/) is split into requirements named
   cycles; after a `PASS` the reviewer pushes the branch and opens the PR.
   **Only a human merges**: the owner merges the PR, or arms auto-merge on it
   (`gh pr merge --auto --squash`), which lands it once the required checks
-  pass. Agents never run `gh pr merge`. An `agent+review` PR (rule 7) is
-  opened with that label, and the required **Human approval** check fails
-  until a human has reviewed it and removed the label, so auto-merge cannot
-  land it early.
+  pass. Agents never run `gh pr merge`. No check tells an `agent+review` PR
+  (rule 7) from any other, so the owner reviews it before arming auto-merge.
 - **Rules on `main`.** A ruleset allows changes only through a PR, with the
   **Verify required** check green and a squash merge. It blocks force-push and
   deletion and asks for no approving review, because the owner opens and
