@@ -13,10 +13,16 @@
 // path, unregistered method" into a 405 with `Allow` instead of Fastify's 404
 // (`src/allow.mjs`).
 //
+// E05-R04 adds the events routes (`src/events.mjs`): single-object CRUD with
+// `If-Match`/`If-None-Match` forwarded to CalDAV, the raw object plus a parsed
+// view in every answer, and the current representation inside a 412.
+//
 // E05-R10 owns the error model and the observability hooks:
 //
 //   * Every error is an RFC 9457 problem document (`src/problem.mjs`), never
-//     Fastify's default body.
+//     Fastify's default body — Fastify's own framework refusals (an over-long
+//     path parameter, a URL that is not a URL) included, which `frameworkErrors`
+//     below turns into the same fixed problems.
 //   * Every request gets a correlation ID — a UUIDv4 we mint, or an inbound
 //     `X-Request-Id` only when it is already a lowercase v4 UUID. It is on every
 //     response and goes to CalDAV with the adapter (`forUser(id, {requestId})`).
@@ -40,6 +46,7 @@ import {
 } from './auth.mjs';
 import { createCalDavAdapter } from './caldav/adapter.mjs';
 import { registerCalendarRoutes } from './calendars.mjs';
+import { registerEventRoutes } from './events.mjs';
 import { readConfig } from './config.mjs';
 import { UnavailableError, createOidcClient } from './oidc.mjs';
 import { problemForStatus, problemResponse, sendProblem } from './problem.mjs';
@@ -168,7 +175,7 @@ const noCalendars = {
  * the delegation keys, so a service that cannot reach CalDAV still boots and
  * answers its readiness probe; the first request that needs CalDAV is the one
  * that gets the configuration error, as a problem document.
- * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function}}}
+ * @returns {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function, putObject: Function, getObject: Function, deleteObject: Function}}}
  */
 function createLazyAdapter() {
   /** @type {ReturnType<typeof createCalDavAdapter> | undefined} */
@@ -227,7 +234,7 @@ function createRateLimitHook(app, options) {
  * @param {ReturnType<typeof readConfig>} [options.config] defaults to the environment
  * @param {{findBySubject: Function, createFirstSight: Function}} [options.store]
  * @param {{listForMember: Function, findMembership: Function, createPrivate: Function, replaceMeta: Function, remove: Function}} [options.calendars]
- * @param {{forUser: (userId: string, options: {requestId?: string}) => {makeCalendar: Function, deleteCalendar: Function}}} [options.caldav] the adapter; built from the environment on first use
+ * @param {{forUser: any}} [options.caldav] the CalDAV adapter; built from the environment on first use, and typed where its methods are used (`src/calendars.mjs`, `src/events.mjs`)
  * @param {{verify: Function, userinfo: Function}} [options.oidc]
  * @param {{current: Function, refresh: Function}} [options.audience]
  * @param {import('fastify').onRouteHookHandler} [options.onRoute] used by the contract test
@@ -245,6 +252,11 @@ export function buildApp({
 } = {}) {
   const app = Fastify({
     logger: loggerOptions(config.logLevel, logger),
+    // The longest path parameter this service has a rule for. A `uid` of up to
+    // `calendarobjects.uid`'s `VARCHAR(200)` (E03-R10) has to reach the route,
+    // so it gets the 404 an unknown one gets instead of the router's own 414;
+    // anything longer is still refused before a handler runs.
+    routerOptions: { maxParamLength: 200 },
     // The correlation ID is ours: an inbound `X-Request-Id` is believed only
     // when it is already exactly a lowercase v4 UUID (log injection).
     requestIdHeader: false,
@@ -258,6 +270,23 @@ export function buildApp({
     // an error, `error.message`. All three are refused here; `onResponse` below
     // emits the one line this service logs.
     logController: new Fastify.LogController({ disableRequestLogging: true }),
+    // Fastify's own refusals — a path parameter over the router's limit, a URL
+    // that is not a URL — happen before any route runs, and its default body is
+    // `{"error":…,"code":"FST_ERR_…","message":"'/calendars/…'"}`: not a problem
+    // document, and it carries the request path (E05-R10: nothing in a body is
+    // derived from the request). They are answered here as the same fixed
+    // problems the routes use.
+    frameworkErrors: (error, request, reply) => {
+      // A parameter longer than the router allows cannot name anything this API
+      // ever minted, which is the `404` a `uid` or a calendar id outside the
+      // canonical shape gets (E03-R10); a malformed URL and every other
+      // framework refusal follow their own status through the problem table.
+      const slug =
+        /** @type {any} */ (error)?.code === 'FST_ERR_MAX_PARAM_LENGTH'
+          ? 'not-found'
+          : problemForStatus(/** @type {any} */ (error)?.statusCode);
+      sendProblem(reply, slug, { instance: request.id });
+    },
     // Behind Caddy, `request.ip` is the client; directly exposed, it is the
     // socket address and `X-Forwarded-For` is ignored.
     trustProxy: trustProxy(config.trustedProxyHops),
@@ -346,6 +375,7 @@ export function buildApp({
 
   registerAuthRoutes(app, dependencies);
   registerCalendarRoutes(app, dependencies);
+  registerEventRoutes(app, dependencies);
 
   // An unknown path is a 404; a known path under a method it does not register
   // is a 405 with the methods it does (`Allow`), which is why this handler asks

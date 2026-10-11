@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'health/health_client.dart';
 import 'users/users_client.dart';
 import 'calendars/calendars_client.dart';
+import 'events/events_client.dart';
 
 /// flexcalendar API `v0.0.0`.
 ///
@@ -24,6 +25,7 @@ class RestClient {
   HealthClient? _health;
   UsersClient? _users;
   CalendarsClient? _calendars;
+  EventsClient? _events;
 
   HealthClient get health => _health ??= HealthClient(_dio, baseUrl: _baseUrl);
 
@@ -31,4 +33,6 @@ class RestClient {
 
   CalendarsClient get calendars =>
       _calendars ??= CalendarsClient(_dio, baseUrl: _baseUrl);
+
+  EventsClient get events => _events ??= EventsClient(_dio, baseUrl: _baseUrl);
 }

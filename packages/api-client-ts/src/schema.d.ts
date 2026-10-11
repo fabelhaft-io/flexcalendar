@@ -93,6 +93,57 @@ export interface paths {
         patch: operations["replaceCalendarMetadata"];
         trace?: never;
     };
+    "/calendars/{calendarId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an event
+         * @description The client sends fields, never iCalendar: the API mints the `UID` (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client never writes the recurrence itself — an exception or an occurrence override is an intent (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
+         *     The answer carries the raw iCalendar object (`ical`, byte for byte), the CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003), so the object is a skeleton: `summary`, `description`, `location` and `attendees` are refused with 422 (they arrive with Shared calendars) and `envelopeSha256` is required, because a Private `VEVENT` carries exactly one `X-CALFLEX-ENVELOPE-SHA256` (E03-R09, D-18).
+         *     The request body is validated by the route rather than by a schema: a schema-refused body is a 400, and every rule above must answer 422.
+         */
+        post: operations["createEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendars/{calendarId}/events/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one event
+         * @description Answers the object as the collection stores it — `ical` byte for byte, the CalDAV `ETag` (also the `ETag` header) and the parsed view of the master `VEVENT` — which is what a client caches as the canonical record (`docs/02` § Offline cache). An object with several `VEVENT`s (a master beside its overrides) is read whole; `parsed` describes the master and the `ical` carries the rest.
+         */
+        get: operations["readEvent"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an event
+         * @description Removes the object from the collection, conditioned on the `If-Match` the client read: a `DELETE` with a stale validator is a 412 and the object stays. The answer is 204 with no body. A `uid` the collection does not hold is a 404, whatever the validator says — Sabre looks the object up before it checks a precondition.
+         */
+        delete: operations["deleteEvent"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an event
+         * @description The client sends the fields it wants changed and the `If-Match` it read. The API reads the stored object, applies the change with `ical.js`, bumps `SEQUENCE` and `DTSTAMP`, and `PUT`s with the same `If-Match`, which CalDAV checks — so a write that lost a race is a 412 and never an overwrite. The 412 carries the current representation in the problem's `current` member, and nothing of the request that lost.
+         *     `rrule` and `uid` are refused with 422, and so is any member naming a recurrence exception or an occurrence override: an edit to a recurring event is an intent (E05-R06/R07), and a client never writes the recurrence itself (INV-05). A member that is `null` removes the property it names, and a body that carries no member at all is a 422 as well. Everything the change did not touch — an override component, a `VTIMEZONE`, an `X-` property — comes back unchanged (INV-02). On a Private calendar the content fields are a 422 (D-18).
+         */
+        patch: operations["updateEvent"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -160,6 +211,80 @@ export interface components {
             /** @description The CCK epoch the replacing envelope's header carries, in the same range as on create. */
             metaEpoch?: number;
         };
+        /** @description One event time. A write sends exactly one member: `date` (an all-day VALUE=DATE, `YYYY-MM-DD`) or `utc` (an instant, `YYYYMMDDTHHMMSSZ`). A read also answers `local` — the wall clock the object spells — with `tzid` beside it when the property names a zone; the API never converts a TZID time (E05-R09 owns zones). `null` when the object carries no such property. */
+        EventTime: null | {
+            /** @description An all-day date, `YYYY-MM-DD`. */
+            date?: string;
+            /** @description A UTC instant, `YYYYMMDDTHHMMSSZ`. */
+            utc?: string;
+            /** @description The `TZID` the stored property names, unchanged. */
+            tzid?: string;
+            /** @description The wall clock the stored property spells, `YYYYMMDDTHHMMSS`. */
+            local?: string;
+        };
+        /** @description The reminder: an ISO 8601 duration trigger, e.g. `-PT15M` for fifteen minutes before the start. `null` in a write removes it, and `null` in a read means the object carries none. The action and description are fixed (`ACTION:DISPLAY`, `DESCRIPTION:Reminder`). */
+        EventAlarm: null | {
+            /** @description An ISO 8601 duration, e.g. `-PT15M`. */
+            trigger: string;
+        };
+        /** @description The master VEVENT, parsed. No content and no override list: the raw `ical` beside it is the whole object. */
+        EventParsed: {
+            /** @description The master VEVENT `UID`, exactly as stored. */
+            uid: string;
+            start: components["schemas"]["EventTime"];
+            end: components["schemas"]["EventTime"];
+            /** @description The master `RRULE`, or null. Never written by a client. */
+            rrule: null | string;
+            alarm: components["schemas"]["EventAlarm"];
+            /** @description The master `SEQUENCE`; 0 when the object carries none. */
+            sequence: number;
+            /** @description The `X-CALFLEX-ENVELOPE-SHA256` of the master VEVENT, 64 lowercase hex digits, or null when it carries none (a Shared calendar object). */
+            envelopeSha256: null | string;
+        };
+        /** @description One event: the raw iCalendar object the CalDAV collection stores (`ical`, byte for byte) and its `ETag`, plus a parsed convenience view. On a Private calendar the object is the skeleton, and the content lives in the sidecar (E13-R02). */
+        Event: {
+            /** @description The `UID` of the stored object. */
+            uid: string;
+            /** @description The CalDAV `ETag`, quoted, or null when the store answered without one. */
+            etag: null | string;
+            /** @description The stored iCalendar object, byte for byte. */
+            ical: string;
+            parsed: components["schemas"]["EventParsed"];
+        };
+        /** @description A create request. `start` is required; the API mints the `UID` and the `DTSTAMP`. On a Private calendar the content fields (`summary`, `description`, `location`, `attendees`) are a 422 and `envelopeSha256` is required — a Private object is a skeleton and the content lives in the sidecar (D-18, E03-R09). Any other member is a 422 as well. */
+        EventCreate: {
+            start: components["schemas"]["EventTime"];
+            end?: components["schemas"]["EventTime"];
+            /** @description The recurrence rule, in the RFC 5545 § 3.3.10 form: `FREQ` first, only the parts the RFC names and each at most once, `COUNT` or `UNTIL` but not both, `UNTIL` with the value type of the start, and neither `BYWEEKNO` nor a yearly rule on a 29 February start. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes. */
+            rrule?: null | string;
+            alarm?: components["schemas"]["EventAlarm"];
+            /** @description The SHA-256 of the sealed content envelope, 64 lowercase hex digits. A Private VEVENT carries exactly one (E03-R09). */
+            envelopeSha256?: null | string;
+            /** @description The title. Refused with 422 on a Private calendar (D-18); Shared calendars take one from Phase 4. */
+            summary?: null | string;
+            /** @description The description. Refused with 422 on a Private calendar (D-18). */
+            description?: null | string;
+            /** @description The location. Refused with 422 on a Private calendar (D-18). */
+            location?: null | string;
+            /** @description The attendee addresses. Refused with 422 on a Private calendar (D-18). */
+            attendees?: string[] | null;
+        };
+        /** @description A patch request: the same fields as a create, minus `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18). */
+        EventUpdate: {
+            start?: components["schemas"]["EventTime"];
+            end?: components["schemas"]["EventTime"];
+            alarm?: components["schemas"]["EventAlarm"];
+            /** @description The SHA-256 of the re-sealed content envelope, 64 lowercase hex digits. A Private VEVENT carries exactly one (E03-R09). */
+            envelopeSha256?: null | string;
+            /** @description The title. Refused with 422 on a Private calendar (D-18). */
+            summary?: null | string;
+            /** @description The description. Refused with 422 on a Private calendar (D-18). */
+            description?: null | string;
+            /** @description The location. Refused with 422 on a Private calendar (D-18). */
+            location?: null | string;
+            /** @description The attendee addresses. Refused with 422 on a Private calendar (D-18). */
+            attendees?: string[] | null;
+        };
         /** @description An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`. */
         Problem: {
             type: string;
@@ -167,6 +292,7 @@ export interface components {
             status: number;
             instance: string;
             property?: string;
+            current?: components["schemas"]["Event"];
         };
     };
     responses: never;
@@ -840,6 +966,564 @@ export interface operations {
                 };
             };
             /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `calendars.id` uuid of the calendar to write into. */
+                calendarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventCreate"];
+            };
+        };
+        responses: {
+            /** @description The event was created */
+            201: {
+                headers: {
+                    /** @description The created event's path, `/calendars/{calendarId}/events/{uid}`. */
+                    Location?: string;
+                    /** @description The created object's CalDAV `ETag`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
+                };
+            };
+            /** @description The request body is not well-formed JSON. A body that parses but is not a JSON object is a 422, not a 400 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified, or the caller is a member of the calendar but cannot write into it (its role is `viewer`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The `UID` this request minted already names an object in the collection. A fresh UUIDv4 colliding can only mean another create won; the client retries */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than the service accepts */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's media type is not supported */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A rule of the operation was broken: the body is not a JSON object; `start` is absent, or is not exactly one of `date`/`utc`, or names a time that does not exist; `end`, `rrule` or `alarm` is not a value the API can write — a rule part RFC 5545 does not name, `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type is not its start's, or an `end` that is not the same value type as its `start` or is not later than it; `envelopeSha256` is absent or is not 64 lowercase hex digits; a content field (`summary`, `description`, `location`, `attendees`) was sent for a Private calendar; or the body carries a member the operation does not take — `uid` and the recurrence itself, an exception or an occurrence override included, which the API owns (INV-05). The body never names a value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+                /** @description The event's `UID`, a lowercase UUIDv4, exactly as the create answered it. Any other shape names no object and is a 404. */
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored object and its parsed view */
+            200: {
+                headers: {
+                    /** @description The object's CalDAV `ETag`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, or it holds no event under that `uid`, which is also the answer for an id or a `uid` that exists nowhere */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read, or the collection holds an object the API cannot describe */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The object's `ETag`, as the read answered it. A list of validators and `*` are allowed; the store decides which of them matches. */
+                "If-Match": string;
+            };
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+                /** @description The event's `UID`, a lowercase UUIDv4. */
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The object is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified, or the caller is a member of the calendar but cannot write into it (its role is `viewer`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, or it holds no event under that `uid` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The `If-Match` names an object the collection no longer holds, so nothing was deleted. `current` carries the representation the collection holds now */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The delete carries no `If-Match`, so there is no version to be optimistic against */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The object's `ETag`, as the read answered it. A list of validators and `*` are allowed; the store decides which of them matches. */
+                "If-Match": string;
+            };
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+                /** @description The event's `UID`, a lowercase UUIDv4. */
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventUpdate"];
+            };
+        };
+        responses: {
+            /** @description The object as it now stands */
+            200: {
+                headers: {
+                    /** @description The object's new CalDAV `ETag`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
+                };
+            };
+            /** @description The request body is not well-formed JSON. A body that parses but is not a JSON object is a 422, not a 400 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified, or the caller is a member of the calendar but cannot write into it (its role is `viewer`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, or it holds no event under that `uid` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The `If-Match` names an object the collection no longer holds: the change was made against a stale read. `current` carries the representation the collection holds now, and nothing of this request */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than the service accepts */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's media type is not supported */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A rule of the operation was broken: the body is not a JSON object; `rrule` or `uid` was sent, or a member naming a recurrence exception or an occurrence override, which the API owns (INV-05); a field is not a value the API can write — a rule part RFC 5545 does not name, `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type is not its start's, or an `end` that is not the same value type as its `start` or is not later than it; a content field was sent for a Private calendar; a `PATCH` carried no member at all; or the body carries a member the operation does not take. The body never names a value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The write carries no `If-Match`, so there is no version to be optimistic against */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read, or the collection holds an object the API cannot describe */
             502: {
                 headers: {
                     [name: string]: unknown;
