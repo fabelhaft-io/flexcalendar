@@ -32,6 +32,11 @@ and hit CalDAV directly (CLAUDE.md).
   to CalDAV. Every answer carries the raw `ical` and its `ETag` — what the
   offline cache keeps — beside a parsed view, and a write that lost a race is a
   `412` carrying the representation the collection holds now.
+- **Time zones (E05-R09):** see [Time zones](#time-zones-e05-r09). A time is a
+  `date`, a `utc` instant or a `local` wall clock beside an IANA `TZID`, written
+  with that zone's generated `VTIMEZONE`; every instant the API computes comes
+  from Node's own zone database, never from `ical.js`, and no zone is registered
+  in the library globally.
 - **Delta endpoint (E05-R08):** see [Changes](#changes). `sync-collection` on
   `/calendars/{calendarId}/changes`, reduced to pointers: a `uid`, its `ETag` and
   whether the object is gone, beside an opaque token the API mints for that
@@ -289,8 +294,10 @@ own body naming the path.
   list, no third-party property. A time is `{date}` (`YYYY-MM-DD`, all-day),
   `{utc}` (`YYYYMMDDTHHMMSSZ`) or `{local}`, with the `tzid` beside it when the
   stored property names a zone. A `TZID` time is reported as the wall clock the
-  object spells and is **never converted**: `ical.js` carries no zone database
-  and E05-R09 owns zone handling.
+  object spells — that is the stored truth (INV-02) — and gains `utc`, the
+  instant that reading names, when the zone resolves. A zone the resolver cannot
+  read (a Microsoft zone name, say) is reported as its wall clock and its `TZID`
+  and nothing more.
 - **An object with overrides** is read whole and its master is `parsed`; a
   `PATCH` of the master leaves every override component untouched (INV-02).
 
@@ -306,20 +313,32 @@ iCalendar engine (D-01, ADR 0002) — and back:
   (INV-03), the `DTSTAMP` is the moment of the write in UTC, and a client can
   never send a `UID`, an `EXDATE` or a `RECURRENCE-ID` at all (INV-05): an edit
   to a recurring event is an intent (E05-R06/R07), not a rule.
-- **A time is `{date}` or `{utc}`, exactly one of the two.** A `TZID` write is a
-  `422` until E05-R09 lands (INV-04); a stored `TZID` time is read and
-  round-tripped untouched. An impossible date (`2026-02-30`) is refused rather
-  than rolled forward, and so is an instant that is not `YYYYMMDDTHHMMSSZ`.
+- **A time is one of three forms** (E05-R09, INV-04): `{date}`, `{utc}`, or
+  `{local, tzid}` — an IANA zone in its exact spelling beside the wall clock that
+  zone reads. An impossible date (`2026-02-30`) is refused rather than rolled
+  forward, and so is an instant that is not `YYYYMMDDTHHMMSSZ`, a `tzid` beside
+  `utc` or `date` or without its `local`, and a zone that is not an IANA name in
+  its exact spelling that the zone database resolves — `W. Europe Standard Time`,
+  `europe/berlin` and `Mars/Olympus` are the caller's fixed `422`.
+- **A `TZID` write carries its zone in the object.** The property is
+  `DTSTART;TZID=Europe/Berlin:20261014T100000` — the wall clock the caller sent,
+  never a converted one — and, unless the object already defines that zone, the
+  generated `VTIMEZONE` is embedded beside it, in front of the events. An object
+  therefore always defines the zones it uses, which is what the round-trip gate
+  of E15-R01 checks and what a stock client without a zone database needs. A
+  definition that is already there — a stock app's own, byte for byte — is never
+  replaced (INV-02).
 - **The merged object is checked, not only the members the request named.** After
   a create and after a patch, `start` and `end` must be the same value type — an
   all-day `VALUE=DATE` with a `DATE`, a `DATE-TIME` with a `DATE-TIME`
   (RFC 5545 § 3.8.2.2, INV-04) — and the end must be later than the start;
-  otherwise the fixed `422`. A patch that moves only `start` is therefore checked
-  against the *stored* `end`, and one that turns an instant start into a `DATE`
-  while the stored end stays an instant is refused. Two forms this module cannot
-  compare without a zone — a `Z` instant beside a `TZID` wall clock, or two
-  different `TZID`s — are left alone: E05-R09 owns zones, and a stored object may
-  legitimately mix them (INV-02).
+  otherwise the fixed `422`. The two clocks are compared as the instants they
+  name, whatever their form, so a `Z` start beside a stored `TZID` end is
+  checked too. Only a clock that names no instant this API can compute — a
+  floating time, or a `TZID` the resolver cannot read — is left alone when it
+  does not share its shape with the other one (INV-02), and a patch that touches
+  a time field of such an object is a `422` unless it replaces **both** `start`
+  and `end` with values this API can write.
 - **An `rrule` is exactly the parts RFC 5545 § 3.3.10 names.** `FREQ` is required
   and first; `UNTIL`, `COUNT`, `INTERVAL`, `BYSECOND`, `BYMINUTE`, `BYHOUR`,
   `BYDAY`, `BYMONTHDAY`, `BYYEARDAY`, `BYWEEKNO`, `BYMONTH`, `BYSETPOS` and `WKST`
@@ -327,7 +346,8 @@ iCalendar engine (D-01, ADR 0002) — and back:
   is a `422` rather than something `ical.js` drops while the write looks
   successful. `COUNT` and `UNTIL` are mutually exclusive, and `UNTIL` has the
   value type of the start: a `DATE` (`20261015`) for an all-day rule, a UTC
-  `DATE-TIME` (`20261015T090000Z`) for a timed one. Two families `ical.js` 2.2.1
+  `DATE-TIME` (`20261015T090000Z`) for a timed one — a `TZID` start included,
+  because a zone-referenced start takes a UTC `UNTIL` (§ 3.3.10). Two families `ical.js` 2.2.1
   expands **wrongly** are refused rather than expanded — any rule naming
   `BYWEEKNO`, and a `FREQ=YEARLY` rule whose start is 29 February
   (`spec/ical-fixtures/RULINGS.md`; neither engine may be patched here, and
@@ -376,6 +396,53 @@ iCalendar engine (D-01, ADR 0002) — and back:
 - **Who may do what.** `owner` and `editor` write, `viewer` reads (`403` on a
   write), and a caller who is not a member gets the `404` an unknown calendar
   gets.
+
+### Time zones (E05-R09)
+
+`src/zones.mjs` is the API's one zone source: **Node's own zone database (ICU,
+through `Intl.DateTimeFormat`)**, read with the same field list the E15-R02
+oracle uses. There is no new dependency, and **nothing is ever registered in
+`ical.js`'s global `TimezoneService`** — registering one is process-wide, so one
+client could redefine `Europe/Berlin` for every request (E04-R04's note).
+
+- **A write names an IANA zone in its exact spelling.** Case matters: ICU
+  accepts `europe/berlin` and canonicalises it, so the exact-case check lives in
+  `src/iana-zones.mjs` — the 597 IANA names as the tz database spells them, which
+  is also where the link names a client may send come from (`Asia/Kolkata`,
+  `US/Eastern`, `Asia/Calcutta`). Every accepted name is resolved through ICU as
+  well, so a name the list carries and ICU cannot read is refused rather than
+  used.
+- **RFC 5545 § 3.3.5 form 3, from ICU's offsets.** A local reading that occurs
+  twice is the **first** occurrence and one that does not occur is read with the
+  offset **before** the gap. No instant this API computes comes out of `ical.js`,
+  which carries no zone database and is wrong on those two single times
+  (`spec/ical-fixtures/dst/README.md`); the DST table of E15-R02
+  (`spec/ical-fixtures/dst/cases.json`) is the contract, and its `daily-skipped`
+  family is contested (`ruling: pending`) so no client passes or fails it here.
+- **The `VTIMEZONE` is generated from ICU's real transitions.** One observance
+  per distinct `(TZOFFSETFROM, TZOFFSETTO)` pair, its `DTSTART`/`RDATE` values
+  local readings in that pair's **from** offset (the convention RFC 5545
+  § 3.6.5's own example uses), plus one observance at the window's start that
+  pins the offset in force then. Nothing outside the E03-R09 allow-list is
+  written — `TZID`, `X-LIC-LOCATION`, `DTSTART`, `TZOFFSETFROM`, `TZOFFSETTO`,
+  `RDATE` — and `test/zones.test.mjs` reads that allow-list out of
+  `../caldav/src/PrivateSkeleton.php`, so the two cannot drift.
+- **What it costs.** The API's horizon is 1970-01-01 through 2100-12-31
+  (`HORIZON`): every instant an event can have inside it resolves, whatever the
+  event, and `Europe/Berlin` comes out as 246 `DTSTART`/`RDATE` value lines,
+  5.9 KB of a stored object. A `TZID` write names a reading **inside** that
+  horizon — one outside it is the same fixed `422`, because the object's own
+  definition could not read the time back — and a `Z` time needs no definition,
+  so it is written whatever the date. A narrower window would be smaller but would go
+  stale the moment a patch moved an event, and an `RRULE` per observance is
+  smaller still but re-expands through the library that is wrong on two single
+  local times — a trade for E05-R05 and E15-R03 to revisit, not for this
+  requirement.
+- **A stored zone the resolver cannot read stays as it is** (INV-02): it is
+  reported as its wall clock and its `TZID`, with no `utc`, and a patch that
+  leaves the times alone keeps the object, its zone and its own `VTIMEZONE` byte
+  for byte — `test/events.test.mjs` and `test/ical-rmw.test.mjs` hold the
+  Microsoft fixture of E15-R01 to that.
 
 ## Changes
 
@@ -596,8 +663,10 @@ The E05-R04 suites need nothing but Node either. `test/ical-rmw.test.mjs` is the
 read-modify-write module against the round-trip corpus of E15-R01: a no-op patch
 of **every** fixture, and then a patch of a known field per fixture whose
 difference set is written out (a value-only `DTSTAMP` change is exactly one
-violation, a `DTSTART` change one — or two for a `TZID` fixture, which also loses
-the zone parameter it names). Two deliberately lossy and additive round trips are
+violation, a `DTSTART` change one — two for a `TZID` fixture, which also loses
+the zone parameter it names, or four for the Microsoft one, whose stored zone the
+resolver cannot read and which is therefore patched on both times). Two
+deliberately lossy and additive round trips are
 there as the control, so the suite is not one that has only ever been seen to
 pass. `test/events.test.mjs` drives the four routes through the real app against
 the in-memory calendar store and the CalDAV double in
@@ -607,12 +676,32 @@ builds is a skeleton the guard accepts. It covers the create refusals (one fixed
 `422` each, none reaching CalDAV), the roles, the UUIDv4 `UID` (INV-03), the
 `If-Match` (428/412 and a lost update), the guard's refusal mapped to
 `private-skeleton-only`, a collection holding an object the API cannot describe,
-and a canary that reaches neither a body nor a log line.
+and a canary that reaches neither a body nor a log line. A `TZID` event goes
+through create, read and patch there too — its `VTIMEZONE` embedded once, the
+definition kept when a later patch names the same zone, a second one embedded
+when it names another — and the Microsoft fixture shows the stored zone that
+cannot be resolved surviving a patch that leaves the times alone and refusing one
+that moves it halfway.
 `test/integration/events.test.mjs` (inside the stack, `make test-api-caldav`)
 runs the same operations against the real CalDAV service: create, read back byte
 for byte, a `412` with the current representation, a patch that bumps `SEQUENCE`
-and keeps the envelope hash, a delete, and the live guard refusing a content
+and keeps the envelope hash, a delete, the same `TZID` create/read/patch against
+the **live** guard (which is where "the `VTIMEZONE` this API generates is one
+E03-R09 accepts" is actually proved), and the live guard refusing a content
 write with the property named and the marker absent.
+
+The E05-R09 suite needs nothing but Node: `test/zones.test.mjs` reads the DST
+table of E15-R02 from the file — never a copy of it — and checks every case of
+every kind it may decide, with the `daily-skipped` family left alone because its
+ruling is pending and the owner's. It holds the resolver against the two families
+`ical.js` reads wrongly by requiring the library to disagree there, so a resolver
+built on the library would fail; it holds the generated `VTIMEZONE` against the
+library (every day of 2026 and 2027 at noon, plus three hours either side of
+every transition the table names) and against the guard's allow-list, read out of
+`PrivateSkeleton.php`; it holds the name table to its own claims (sorted, unique,
+every name resolvable, and `europe/berlin`, `W. Europe Standard Time` and
+`Factory` refused); and it checks that neither the resolver nor the generator
+registers a zone in `ical.js`'s global `TimezoneService`.
 
 The E05-R08 suites need nothing but Node either. `test/changes.test.mjs` drives
 the route through the real app against the in-memory calendar store, the outbox

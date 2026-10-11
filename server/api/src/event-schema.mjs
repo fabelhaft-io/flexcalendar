@@ -18,17 +18,17 @@
 // contract test compares the route's own schema with the spec's.
 
 /**
- * One event time, in both directions. A write sends exactly one member: `date`
- * (`YYYY-MM-DD`, all-day) or `utc` (`YYYYMMDDTHHMMSSZ`). A read adds the two
- * forms a stored object may carry but a write may not (a `TZID` time, which
- * E05-R09 owns, and a floating time): `local` is the wall clock the object
- * spells and `tzid` the zone it names, when it names one. `null` appears in the
- * parsed view when the object carries no such property.
+ * One event time, in both directions. A write sends one of three forms:
+ * `date` (`YYYY-MM-DD`, all-day), `utc` (`YYYYMMDDTHHMMSSZ`, an instant) or
+ * `local` beside `tzid` — an IANA zone in its exact spelling and the wall clock
+ * that zone reads. A read answers the form the stored object spells, and beside
+ * a `TZID` time the instant that reading names (`utc`) when the zone resolves.
+ * `null` appears in the parsed view when the object carries no such property.
  */
 export const eventTimeSchema = {
   type: ['null', 'object'],
   description:
-    'One event time. A write sends exactly one member: `date` (an all-day VALUE=DATE, `YYYY-MM-DD`) or `utc` (an instant, `YYYYMMDDTHHMMSSZ`). A read also answers `local` — the wall clock the object spells — with `tzid` beside it when the property names a zone; the API never converts a TZID time (E05-R09 owns zones). `null` when the object carries no such property.',
+    'One event time. A write sends one of three forms: `date` (an all-day VALUE=DATE, `YYYY-MM-DD`), `utc` (an instant, `YYYYMMDDTHHMMSSZ`), or `local` together with `tzid` (an IANA zone in its exact spelling and the wall clock it reads, `YYYYMMDDTHHMMSS`). A read answers the form the stored property spells — `date`, `utc`, or `local` with the `tzid` beside it — and a `TZID` time also carries `utc`, the instant that reading names, when the zone resolves (E05-R09). `null` when the object carries no such property.',
   additionalProperties: false,
   properties: {
     date: {
@@ -37,11 +37,13 @@ export const eventTimeSchema = {
     },
     utc: {
       type: 'string',
-      description: 'A UTC instant, `YYYYMMDDTHHMMSSZ`.',
+      description:
+        'A UTC instant, `YYYYMMDDTHHMMSSZ`. On a `local` time it is computed from the zone, never converted back.',
     },
     tzid: {
       type: 'string',
-      description: 'The `TZID` the stored property names, unchanged.',
+      description:
+        'The `TZID` the stored property names, unchanged, or the IANA zone a write names.',
     },
     local: {
       type: 'string',

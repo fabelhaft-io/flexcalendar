@@ -374,6 +374,69 @@ test('create, read back byte for byte, patch on the right precondition, delete',
   }
 });
 
+test('a TZID event with its VTIMEZONE is accepted by the live write guard', async () => {
+  const { app, capture } = build();
+  try {
+    const calendarId = await calendar(app);
+    // E05-R09: the `VTIMEZONE` this API generates has to be one the real guard
+    // of E03-R09 accepts — a Private collection stores skeletons, and a
+    // `VTIMEZONE` property outside its allow-list would be a `403` here.
+    const created = await request(
+      app,
+      'a',
+      'POST',
+      `/calendars/${calendarId}/events`,
+      body({
+        start: { local: '20261014T100000', tzid: 'Europe/Berlin' },
+        end: { local: '20261014T110000', tzid: 'Europe/Berlin' },
+      }),
+    );
+    assert.equal(created.statusCode, 201, created.body);
+    const event = created.json();
+    assert.equal(valueOf(event.ical, 'DTSTART'), '20261014T100000');
+    assert.equal(valueOf(event.ical, 'DTEND'), '20261014T110000');
+    assert.equal((event.ical.match(/BEGIN:VTIMEZONE/g) ?? []).length, 1);
+    assert.deepEqual(event.parsed.start, {
+      tzid: 'Europe/Berlin',
+      local: '20261014T100000',
+      utc: '20261014T080000Z',
+    });
+
+    // The read is the bytes the collection holds, the definition included.
+    const read = await request(
+      app,
+      'a',
+      'GET',
+      `/calendars/${calendarId}/events/${event.uid}`,
+    );
+    assert.equal(read.statusCode, 200, read.body);
+    assert.equal(read.json().ical, event.ical);
+
+    // A patch of the end keeps the definition the object already carries and
+    // writes the new wall clock into the same zone.
+    const patched = await request(
+      app,
+      'a',
+      'PATCH',
+      `/calendars/${calendarId}/events/${event.uid}`,
+      { end: { local: '20261014T120000', tzid: 'Europe/Berlin' } },
+      { 'if-match': event.etag },
+    );
+    assert.equal(patched.statusCode, 200, patched.body);
+    const after = patched.json();
+    assert.equal(valueOf(after.ical, 'DTEND'), '20261014T120000');
+    assert.equal((after.ical.match(/BEGIN:VTIMEZONE/g) ?? []).length, 1);
+    assert.deepEqual(after.parsed.end, {
+      tzid: 'Europe/Berlin',
+      local: '20261014T120000',
+      utc: '20261014T100000Z',
+    });
+    assert.ok(!capture.text().includes(CANARY), capture.text());
+  } finally {
+    await app.close();
+  }
+});
+
 test('a member who may read is refused a write, and a content field never reaches the guard', async () => {
   const { app, capture } = build();
   try {
