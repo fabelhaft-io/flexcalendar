@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 (R01–R05, R08–R10); 3 (R07); 4 (R06), per ADR 0003 |
-| Status | Blocked: R01 waits for E02-R09 and E04-R02; R02 for E03-R01; the rest follow R01 and R02. R07 also waits for E13-R02 |
+| Status | In progress: R01 (`agent+review`) running, stacked on E03-R10 (PR #50); R02 follows R01 (E03-R01 is Done); the rest follow R01 and R02. R07 also waits for E13-R02 |
 | Executor | `agent` (`agent+review` for R01) |
 | Depends on | E02-R03, E02-R07, E02-R09, E03-R01, E04; D-01, D-03, D-05, D-18 |
 | Spec | `01-architecture.md` § API layer, `02` § Backend and § Recurrence, ADR 0002 |
@@ -23,6 +23,10 @@ Every endpoint except health MUST require an access token from the D-03 IdP, val
 - Accept: JWKS rotation is handled without a restart.
 - Deps: E02-R09, E04-R02.
 - Notes: Zitadel (ADR 0004) issues JWT access tokens only when the app registration sets the JWT token type, and puts the project ID in `aud` only when the client requests the project audience scope. Both are in the Zitadel config as code (E02-R09). An opaque token reaching the API is a 401, never an introspection call.
+- Notes (owner's decisions of 2026-10-10):
+  - **Audience.** The expected `aud` is the Zitadel project ID. It comes from `CALFLEX_OIDC_AUDIENCE` or, when that is unset, from the file named by `CALFLEX_OIDC_AUDIENCE_FILE`, which `zitadel-config apply` writes in the local stack. With neither, the API answers 503 to everything except health.
+  - **First sight.** Zitadel's access token carries `sub` and no profile claims, but `users.handle` and `users.email` are required. When a valid token's `sub` has no row, the API calls the issuer's userinfo endpoint once with that token and takes `preferred_username` as the handle and `email` as the e-mail, refusing an unverified one. The clients request the `email` scope.
+  - **Endpoint.** The Accept needs an authenticated 200, so this requirement defines `GET /me` (the caller's `id`, `handle`, `email`).
 
 ### E05-R02 · CalDAV client adapter   `agent`
 All CalDAV access MUST go through one module built on `tsdav` (or raw `fetch` where `tsdav` lacks a report). It authenticates on the CalDAV service's internal listener with D-05 delegation and signs the `X-Calflex-Principal` header exactly as E03-R01 defines it, with the first key in `CALFLEX_DELEGATION_KEYS`. No other module talks to CalDAV. `CALFLEX_CALDAV_ORIGIN` in `infra/dev/compose.yaml`, which E02-R03 pointed at the public `https://caldav.localhost` URL, moves to the internal listener.
