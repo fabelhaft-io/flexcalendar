@@ -4,7 +4,7 @@ The state of the orchestrator loop (`.agents/skills/orchestrate/`): what runs ne
 
 ## Queue
 
-As of 2026-10-10. **Requirements are built on top of each other** (owner's decision of 2026-10-10: assume every PR merges). A branch is cut from the branch it depends on, its PR targets that branch, and main is merged forward into the stack (a signed `chore(<ID>): merge main (<ID>)` commit, never a force-push) after each merge. A requirement still starts only once every `Deps` entry is Done or has a branch in the stack.
+As of 2026-10-10. **Requirements are built on top of each other** (owner's decision of 2026-10-10: assume every PR merges). A branch is cut from the branch it depends on, its PR targets that branch, and main is merged forward into the stack (a `chore(<ID>): merge main (<ID>)` commit, never a force-push) after each merge. A requirement still starts only once every `Deps` entry is Done or has a branch in the stack.
 
 1. **E04 and E03** Phase 1 requirements, alternating as their Deps allow: E04-R01 and E04-R02 (Done, PRs #38 and #41, 2026-10-09), E04-R03 (Done, PR #44, 2026-10-09), E04-R04 (Done, PR #46, 2026-10-10), E03-R01 (Done, PR #45, 2026-10-10), E03-R09 (Done, PR #47, 2026-10-10), E04-R05 (Done, PR #48, 2026-10-10), E04-R06 (Done, PR #49, 2026-10-11), E03-R10 (Done, PR #50, 2026-10-11), E05-R01 (`agent+review`, passed review, PR #51, 2026-10-11), E05-R02 (passed review, PR #53, stacked on #51, 2026-10-11), E03-R02 (passed review, PR #52, 2026-10-11), then E03-R08 (`agent+review`, PR #54, stacked on #52).
    - The open PRs are prepared so that each merges without a conflict, in the order #51, #53, #52, #54 (#53 is stacked on #51 and #54 on #52; the two chains do not depend on each other). The doc lines they share (this queue, the E03 and E05 Status cells, the follow-ups blocks) are identical on every branch; the "Done" flips come in one `doc:` PR once they are all merged.
@@ -14,7 +14,8 @@ As of 2026-10-10. **Requirements are built on top of each other** (owner's decis
 
 ## Follow-ups waiting for their requirement
 
-- **Done 2026-10-06:** **"Verify required"** (E02-R06) is a required status check on `main`, in the ruleset "my main my rules" (GitHub Actions app only). The ruleset's one-approval rule is unchanged.
+- **Owner, after this PR merges:** add **"Human approval"** (`human-approval.yml`, GitHub Actions app) as a second required check in the ruleset "main: PR with one required check". It cannot be required before the workflow is on `main`, or every PR would wait for a check that never reports. Then the first `agent+review` PR proves it: it must show "Human approval" failing until the label is removed, and auto-merge must not land it before that.
+- **Done 2026-10-11:** the ruleset "my main my rules" (2026-10-06) no longer existed. Its replacement, "main: PR with one required check", requires a PR and **"Verify required"** (E02-R06; GitHub Actions app only), allows squash merges only, blocks force-push and deletion, and asks for no approval: GitHub does not let the owner approve their own PR, and the PRs are opened with the owner's login. The repository admin role may bypass on a PR. Auto-merge and "Update branch" are on; the owner arms auto-merge, agents never merge. Commits are unsigned.
 
 - **From the E03-R01 reviews, for later requirements** (R01 itself is in PR #45):
   - **E05-R03 and later, on the adapter** (`server/api/src/caldav/adapter.mjs`, E05-R02, PR #53): it is the only module that reaches CalDAV (ESLint and a grep test enforce it). A database outage or a missing schema on the service answers 401 like a denial, so the adapter reports one `unauthorized` kind; the service log tells them apart (`delegation_error` against `delegation_denied <reason>`);
