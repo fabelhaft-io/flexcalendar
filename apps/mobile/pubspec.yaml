@@ -1,27 +1,59 @@
-# Flutter toolchain + SDK pin (E02-R02). The app itself arrives with E10-R01 and
-# grows its dependency list there; this file exists so a clean checkout refuses
-# to build with anything but the pinned Flutter/Dart.
+# Flutter toolchain + SDK pin (E02-R02) and the app's dependency pins
+# (E10-R01). The app is a REST client for both phones (ADR 0002): Riverpod for
+# state, `dio` plus the client generated into `lib/api/` (E02-R07) for the API,
+# Drift for the offline cache, `timezone` for every `TZID` calculation.
 #
 # Flutter 3.47.6 (stable, 2026-10-01) ships Dart 3.13.5. FVM reads `.fvmrc`
 # next to this file; CI reads the same version from it (see `apps/mobile/README.md`).
+#
+# Every pin below is exact, not a caret range: the app ships to phones, and a
+# transitive upgrade should be a reviewable diff. `pubspec.lock` is committed
+# (E02-R07) and holds the transitive versions.
 name: calendar_flex
 description: flexcalendar mobile app — Android first (minSdk 26), iOS from Phase 5 (ADR 0003).
 publish_to: "none"
+
+# Version code and name for Android (`android/app/build.gradle.kts` reads them
+# through `flutter.versionCode` / `flutter.versionName`).
+version: 0.1.0+1
 
 environment:
   sdk: ^3.13.5
   flutter: ">=3.47.6 <4.0.0"
 
 dependencies:
+  flutter:
+    sdk: flutter
+  # REST API client, from spec/openapi.yaml into lib/api/ (E02-R07).
   dio: 5.11.1
   retrofit: 4.10.0
   json_annotation: 4.12.0
+  # Mobile stack pinned by docs/02-technology-choices.md § Mobile clients.
+  flutter_riverpod: 3.4.3
+  drift: 2.35.2
+  drift_flutter: 0.3.1
+  timezone: 0.11.2
+  # UUIDv4 for every id the app generates (INV-03). Call it as `Uuid().v4()`
+  # only; `infra/scripts/invariants.mjs` rejects the package's v1/v3/v5/v6/v7
+  # accessors.
+  uuid: 4.6.0
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
   swagger_parser: 1.45.0
   build_runner: 2.16.1
   retrofit_generator: 10.2.11
   json_serializable: 6.14.1
-  test: 1.32.0
+  drift_dev: 2.35.1
+  # `test` (not only `flutter_test`) runs the stub-`dio` decoding test of the
+  # generated client; `flutter test` executes both kinds. Capped at 1.31.1: the
+  # Flutter SDK's `flutter_test` pins `test_api` 0.7.12, and `test` 1.32.0
+  # requires 0.7.14, so the resolver rejects 1.32.0 in a Flutter app.
+  test: 1.31.1
   # build_runner 2.16.1 uses an analyzer API removed in 14.x.
   analyzer: 13.3.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,27 @@
+# App-local ignores that the repository root .gitignore does not already cover
+# (E10-R01). The root file owns `.dart_tool/`, `apps/mobile/build/`,
+# `apps/mobile/android/.gradle/`, `local.properties` and Flutter's
+# GeneratedPluginRegistrant.java.
+
+# Written by `flutter pub get`.
+.flutter-plugins-dependencies
+
+# IDE project files (the engine writes none of these; a developer's IDE does).
+.idea/
+*.iml
+
+# Android Studio's in-module outputs.
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# Never commit signing material (docs/epics/E10-mobile-app.md § Agent working
+# agreement 8). Nothing here is needed for a debug build.
+key.properties
+**/*.keystore
+**/*.jks
+
+# NOTE: deliberately *not* the Flutter template's android/.gitignore. It ignores
+# `gradlew`, `gradlew.bat` and `gradle/wrapper/gradle-wrapper.jar`, which this
+# repository tracks on purpose: the Gradle wrapper is pinned by version and
+# SHA-256 (E02-R02, apps/mobile/android/README.md).
