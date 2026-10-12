@@ -21,4 +21,4 @@ One file per source in [`follow-ups/`](follow-ups/): `from-<ID>.md` holds what t
 
 ## Open with the owner
 
-- **Free-text values on Private calendars (E03-R09 review 2).** The allow-list is of names, parameters and components, plus the fixed values of the table. The values of allowed properties are not inspected, so `UID:Chemo with Dr Smith`, a `TZID` parameter with a clinic's name, `PRODID` and `X-LIC-LOCATION` are all stored in cleartext. The README says so. A server-side backstop for `UID` is possible: INV-03 says our code creates UUIDv4 UIDs and ADR 0001 says no stock app ever edits a Private calendar, so the guard could require a UUIDv4 `UID` on Private. That is a change to E03-R09's table, hence an ADR 0001 amendment. Not started; say if you want it. A second reason came with E03-R10: a `PUT` body without `UID` is given `sabre-vobject-<uuid>` by SabreDAV's repair, which is not a UUIDv4 either.
+Nothing is open as of 2026-10-12. That day the owner ruled on RFC 5545 § 3.3.10 (`docs/02` § Recurrence) and on free-text values on Private calendars (ADR 0001, amended; E03-R11).

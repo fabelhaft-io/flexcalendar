@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Phase | 1 (R01, R02, R08, R09, R10; R04 is merged into R01); 4 (R03, R05, R06, R07), per ADR 0003 |
-| Status | In progress: the Phase 1 requirements are Done, R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), R09 ([PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)), R10 ([PR #50](https://github.com/fabelhaft-io/flexcalendar/pull/50)), R02 ([PR #52](https://github.com/fabelhaft-io/flexcalendar/pull/52)) and R08 ([PR #54](https://github.com/fabelhaft-io/flexcalendar/pull/54)), 2026-10-10 and 2026-10-11. Phase 4 reqs wait for M1 |
-| Executor | `agent+review` (auth and ACL work: R01, R03, R07, R08), `agent` otherwise |
+| Phase | 1 (R01, R02, R08, R09, R10, R11; R04 is merged into R01); 4 (R03, R05, R06, R07), per ADR 0003 |
+| Status | In progress: the Phase 1 requirements are Done, R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), R09 ([PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)), R10 ([PR #50](https://github.com/fabelhaft-io/flexcalendar/pull/50)), R02 ([PR #52](https://github.com/fabelhaft-io/flexcalendar/pull/52)) and R08 ([PR #54](https://github.com/fabelhaft-io/flexcalendar/pull/54)), 2026-10-10 and 2026-10-11. R11 (the owner's ruling of 2026-10-12) is open. Phase 4 reqs wait for M1 |
+| Executor | `agent+review` (auth and ACL work: R01, R03, R07, R08; the Private backstop R11), `agent` otherwise |
 | Depends on | E02-R03, E04-R01, E04-R02; D-02, D-05, D-18; D-04 for Phase 4 |
 | Spec | `01-architecture.md` § Storage, `02` § CalDAV Server and § Runtime layout, `03`, ADR 0001 § Private calendars — cryptography |
 
@@ -115,8 +115,8 @@ Writes to a Private calendar MUST pass an **allow-list**. Anything not listed is
 |---|---|
 | `VCALENDAR` | `VERSION`, `PRODID`, `CALSCALE` (`GREGORIAN` only); components `VEVENT` and `VTIMEZONE` only |
 | `VTIMEZONE` | `TZID`, `LAST-MODIFIED`, `TZURL`, `X-LIC-LOCATION`; `STANDARD`/`DAYLIGHT` with `DTSTART`, `TZOFFSETFROM`, `TZOFFSETTO`, `RRULE`, `RDATE`, `TZNAME` |
-| `VEVENT` | `UID`, `DTSTAMP`, `DTSTART`, `DTEND` or `DURATION`, `RRULE`, `RDATE`, `EXDATE`, `RECURRENCE-ID`, `SEQUENCE`, `CREATED`, `LAST-MODIFIED`, `X-CALFLEX-ENVELOPE-SHA256` (**required**, exactly 64 lowercase hex digits, D-06), `VALARM` |
-| `VALARM` | `ACTION` (`DISPLAY` or `AUDIO`), `TRIGGER`, `REPEAT`, `DURATION`, `UID`, and `DESCRIPTION` with the exact value `Reminder` (D-08) |
+| `VEVENT` | `UID` (a lowercase UUIDv4 on create, E03-R11), `DTSTAMP`, `DTSTART`, `DTEND` or `DURATION`, `RRULE`, `RDATE`, `EXDATE`, `RECURRENCE-ID`, `SEQUENCE`, `CREATED`, `LAST-MODIFIED`, `X-CALFLEX-ENVELOPE-SHA256` (**required**, exactly 64 lowercase hex digits, D-06), `VALARM` |
+| `VALARM` | `ACTION` (`DISPLAY` or `AUDIO`), `TRIGGER`, `REPEAT`, `DURATION`, `UID` (as on `VEVENT`), and `DESCRIPTION` with the exact value `Reminder` (D-08) |
 | Parameters | `TZID`, `VALUE`, `RANGE` (on `RECURRENCE-ID`), `RELATED` (on `TRIGGER`). Nothing else, `X-` parameters included |
 | Collection properties | `DAV:displayname` with the fixed value `Private calendar`, set by the API. The real name and colour are in the encrypted calendar metadata (D-18). `calendar-description`, `calendar-color` and every other dead property are rejected |
 
@@ -141,3 +141,17 @@ The row is written in the same transaction as the object and SabreDAV's own `cal
 - Accept: a test kills the process between the object write and the outbox write and finds neither or both. The outbox row carries the token that `sync-collection` reports for the change.
 - Deps: E03-R01, E04-R02.
 - Notes: E07 consumes the outbox from Phase 4; until then it only grows, which at our size doesn't matter.
+
+### E03-R11 · UID backstop on Private calendars   `agent+review`
+The E03-R09 guard checks names, not values (ADR 0001, amended 2026-10-12). It MUST also refuse, on a Private calendar, with the same 403 and `cf:private-skeleton-only` precondition:
+- a **create** (a `PUT` to a name the collection does not hold) whose `VEVENT` or `VALARM` `UID` is not a lowercase UUIDv4 (`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`), whose `VEVENT`s do not all carry the same `UID`, or whose object name is not `<uid>.ics`;
+- a `PUT` without a `UID`. SabreDAV's repair gives such a body `sabre-vobject-<uuid>`, which is refused whether the guard runs before the repair or after it;
+- an **update** that changes the stored `UID`;
+- an `RRULE` with an `X-` rule part (`RRULE:FREQ=DAILY;X-NOTE=…`), on create and update.
+
+An update of an object whose stored `UID` is not a UUIDv4 is accepted: a Shared calendar switched to Private (Phase 4) keeps its stock-app `UID`s (INV-03). `PRODID`, `TZID`, `X-LIC-LOCATION`, `TZNAME` and `TZURL` stay unchecked; the API writes them from its own data. The rejection names `UID`, the object name or `RRULE`, never the value.
+- Accept: a table-driven test, beside E03-R09's, refuses each case above with the precondition and accepts a lowercase UUIDv4 create, an update that keeps a non-UUID `UID` written while the calendar was not Private (seeded directly in the store, since `mode` accepts only `private` until Phase 4).
+- Accept: E03-R09's marker test extended: a marker placed in a refused `UID`, object name or `X-` rule part appears in no response body and no log line.
+- Accept: the API's create path still passes against the live stack (its minted `randomUUID()` and `<uid>.ics` meet the rule).
+- Deps: E03-R09.
+- Notes: before E13-R02 and E10-R06, which are where a client starts choosing the `UID` (the envelope's AAD binds it, and an offline create needs it before reconnecting).
