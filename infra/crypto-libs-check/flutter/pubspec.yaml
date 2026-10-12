@@ -1,0 +1,31 @@
+name: crypto_libs_check_flutter
+description: >-
+  E12-R02 probe: the primitives ADR 0002 names, called for real on an Android
+  emulator or device. Run once and record the output in
+  docs/verification/crypto-libs-2026-10-12.md.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  # The pinned toolchain (apps/mobile/.fvmrc): Flutter 3.47.6 / Dart 3.13.5.
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The Flutter companion package ADR 0001 § Private calendars names. 4.0.1 is
+  # deprecated and is a one-line re-export of `sodium` (see ../README.md);
+  # depending on it here reproduces the epic's wording, and the probe checks
+  # that the re-export really does deliver every primitive on Android.
+  sodium_libs: 4.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+
+flutter:
+  uses-material-design: true

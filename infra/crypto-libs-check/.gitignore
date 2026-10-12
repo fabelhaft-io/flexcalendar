@@ -1,0 +1,21 @@
+# Probe output only. Nothing a probe downloads or generates is committed: the
+# probes are run once and their output is recorded in docs/verification/.
+
+# Node
+node_modules/
+package-lock.json
+
+# Dart / Flutter
+.dart_tool/
+build/
+.dart_tool/**
+pubspec.lock
+
+# Flutter's own generated glue
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/GeneratedPluginRegistrant.java
+
+# Gradle / Android (only if a reviewer scaffolds the platform folders)
+**/.gradle/
+local.properties
