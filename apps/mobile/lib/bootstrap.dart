@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'src/api/api_providers.dart';
 import 'src/app.dart';
 import 'src/flavor.dart';
 import 'src/timezones.dart';
@@ -14,11 +13,15 @@ import 'src/timezones.dart';
 Future<void> bootstrap(Flavor flavor) async {
   WidgetsFlutterBinding.ensureInitialized();
   // Before the first TZDateTime: all TZID arithmetic goes through `timezone`
-  // (INV-04).
+  // (INV-04), and the device's zone becomes its local location.
   initializeAppTimeZones();
+  final localZone = await initializeDeviceTimeZone();
   runApp(
     ProviderScope(
-      overrides: [flavorProvider.overrideWithValue(flavor)],
+      overrides: [
+        flavorProvider.overrideWithValue(flavor),
+        localZoneProvider.overrideWithValue(localZone),
+      ],
       child: const FlexCalendarApp(),
     ),
   );
