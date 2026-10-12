@@ -902,8 +902,15 @@ export function createCalDavAdapter(config = {}) {
         },
 
         /**
-         * `calendar-query` over a time range. `start`/`end` are iCalendar UTC
-         * instants (`20260101T000000Z`); ISO 8601 instants are accepted too.
+         * `calendar-query`. With a `range` the report carries the `VEVENT`
+         * `time-range` filter as well: `start`/`end` are iCalendar UTC instants
+         * (`20260101T000000Z`) or ISO 8601 ones, and either is refused when it
+         * is not a time. **Without** one, the filter is the `VCALENDAR`/
+         * `VEVENT` component filter alone, so the service answers the whole
+         * collection and the caller's own expansion decides the window — a
+         * `time-range` makes the service iterate every series with its own
+         * engine, and one long series fails the entire report.
+         *
          * The returned `href`s are the server's paths, unchanged.
          *
          * `data` is the `calendar-data` an XML report carries it in, so it is
@@ -912,28 +919,30 @@ export function createCalDavAdapter(config = {}) {
          * an object's stored bytes exactly.
          *
          * @param {string} calendarId
-         * @param {{start: string, end: string}} range
+         * @param {{start: string, end: string}} [range]
          */
         async listObjects(calendarId, range) {
           const url = absolute(collection(calendarId));
-          const start = assertCalDavTime(range?.start, 'start');
-          const end = assertCalDavTime(range?.end, 'end');
+          /** @type {Record<string, unknown>} */
+          const filter = {
+            'comp-filter': {
+              _attributes: { name: 'VCALENDAR' },
+              'comp-filter': { _attributes: { name: 'VEVENT' } },
+            },
+          };
+          if (range !== undefined) {
+            const start = assertCalDavTime(range?.start, 'start');
+            const end = assertCalDavTime(range?.end, 'end');
+            /** @type {any} */ (filter['comp-filter'])['comp-filter'][
+              'time-range'
+            ] = { _attributes: { start, end } };
+          }
           const responses = await (async () => {
             try {
               return await calendarQuery({
                 url,
                 props: { 'd:getetag': {}, 'c:calendar-data': {} },
-                filters: [
-                  {
-                    'comp-filter': {
-                      _attributes: { name: 'VCALENDAR' },
-                      'comp-filter': {
-                        _attributes: { name: 'VEVENT' },
-                        'time-range': { _attributes: { start, end } },
-                      },
-                    },
-                  },
-                ],
+                filters: [filter],
                 depth: '1',
                 fetch: signed,
               });

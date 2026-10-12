@@ -9,6 +9,7 @@ import '../models/calendar_changes.dart';
 import '../models/event.dart';
 import '../models/event_create.dart';
 import '../models/event_update.dart';
+import '../models/occurrences.dart';
 
 part 'events_client.g.dart';
 
@@ -92,5 +93,29 @@ abstract class EventsClient {
   Future<CalendarChanges> listCalendarChanges({
     @Path('calendarId') required String calendarId,
     @Query('since') String? since,
+  });
+
+  /// Expand a window of a calendar's occurrences.
+  ///
+  /// The windowed expansion our own clients cache: the instances of one window, computed server-side with `ical.js` from the masters and their override VEVENTs. The client never expands a rule itself, and an edit to a recurring event is an intent it sends back with the `recurrenceId` this answer carried (E05-R06/R07, INV-05).
+  /// The window is half-open: `from` is included, `to` is not, and an instance is in it when its interval overlaps it. An all-day occurrence is a `date`, and the instants it covers are the requested zone's midnights, so a transition day is 23, 24 or 25 hours long.
+  /// `tz` is the zone every instant is reported in; absent, it is `UTC`. Every wall clock the answer carries is computed from the IANA zone database, never from `ical.js`, which has no zone database of its own.
+  /// `from`, `to` and `tz` are the whole query: a member this operation does not take is the same 422 the malformed values are, so a misspelled `tz` can never look like a successful read.
+  /// An object the expansion cannot honestly answer for — a rule `ical.js` expands wrongly, a stored `TZID` no zone database can read, or a rule that would not stop inside the API's own bound — is reported in `unsupported` with its reason and contributes no occurrences. It is not an error: the rest of the window is answered as usual.
+  /// Roles are the reading roles: `owner`, `editor` and `viewer` all read, and a caller who is not a member gets the 404 an unknown id gets.
+  ///
+  /// [calendarId] - The `calendars.id` uuid of the calendar.
+  ///
+  /// [from] - The first instant of the window, included, `YYYYMMDDTHHMMSSZ`.
+  ///
+  /// [to] - The instant the window ends at, excluded, `YYYYMMDDTHHMMSSZ`; later than `from` and at most 1830 days later.
+  ///
+  /// [tz] - The IANA zone name, in its exact spelling, that every instant is reported in. Absent, it is `UTC`.
+  @GET('/calendars/{calendarId}/occurrences')
+  Future<Occurrences> listOccurrences({
+    @Path('calendarId') required String calendarId,
+    @Query('from') required String from,
+    @Query('to') required String to,
+    @Query('tz') String? tz,
   });
 }

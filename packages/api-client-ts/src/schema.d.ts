@@ -169,6 +169,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calendars/{calendarId}/occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Expand a window of a calendar's occurrences
+         * @description The windowed expansion our own clients cache: the instances of one window, computed server-side with `ical.js` from the masters and their override VEVENTs. The client never expands a rule itself, and an edit to a recurring event is an intent it sends back with the `recurrenceId` this answer carried (E05-R06/R07, INV-05).
+         *     The window is half-open: `from` is included, `to` is not, and an instance is in it when its interval overlaps it. An all-day occurrence is a `date`, and the instants it covers are the requested zone's midnights, so a transition day is 23, 24 or 25 hours long.
+         *     `tz` is the zone every instant is reported in; absent, it is `UTC`. Every wall clock the answer carries is computed from the IANA zone database, never from `ical.js`, which has no zone database of its own.
+         *     `from`, `to` and `tz` are the whole query: a member this operation does not take is the same 422 the malformed values are, so a misspelled `tz` can never look like a successful read.
+         *     An object the expansion cannot honestly answer for — a rule `ical.js` expands wrongly, a stored `TZID` no zone database can read, or a rule that would not stop inside the API's own bound — is reported in `unsupported` with its reason and contributes no occurrences. It is not an error: the rest of the window is answered as usual.
+         *     Roles are the reading roles: `owner`, `editor` and `viewer` all read, and a caller who is not a member gets the 404 an unknown id gets.
+         */
+        get: operations["listOccurrences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -325,6 +350,61 @@ export interface components {
             token: string;
             /** @description One entry per changed object, a tombstone for a deletion. Empty when nothing changed since `since`. */
             changes: components["schemas"]["Change"][];
+        };
+        /** @description One occurrence time, in the zone the request asked for: the instant, the wall clock that zone reads for it, and the zone. An all-day occurrence is its `date` instead, because a day has no instant of its own and which instants it covers depends on the zone it is viewed from. */
+        OccurrenceTime: {
+            /** @description An all-day date, `YYYY-MM-DD`; the end is the exclusive next date. */
+            date?: string;
+            /** @description The instant, `YYYYMMDDTHHMMSSZ`. */
+            utc?: string;
+            /** @description The zone the request asked for, so the wall clock can be read back. */
+            tzid?: string;
+            /** @description The wall clock that zone reads for `utc`, `YYYYMMDDTHHMMSS`. */
+            local?: string;
+        };
+        /** @description The original start of this instance, in the form the stored object spells it: `date` for an all-day occurrence, `utc` for an instant, or `local` beside the `tzid` it is written in, with `utc` the instant that reading names. `null` for an event that does not recur. It is what an edit intent sends back to address this occurrence (E05-R06/R07), never something a client writes. */
+        RecurrenceId: null | {
+            /** @description An all-day date, `YYYY-MM-DD`. */
+            date?: string;
+            /** @description A UTC instant, `YYYYMMDDTHHMMSSZ`. */
+            utc?: string;
+            /** @description The `TZID` the stored property names, or the zone the reading is written in. */
+            tzid?: string;
+            /** @description The wall clock the stored property spells, `YYYYMMDDTHHMMSS`. */
+            local?: string;
+        };
+        /** @description One expanded occurrence. It carries no content: fetch the event itself for that. An override VEVENT is a second occurrence with `override` true and the `recurrenceId` it replaces. */
+        Occurrence: {
+            /** @description The `UID` of the master VEVENT. */
+            uid: string;
+            recurrenceId: components["schemas"]["RecurrenceId"];
+            /** @description `true` when an override VEVENT defines this occurrence, `false` for one the rule of the master VEVENT derives. */
+            override: boolean;
+            start: components["schemas"]["OccurrenceTime"];
+            end: components["schemas"]["OccurrenceTime"];
+            /** @description `true` for an all-day occurrence, whose `start` and `end` are dates rather than instants. */
+            allDay: boolean;
+            /** @description The `X-CALFLEX-ENVELOPE-SHA256` of the VEVENT that defines this occurrence, or null when it carries none. */
+            envelopeSha256: null | string;
+        };
+        /** @description One stored object the expansion left out, with the reason. It is not an error: the rest of the window is answered as usual. */
+        UnsupportedObject: {
+            /** @description The CalDAV path of the object, as the report named it. */
+            href: string;
+            /** @description The `UID` of the master VEVENT of the object. */
+            uid: string;
+            /**
+             * @description Why the object was not expanded.
+             * @enum {string}
+             */
+            reason: "too-many-instances" | "unknown-zone" | "rrule-not-expanded";
+        };
+        /** @description The expanded occurrences of the window, sorted by start instant, and the objects that were left out. */
+        Occurrences: {
+            /** @description One entry per instance that overlaps the window, including the override VEVENTs. */
+            occurrences: components["schemas"]["Occurrence"][];
+            /** @description The stored objects that were not expanded, and why. Empty when every object was. */
+            unsupported: components["schemas"]["UnsupportedObject"][];
         };
         /** @description An RFC 9457 problem document. `type` is stable per kind; `title` is fixed copy; `instance` is `urn:uuid:<the request correlation ID>`. */
         Problem: {
@@ -1683,6 +1763,128 @@ export interface operations {
                 };
             };
             /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listOccurrences: {
+        parameters: {
+            query: {
+                /** @description The first instant of the window, included, `YYYYMMDDTHHMMSSZ`. */
+                from: string;
+                /** @description The instant the window ends at, excluded, `YYYYMMDDTHHMMSSZ`; later than `from` and at most 1830 days later. */
+                to: string;
+                /** @description The IANA zone name, in its exact spelling, that every instant is reported in. Absent, it is `UTC`. */
+                tz?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The expanded occurrences of the window, and what was left out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Occurrences"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, which is also the answer for an id that exists nowhere */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `from`, `to` or `tz` is not one this operation takes, `to` is not later than `from`, the window is longer than 1830 days, or the window would answer more occurrences than one answer may carry (`window-too-large`). The body never echoes a value of the request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read, or a stored object is not one this API can describe */
             502: {
                 headers: {
                     [name: string]: unknown;
