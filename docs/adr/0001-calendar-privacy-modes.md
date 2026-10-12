@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-27
-- **Amended by**: [ADR 0003](0003-android-first-private-first-delivery.md) (delivery order, recovery before open signup, key derivation); pinned decisions D-06–D-08, D-14, D-15, D-17 (2026-10-04) and D-18 (2026-10-05) from `06`; the owner's ruling of 2026-10-12 on `UID` values. See § Amendments.
+- **Amended by**: [ADR 0003](0003-android-first-private-first-delivery.md) (delivery order, recovery before open signup, key derivation); pinned decisions D-06–D-08, D-14, D-15, D-17 (2026-10-04) and D-18 (2026-10-05) from `06`; the owner's ruling of 2026-10-12 on `UID` values; the owner's acceptance of the wire spec `spec/crypto.md` (E12-R01), 2026-10-12. See § Amendments.
 - **Relates to**: [`00-overview.md`](../00-overview.md) (central constraint), [`01-architecture.md`](../01-architecture.md) (sharing model), [`03-native-calendar-integration.md`](../03-native-calendar-integration.md), [`04-implementation-phases.md`](../04-implementation-phases.md) (Phase 5), [`05-risks-and-open-questions.md`](../05-risks-and-open-questions.md) (closes the E2EE open question)
 
 ## Context
@@ -81,13 +81,13 @@ We keep CalDAV as the store for all modes anyway, for practical reasons: one sto
 The login password is absent on purpose. It is typed into our own IdP, so a key derived from it would be derivable by us, and the Tier 2 claim would be false (D-17). It authenticates and nothing else.
 
 - **AEAD**: XChaCha20-Poly1305, one envelope per event over a canonical JSON payload using **JSCalendar (RFC 8984) field names** — the same information as iCalendar, and it keeps the JMAP path open.
-- **AAD**: `"calflex-v1" || calendar_id || UID || RECURRENCE-ID || epoch || canonical(DTSTART, DTEND, RRULE)`, each field length-prefixed as `spec/crypto.md` defines. Binding the cleartext skeleton makes server-side tampering with timing detectable, and it is safe here precisely because no stock app ever edits a Private calendar. *Amended (D-14):* `calendar_id` and `RECURRENCE-ID` were added, so the server can't move an envelope onto another override of the same event or into another calendar.
+- **AAD**: `"calflex-v1" || calendar_id || UID || RECURRENCE-ID || epoch || canonical(DTSTART, DTEND, RRULE)`, each field length-prefixed as `spec/crypto.md` defines. Binding the cleartext skeleton makes server-side tampering with timing detectable, and it is safe here precisely because no stock app ever edits a Private calendar. *Amended (D-14):* `calendar_id` and `RECURRENCE-ID` were added, so the server can't move an envelope onto another override of the same event or into another calendar. *Amended (2026-10-12, wire spec):* the canonical timing fields bind a zoned time as its `TZID` and local wall clock, a `Z` time as the UTC instant written in the skeleton and an all-day event as its date, never an instant a zone database computes, so a tzdata update cannot make stored envelopes unreadable (`spec/crypto.md` §3.5). `RDATE` and `EXDATE` are not bound: the API writes `EXDATE` (INV-05), and binding it would invalidate the master's envelope for a change its content did not make (§2.6).
 - **Skeleton contents** *(D-08)*: `UID`, `DTSTART`/`DTEND`, `RRULE`/`RDATE`/`EXDATE`, `RECURRENCE-ID`, `SEQUENCE`, `VALARM` and `X-CALFLEX-ENVELOPE-SHA256`. Everything else is in the envelope, including `ATTENDEE` and `ORGANIZER`, so Private calendars have no email invites. `VALARM` is cleartext, so our clients always write a fixed `DESCRIPTION:Reminder` and never the event title. *Amended (2026-10-05):* the structural properties RFC 5545 requires or allows in their place (`DTSTAMP`, `DURATION` instead of `DTEND`, `CREATED`, `LAST-MODIFIED`, and `VTIMEZONE` components) are part of the skeleton too. The exhaustive allow-list that the server enforces is in E03-R09. *Amended (2026-10-12):* the allow-list checks names, not free-text values, and of those the `UID` is the one that travels (the object name, the outbox, the delta feed, URLs and logs, the sidecar key) and can never be changed, so the server also requires a lowercase UUIDv4 `UID`, on every `VEVENT` and `VALARM`, and the object name `<uid>.ics` when an object is **created** in a Private calendar (E03-R11). An update keeps the stored `UID`, so a Shared calendar switched to Private keeps its stock-app `UID`s, as INV-03 requires. The other free-text values (`PRODID`, `TZID`, `X-LIC-LOCATION`, `TZNAME`, `TZURL`) are written by the API from its own data and stay unchecked.
 - **Calendar metadata** *(D-18)*: a Private calendar's name and colour are encrypted too. The client seals them under the CCK into a calendar-metadata envelope, which the server stores opaquely, and the CalDAV collection is named `Private calendar`. A calendar's name can say as much as an event title.
 - **Key authenticity** *(D-15)*: sealed boxes don't authenticate the sender, and members' public keys are handed out by our server, which could substitute its own. Every user therefore has an Ed25519 identity key. Sealed CCK records and key bundles are signed with it, and members verify each other's identity keys in the app, by scanning a QR code in person or by comparing safety numbers. Key transparency can come later.
-- **Key wrapping**: libsodium sealed boxes (`crypto_box_seal`, X25519). HPKE (RFC 9180) would be more modern but Dart has no maintained implementation.
+- **Key wrapping**: libsodium sealed boxes (`crypto_box_seal`, X25519). HPKE (RFC 9180) would be more modern but Dart has no maintained implementation. *Amended (2026-10-12, wire spec):* sealed boxes carry the CCK records and the device-link bundle. The private key's wrap under the recovery-code KEK is XChaCha20-Poly1305 with its own AAD label (`calflex-keywrap-v1`, binding the owner and the wrap kind), because that KEK is a symmetric HKDF output with no keypair to seal to (`spec/crypto.md` §6.3). Every key derivation is HKDF-SHA-256 (D-17), never `crypto_kdf`.
 - **Rotation**: removing a member starts epoch N+1 for new writes. They keep whatever they already downloaded; no design prevents that.
-- **Libraries**: `sodium_libs` (Flutter), `libsodium-wrappers` WASM (web), `lazysodium-android` (Kotlin, only if Phase 6 mirroring ships). The API layer and CalDAV server link no crypto library for this purpose — a useful property to be able to state.
+- **Libraries**: `sodium_libs` (Flutter), `libsodium-wrappers` WASM (web), `lazysodium-android` (Kotlin, only if Phase 6 mirroring ships). *Amended (2026-10-12, E12-R02):* `sodium_libs` is discontinued and only re-exports `sodium`, so the Dart library depends on `sodium`, which builds libsodium itself; the web uses the standard `libsodium-wrappers` build plus WebCrypto's HKDF, which the library does not export (`docs/verification/crypto-libs-2026-10-12.md`). The API layer and CalDAV server link no crypto library for this purpose — a useful property to be able to state.
 
 Envelope bytes, stored as one `bytea`:
 
@@ -100,6 +100,8 @@ Envelope bytes, stored as one `bytea`:
      29     n  ciphertext
    29+n    16  Poly1305 tag
 ```
+
+*Amended (2026-10-12, wire spec):* an event envelope is at most 65,536 bytes, a ceiling the clients enforce; the API enforces only the calendar-metadata envelope's 4,096 (`spec/crypto.md` §1.1). The epoch is capped at 2,147,483,647, the range of the database's `integer` columns.
 
 Sidecar table keyed `(calendar_id, uid, recurrence_id, envelope_sha256)`, written and read only by clients. `recurrence_id` is `NULL` for the master and set per override, because overrides are separate `VEVENT`s sharing a `UID` — get this wrong and an edited instance of a recurring event shows the master's title.
 
@@ -218,3 +220,12 @@ Applied in place above, each marked where it changes the text:
 ### Owner's ruling (2026-10-12)
 
 - **`UID` values on Private calendars**: a create in a Private calendar needs a lowercase UUIDv4 `UID` and the object name `<uid>.ics`, and an `RRULE` takes no `X-` rule part (§ Private calendars — cryptography, skeleton contents; E03-R09's table; E03-R11). It closes the leak E03-R09's second review found: the allow-list does not inspect values, so `UID:Chemo with Dr Smith` would be stored and copied into every index that names the object.
+
+### The wire spec, accepted by the owner (2026-10-12)
+
+`spec/crypto.md` (E12-R01) defines every byte of the formats above. Accepting it amends this ADR in four places, each marked above:
+
+- **The AAD's timing fields** bind `TZID` and wall clock, not the UTC instant; `RDATE` and `EXDATE` are not bound.
+- **The recovery-code wrap** is an AEAD under the HKDF KEK, not a sealed box; sealed boxes stay for CCK records and device linking.
+- **The event-envelope ceiling** (65,536 bytes) is enforced by the clients only.
+- **The Dart library** is `sodium`, not the discontinued `sodium_libs` (E12-R02).
