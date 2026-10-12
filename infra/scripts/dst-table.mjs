@@ -22,10 +22,10 @@
 // - a case whose kind its own zone contradicts (a "skipped" time that exists, a
 //   "control" whose zone transitions that day, a cross-zone case where both or
 //   neither zone switched);
-// - a `daily-skipped` case that does not carry `"ruling": "pending"` with its
-//   `alternative` instants, or whose two readings agree: RFC 5545 § 3.3.10
-//   says both things, so the table marks the contested cases instead of
-//   hiding them;
+// - a `daily-skipped` case whose instants are not the owner's reading of RFC
+//   5545 § 3.3.10 (`docs/02` § Recurrence, 2026-10-12: an instance at a local
+//   time that does not exist is kept, counted, and read with the offset before
+//   the gap), or that has no instance in a gap and so tests nothing;
 // - a `view-zone` case that does not carry `expectedLocal`, the wall clock the
 //   viewer in `input.viewZone` must show, or whose value is not what ICU reads
 //   there.
@@ -142,20 +142,11 @@ const KEYS = [
   'id',
   'zone',
   'kind',
-  'ruling',
   'input',
   'expected',
-  'alternative',
   'expectedLocal',
   'rfc',
 ];
-
-/**
- * The only ruling a contested `daily-skipped` case may carry: the two readings
- * of RFC 5545 § 3.3.10 disagree, so no client may call that kind green until a
- * human rules (see `spec/ical-fixtures/dst/README.md`).
- */
-export const RULING = 'pending';
 
 /**
  * @typedef {object} CaseInput
@@ -170,10 +161,8 @@ export const RULING = 'pending';
  * @property {string} id
  * @property {string} zone
  * @property {string} kind
- * @property {string} [ruling] `'pending'` on every contested `daily-skipped` case.
  * @property {CaseInput} input
  * @property {string[]} expected
- * @property {string[]} [alternative] The other § 3.3.10 reading; `daily-skipped` only.
  * @property {string} [expectedLocal] The viewer's wall clock; `view-zone` only.
  * @property {{section: string, rule: string}} rfc
  */
@@ -561,34 +550,6 @@ export function shapeProblems(cases) {
           problems.push(
             `${label}: expected ${value} is not a real UTC instant`,
           );
-    const contested = item.kind === 'daily-skipped';
-    if (contested) {
-      if (item.ruling !== RULING)
-        problems.push(
-          `${label}: a daily-skipped case must carry "ruling": "${RULING}" — the two readings of RFC 5545 § 3.3.10 are contested`,
-        );
-      if (!Array.isArray(item.alternative) || item.alternative.length === 0)
-        problems.push(
-          `${label}: a daily-skipped case must carry alternative, the other § 3.3.10 reading`,
-        );
-      else {
-        for (const value of item.alternative)
-          if (instantSeconds(value) === null)
-            problems.push(
-              `${label}: alternative ${value} is not a real UTC instant`,
-            );
-        if (
-          Array.isArray(item.expected) &&
-          item.alternative.length !== item.expected.length
-        )
-          problems.push(
-            `${label}: alternative must name one instant per expected instant (${item.alternative.length} vs ${item.expected.length})`,
-          );
-      }
-    } else if (item.ruling !== undefined || item.alternative !== undefined)
-      problems.push(
-        `${label}: only a daily-skipped case may carry ruling and alternative`,
-      );
     if (item.kind === 'view-zone') {
       if (localSeconds(item.expectedLocal) === null)
         problems.push(
@@ -605,13 +566,11 @@ export function shapeProblems(cases) {
       if (typeof rfc.rule !== 'string' || rfc.rule.trim().length < 20)
         problems.push(`${label}: rfc.rule must paraphrase the rule`);
       else if (
-        contested &&
-        !(
-          rfc.rule.includes('MUST NOT be counted') && rfc.rule.includes('3.3.5')
-        )
+        item.kind === 'daily-skipped' &&
+        !(rfc.rule.includes('3.3.5') && rfc.rule.includes('docs/02'))
       )
         problems.push(
-          `${label}: rfc.rule must cite both sentences of RFC 5545 § 3.3.10 — the ignored instance and the § 3.3.5 interpretation`,
+          `${label}: rfc.rule must cite the § 3.3.5 interpretation and the owner's ruling in docs/02 § Recurrence`,
         );
     }
   }
@@ -784,10 +743,11 @@ function nthSunday(year, month, week) {
 /**
  * Daily instances from a local start, each keeping the wall clock of
  * `DTSTART`. `keepGaps` picks one of the two readings of RFC 5545 § 3.3.10:
- * `false` is the table's `expected` — an instance whose local time does not
- * exist produces no instance and does not spend one of `count` — and `true` is
- * the section's closing paragraph — the same instance, read per § 3.3.5 (the
- * offset before the gap) and counted, which is `alternative`.
+ * `true` is the owner's ruling and the table's `expected` (the section's
+ * closing paragraph: an instance whose local time does not exist is read per
+ * § 3.3.5, with the offset before the gap, and counted), and `false` is the
+ * section's first paragraph (no instance, and none of `count` spent), which
+ * the oracle keeps only to show that a case crosses a gap at all.
  * @param {string} zone @param {number} localStart @param {number} count
  * @param {boolean} keepGaps
  * @returns {string[]}
@@ -871,7 +831,7 @@ export function oracleProblems(cases) {
         const gap = firstGap(zone, local, rule.count);
         if (gap) problems.push(`${label}: ${gap} does not exist in ${zone}`);
       }
-      computed = dailyInstances(zone, local, rule.count, false);
+      computed = dailyInstances(zone, local, rule.count, true);
     } else if (kind === 'all-day') {
       const date = input.date;
       const viewZone = input.viewZone;
@@ -899,17 +859,10 @@ export function oracleProblems(cases) {
       const local = localSeconds(input.dtstart);
       const rule = input.rrule;
       if (local !== null && rule) {
-        const kept = dailyInstances(zone, local, rule.count, true);
-        if (kept.join(',') === (computed ?? []).join(','))
+        const dropped = dailyInstances(zone, local, rule.count, false);
+        if (dropped.join(',') === (computed ?? []).join(','))
           problems.push(
             `${label}: the two readings of RFC 5545 § 3.3.10 give the same instants, so the case tests nothing`,
-          );
-        if (
-          Array.isArray(item.alternative) &&
-          item.alternative.join(',') !== kept.join(',')
-        )
-          problems.push(
-            `${label}: alternative ${item.alternative.join(' ')} but the § 3.3.5 reading gives ${kept.join(' ')}`,
           );
       }
     }

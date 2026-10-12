@@ -43,18 +43,18 @@
 //     An `RDATE` is not bounded by `UNTIL` (§ 3.3.10 bounds the rule only), and
 //     an `RDATE` that names a rule instance is that one occurrence, not two.
 //
-// ## The pending ruling of E15-R02
+// ## The ruling on RFC 5545 § 3.3.10
 //
 // RFC 5545 § 3.3.10 contradicts itself on a recurrence instance whose computed
 // local time does not exist (its note says such an instance "MUST be ignored and
 // MUST NOT be counted"; its closing paragraph reads it like an explicit
-// DATE-TIME). The owner has not ruled, so the DST table carries both readings.
-// `KEEP_NONEXISTENT_INSTANCES` below is the one switch: at `true` the instance
-// is kept and read with the offset before the gap (the table's `alternative`,
-// and what `sabre/vobject` does, so a stock app and our own app agree); at
-// `false` it is dropped — and it still spends its `COUNT`, because the library
-// counted it, which is the table's `expected`. A single `DTSTART` at such a
-// time is never affected: § 3.3.5 form 3 reads it either way.
+// DATE-TIME). The owner ruled on 2026-10-12 (`docs/02` § Recurrence): the
+// instance is kept, counted, and read with the offset before the gap, which is
+// the DST table's `expected` and what `sabre/vobject` does, so a stock app and
+// our own app agree. `KEEP_NONEXISTENT_INSTANCES` below is the one switch; at
+// `false` the instance would be dropped and still spend its `COUNT`, because
+// the library counted it. A single `DTSTART` at such a time is never affected:
+// § 3.3.5 form 3 reads it either way.
 //
 // ## The two rule families `ical.js` expands wrongly
 //
@@ -120,10 +120,10 @@ const UNKNOWN_ZONE = 'unknown-zone';
 const RULE_NOT_EXPANDED = 'rrule-not-expanded';
 
 /**
- * The owner's pending ruling on RFC 5545 § 3.3.10 (see the header): `true` keeps
- * an instance whose computed local time does not exist, read with the offset
- * before the gap. It is the whole of the switch — the other reading drops the
- * instance below and nothing else changes.
+ * The owner's ruling on RFC 5545 § 3.3.10 of 2026-10-12 (see the header):
+ * `true` keeps an instance whose computed local time does not exist, read with
+ * the offset before the gap. It is the whole of the switch — the other reading
+ * drops the instance below and nothing else changes.
  */
 export const KEEP_NONEXISTENT_INSTANCES = true;
 

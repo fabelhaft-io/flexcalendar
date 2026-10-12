@@ -540,11 +540,11 @@ test('an expansion that does not stop inside the bound is unsupported, not an an
   assert.ok(MAX_INSTANCES > 0);
 });
 
-test('the pending ruling: an instance at a local time that does not exist is kept', () => {
+test('the ruling: an instance at a local time that does not exist is kept', () => {
   // Berlin's spring gap, 2026-03-29, daily 02:30. `KEEP_NONEXISTENT_INSTANCES`
-  // is the one switch: this suite pins the reading it selects — the DST table's
-  // `alternative`, which `sabre/vobject` shares — so the owner's decision is a
-  // one-line change and one test edit.
+  // is the one switch, and this suite pins the reading the owner ruled on
+  // 2026-10-12 (`docs/02` § Recurrence): the DST table's `expected`, which
+  // `sabre/vobject` shares.
   assert.equal(KEEP_NONEXISTENT_INSTANCES, true);
   const result = expandOccurrences(
     [
@@ -925,7 +925,7 @@ test('a floating master and its override match on the wall clock, not an instant
 
 test('an instance in a spring gap is bounded by `UNTIL` by its instant', () => {
   // Berlin's spring gap is 2026-03-29: 02:30 does not exist there, and the
-  // pending ruling reads it with the offset before it, 01:30Z.
+  // owner's ruling reads it with the offset before it, 01:30Z.
   /** @param {string} until */
   const expand = (until) => {
     const result = expandOccurrences(

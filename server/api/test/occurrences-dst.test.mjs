@@ -19,14 +19,12 @@
 //   * `all-day` — the occurrence is in a window of exactly
 //     `[expected[0], expected[1])` and out of the windows one day before and
 //     after it, which is the only form in which a `DATE` has instants;
-//   * `daily-skipped` — `expected` **or** `alternative` is accepted, which one
-//     matched is reported with `t.diagnostic`, and the case is marked `todo`:
-//     RFC 5545 § 3.3.10 contradicts itself here, the ruling is `pending` in the
-//     table, and a runner must neither fail it nor call it green
-//     (`spec/ical-fixtures/dst/README.md`). The module's reading is
-//     `KEEP_NONEXISTENT_INSTANCES` in `src/occurrences.mjs`, and the API takes
-//     the table's `alternative` — the reading `sabre/vobject` shares, so a stock
-//     app and our own app show the same instance.
+//   * `daily-skipped` — the occurrences equal `expected`, the owner's ruling on
+//     RFC 5545 § 3.3.10 (`docs/02` § Recurrence, 2026-10-12): the instance at a
+//     local time that does not exist is kept, counted, and read with the offset
+//     before the gap — the reading `sabre/vobject` shares, so a stock app and
+//     our own app show the same instance. The module's switch is
+//     `KEEP_NONEXISTENT_INSTANCES` in `src/occurrences.mjs`.
 //
 // A table this suite cannot read — an unknown kind, a duplicate id, a case
 // without its RFC citation, a kind that vanished — fails the shape test below,
@@ -154,10 +152,9 @@ const objectsFor = (c) => [
   { href: `/calendars/c/${c.id}.ics`, ical: objectFor(c) },
 ];
 
-/** Every instant the case accepts, which is the window that has to hold them. */
+/** Every instant the case expects, which is the window that has to hold them. */
 function span(/** @type {any} */ c) {
-  const all = [...c.expected, ...(c.alternative ?? [])];
-  const sorted = [...all].sort();
+  const sorted = [...c.expected].sort();
   return { min: sorted[0], max: sorted[sorted.length - 1] };
 }
 
@@ -172,10 +169,8 @@ test('the table is the one E15-R02 owns and every case is one this runner reads'
     assert.equal(typeof c.zone, 'string', `${c.id}: no zone`);
     assert.equal(typeof c.rfc?.section, 'string', `${c.id}: no rfc.section`);
     assert.equal(typeof c.rfc?.rule, 'string', `${c.id}: no rfc.rule`);
-    if (c.kind === 'daily-skipped') {
-      assert.equal(c.ruling, 'pending', `${c.id}: no pending ruling`);
-      assert.ok(Array.isArray(c.alternative), `${c.id}: no alternative`);
-    }
+    // The ruling settled § 3.3.10, so no case carries a second reading.
+    assert.ok(!('alternative' in c), `${c.id}: a leftover alternative`);
   }
   for (const kind of KINDS)
     assert.ok(
@@ -185,7 +180,7 @@ test('the table is the one E15-R02 owns and every case is one this runner reads'
 });
 
 for (const c of TABLE.cases) {
-  test(`dst ${c.id}`, (t) => {
+  test(`dst ${c.id}`, () => {
     const objects = objectsFor(c);
 
     if (c.kind === 'all-day') {
@@ -238,27 +233,6 @@ for (const c of TABLE.cases) {
       assert.deepEqual(got, c.expected);
       assert.equal(result.occurrences[0].start.local, c.expectedLocal);
       assert.equal(result.occurrences[0].start.tzid, c.input.viewZone);
-      return;
-    }
-
-    if (c.kind === 'daily-skipped') {
-      const matched = [c.expected, c.alternative].findIndex(
-        (/** @type {string[]} */ one) =>
-          JSON.stringify(one) === JSON.stringify(got),
-      );
-      // The reading, never a number: the case is reported either way, so the
-      // owner's ruling can be checked against what the API actually does.
-      t.diagnostic(
-        matched === 0
-          ? 'matched expected (the section note: the instance is ignored)'
-          : matched === 1
-            ? 'matched alternative (the closing paragraph: it is kept)'
-            : `matched neither: ${JSON.stringify(got)}`,
-      );
-      assert.ok(matched >= 0, `${c.id}: neither reading matched`);
-      t.todo(
-        'RFC 5545 § 3.3.10 is contested; the ruling of this case is pending',
-      );
       return;
     }
 

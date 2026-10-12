@@ -12,7 +12,6 @@ import { test } from 'node:test';
 import {
   CONTROL_DATES,
   KINDS,
-  RULING,
   TRANSITIONS,
   YEARS,
   ZONES,
@@ -145,22 +144,21 @@ test('every declared transition matches ICU, and controls have none', () => {
   assert.deepEqual(factProblems(), []);
 });
 
-test('the contested cases carry their pending ruling and both readings', () => {
-  const contested = cases.filter((item) => item.kind === 'daily-skipped');
-  assert.ok(contested.length > 0, 'the table must carry the contested kind');
-  for (const item of contested) {
-    assert.equal(item.ruling, RULING, item.id);
-    assert.ok(item.alternative, item.id);
-    assert.equal(item.alternative.length, item.expected.length, item.id);
-    assert.notDeepEqual(item.alternative, item.expected, item.id);
-    assert.match(item.rfc.rule, /MUST NOT be counted/, item.id);
+test('the daily-skipped cases follow the ruling: one answer, the gap instance counted', () => {
+  const skipped = cases.filter((item) => item.kind === 'daily-skipped');
+  assert.equal(
+    skipped.length,
+    8,
+    'the table must carry the daily-skipped kind',
+  );
+  for (const item of skipped) {
+    // The owner ruled on 2026-10-12 (docs/02 § Recurrence), so no case is
+    // contested any more: one list, and COUNT spends the gap instance.
+    assert.ok(!('ruling' in item) && !('alternative' in item), item.id);
+    assert.equal(item.expected.length, item.input.rrule?.count, item.id);
     assert.match(item.rfc.rule, /3\.3\.5/, item.id);
+    assert.match(item.rfc.rule, /docs\/02/, item.id);
   }
-  for (const item of cases)
-    if (item.kind !== 'daily-skipped') {
-      assert.equal(item.ruling, undefined, item.id);
-      assert.equal(item.alternative, undefined, item.id);
-    }
 });
 
 test('every view-zone case pins the wall clock its viewer shows', () => {
@@ -247,48 +245,30 @@ test('shape: an unknown kind, zone, key or input fails', () => {
   }
 });
 
-test('shape: a daily-skipped case without its ruling or alternative fails', () => {
-  const unruled = byKind('daily-skipped');
-  delete unruled.ruling;
+test('shape: a leftover ruling or alternative, or a rule without the ruling, fails', () => {
+  const stale = /** @type {any} */ (byKind('daily-skipped'));
+  stale.ruling = 'pending';
+  stale.alternative = [...stale.expected];
+  const problems = shapeProblems([stale]);
   assert.ok(
-    shapeProblems([unruled]).some((line) =>
-      line.includes('must carry "ruling": "pending"'),
-    ),
-    shapeProblems([unruled]).join('\n'),
+    problems.some((line) => line.includes('unknown key ruling')),
+    problems.join('\n'),
+  );
+  assert.ok(
+    problems.some((line) => line.includes('unknown key alternative')),
+    problems.join('\n'),
   );
 
-  const settled = byKind('daily-skipped');
-  settled.ruling = 'settled';
+  const uncited = byKind('daily-skipped');
+  uncited.rfc = {
+    section: 'RFC 5545 § 3.3.10',
+    rule: 'RFC 5545 § 3.3.10: such recurrence instances MUST be ignored and MUST NOT be counted.',
+  };
   assert.ok(
-    shapeProblems([settled]).some((line) =>
-      line.includes('must carry "ruling": "pending"'),
+    shapeProblems([uncited]).some((line) =>
+      line.includes("the owner's ruling in docs/02"),
     ),
-  );
-
-  const unpaired = byKind('daily-skipped');
-  delete unpaired.alternative;
-  assert.ok(
-    shapeProblems([unpaired]).some((line) =>
-      line.includes('must carry alternative'),
-    ),
-    shapeProblems([unpaired]).join('\n'),
-  );
-
-  const short = byKind('daily-skipped');
-  assert.ok(short.alternative);
-  short.alternative = short.alternative.slice(0, 3);
-  assert.ok(
-    shapeProblems([short]).some((line) =>
-      line.includes('one instant per expected instant'),
-    ),
-  );
-
-  const onAnotherKind = byKind('daily-existing');
-  onAnotherKind.ruling = 'pending';
-  assert.ok(
-    shapeProblems([onAnotherKind]).some((line) =>
-      line.includes('only a daily-skipped case'),
-    ),
+    shapeProblems([uncited]).join('\n'),
   );
 });
 
@@ -443,22 +423,18 @@ test('oracle: a repeated local time given its second occurrence fails', () => {
   );
 });
 
-test('oracle: counting a skipped recurrence instance fails', () => {
+test('oracle: the reading the ruling set aside fails', () => {
   const original = byKind('daily-skipped');
   const mutated = structuredClone(original);
-  const local = atLocal(dtstart(mutated));
-  // The gap instance (two days after DTSTART), read with the offset after the
-  // gap: exactly what a client produces when it counts the instance the RFC
-  // says to ignore.
-  const gapDay = local + 2 * 86400;
-  const counted = formatInstant(gapDay - offsetOf(mutated.zone, gapDay));
+  // RFC 5545 § 3.3.10's first paragraph: no gap instance, and COUNT reaches
+  // one day further. The owner ruled the other way (docs/02 § Recurrence).
+  const last = atInstant(original.expected[original.expected.length - 1]);
   mutated.expected = [
-    original.expected[0],
-    original.expected[1],
-    counted,
-    ...original.expected.slice(2),
+    ...original.expected.slice(0, 2),
+    ...original.expected.slice(3),
+    formatInstant(last + 86400),
   ];
-  assert.equal(mutated.expected.length, 6);
+  assert.equal(mutated.expected.length, original.expected.length);
   const failures = oracleProblems([mutated]);
   assert.ok(
     failures.some(
@@ -468,16 +444,19 @@ test('oracle: counting a skipped recurrence instance fails', () => {
   );
 });
 
-test('oracle: a wrong alternative fails', () => {
-  const mutated = byKind('daily-skipped');
-  assert.ok(mutated.alternative, mutated.id);
-  const third = atInstant(mutated.alternative[2]);
-  mutated.alternative[2] = formatInstant(third + 3600);
+test('oracle: the gap instance read with the offset after the gap fails', () => {
+  const original = byKind('daily-skipped');
+  const mutated = structuredClone(original);
+  const local = atLocal(dtstart(mutated));
+  // The gap instance (two days after DTSTART), read with the offset after the
+  // gap: what `ical.js` answers, an hour earlier than the ruling.
+  const gapDay = local + 2 * 86400;
+  mutated.expected[2] = formatInstant(gapDay - offsetOf(mutated.zone, gapDay));
+  assert.notEqual(mutated.expected[2], original.expected[2]);
   const failures = oracleProblems([mutated]);
   assert.ok(
     failures.some(
-      (line) =>
-        line.startsWith(`${mutated.id}:`) && line.includes('alternative'),
+      (line) => line.startsWith(`${mutated.id}:`) && line.includes(DISAGREES),
     ),
     failures.join('\n'),
   );
@@ -491,7 +470,6 @@ test('oracle: a daily-skipped case with no gap to skip fails', () => {
     rrule: { freq: 'DAILY', count: 3 },
   };
   flat.expected = ['20260326T210000Z', '20260327T210000Z', '20260328T210000Z'];
-  flat.alternative = [...flat.expected];
   assert.ok(
     oracleProblems([flat]).some((line) =>
       line.includes('give the same instants'),
