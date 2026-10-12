@@ -55,6 +55,7 @@ import {
 import { createCalDavAdapter } from './caldav/adapter.mjs';
 import { registerCalendarRoutes } from './calendars.mjs';
 import { registerChangeRoutes } from './changes.mjs';
+import { registerEnvelopeRoutes } from './envelopes.mjs';
 import { registerEventRoutes } from './events.mjs';
 import { registerOccurrenceRoutes } from './occurrence-routes.mjs';
 import { readConfig } from './config.mjs';
@@ -184,6 +185,28 @@ const noCalendars = {
 };
 
 /**
+ * An envelope store with no database: the sidecar routes answer a 500 through
+ * the error handler rather than pretending an envelope exists.
+ */
+const noEnvelopes = {
+  async insert() {
+    throw new Error('no database configured');
+  },
+  async list() {
+    throw new Error('no database configured');
+  },
+  async deleteSuperseded() {
+    throw new Error('no database configured');
+  },
+  async listStaleBefore() {
+    throw new Error('no database configured');
+  },
+  async deleteExact() {
+    throw new Error('no database configured');
+  },
+};
+
+/**
  * The CalDAV adapter, built on first use. Building it validates the origin and
  * the delegation keys, so a service that cannot reach CalDAV still boots and
  * answers its readiness probe; the first request that needs CalDAV is the one
@@ -247,6 +270,7 @@ function createRateLimitHook(app, options) {
  * @param {ReturnType<typeof readConfig>} [options.config] defaults to the environment
  * @param {{findBySubject: Function, createFirstSight: Function}} [options.store]
  * @param {{listForMember: Function, findMembership: Function, createPrivate: Function, replaceMeta: Function, remove: Function, deletedUidsBetween: (calendarId: string, from: string, to: string) => Promise<{uid: string}[]>}} [options.calendars]
+ * @param {{insert: Function, list: Function, deleteSuperseded: Function, listStaleBefore: Function, deleteExact: Function}} [options.envelopes] the sidecar rows (E13-R02)
  * @param {{forUser: any}} [options.caldav] the CalDAV adapter; built from the environment on first use, and typed where its methods are used (`src/calendars.mjs`, `src/events.mjs`, `src/changes.mjs`)
  * @param {{verify: Function, userinfo: Function}} [options.oidc]
  * @param {{current: Function, refresh: Function}} [options.audience]
@@ -257,6 +281,7 @@ export function buildApp({
   config = readConfig(),
   store,
   calendars,
+  envelopes,
   caldav,
   oidc,
   audience,
@@ -353,6 +378,7 @@ export function buildApp({
     config,
     store: store ?? noDatabase,
     calendars: calendars ?? noCalendars,
+    envelopes: envelopes ?? noEnvelopes,
     caldav: caldav ?? createLazyAdapter(),
     oidc:
       oidc ??
@@ -390,6 +416,7 @@ export function buildApp({
   registerCalendarRoutes(app, dependencies);
   registerEventRoutes(app, dependencies);
   registerChangeRoutes(app, dependencies);
+  registerEnvelopeRoutes(app, dependencies);
   registerOccurrenceRoutes(app, dependencies);
 
   // An unknown path is a 404; a known path under a method it does not register

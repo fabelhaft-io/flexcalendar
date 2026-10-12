@@ -48,6 +48,12 @@ const AUDIENCE = 'project-id';
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HASH = 'b'.repeat(64);
+/**
+ * The hash of a re-sealed envelope. A patch that moves `start` or `end` carries
+ * one, because both are bound into the envelope's AAD (`spec/crypto.md` §2.2,
+ * E13-R02).
+ */
+const RESEALED_HASH = 'c'.repeat(64);
 
 /** The two users this suite owns, by the subject their token carries. */
 const RUN = randomUUID();
@@ -291,6 +297,7 @@ test('create, read back byte for byte, patch on the right precondition, delete',
       {
         start: { utc: '20301231T235900Z' },
         end: { utc: '20301231T235959Z' },
+        envelopeSha256: RESEALED_HASH,
       },
       { 'if-match': '"stale"' },
     );
@@ -325,6 +332,7 @@ test('create, read back byte for byte, patch on the right precondition, delete',
         start: { utc: '20261014T110000Z' },
         end: { utc: '20261014T113000Z' },
         alarm: null,
+        envelopeSha256: RESEALED_HASH,
       },
       { 'if-match': event.etag },
     );
@@ -333,7 +341,10 @@ test('create, read back byte for byte, patch on the right precondition, delete',
     assert.equal(valueOf(after.ical, 'DTSTART'), '20261014T110000Z');
     assert.equal(valueOf(after.ical, 'DTEND'), '20261014T113000Z');
     assert.equal(valueOf(after.ical, 'SEQUENCE'), '1');
-    assert.equal(valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'), HASH);
+    assert.equal(
+      valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'),
+      RESEALED_HASH,
+    );
     assert.equal(valueOf(after.ical, 'TRIGGER'), undefined);
     assert.equal(after.parsed.sequence, 1);
     assert.notEqual(after.etag, event.etag);
@@ -419,7 +430,10 @@ test('a TZID event with its VTIMEZONE is accepted by the live write guard', asyn
       'a',
       'PATCH',
       `/calendars/${calendarId}/events/${event.uid}`,
-      { end: { local: '20261014T120000', tzid: 'Europe/Berlin' } },
+      {
+        end: { local: '20261014T120000', tzid: 'Europe/Berlin' },
+        envelopeSha256: RESEALED_HASH,
+      },
       { 'if-match': event.etag },
     );
     assert.equal(patched.statusCode, 200, patched.body);

@@ -25,8 +25,19 @@ export const ENVELOPE_VERSION = 0x01;
 /** Version byte, epoch uint32, 24-byte nonce, 16-byte tag. */
 export const ENVELOPE_FIXED_BYTES = 45;
 
-/** The ceiling from the requirement: an envelope larger than this is refused. */
+/**
+ * The metadata envelope's ceiling (D-18): an envelope larger than this is
+ * refused. A calendar's name and colour are a few dozen bytes.
+ */
 export const MAX_ENVELOPE_BYTES = 4096;
+
+/**
+ * The event envelope's ceiling (`spec/crypto.md` §1.1,
+ * `MAX_EVENT_ENVELOPE_BYTES`): 65,536 bytes. The clients enforce it too, but a
+ * server-side check is what keeps one client from storing a blob the others
+ * would refuse to open, so E13-R02 enforces it here as well.
+ */
+export const MAX_EVENT_ENVELOPE_BYTES = 65_536;
 
 /** Standard base64, padded, no whitespace and no URL-safe alphabet. */
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -40,17 +51,19 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 export const MAX_EPOCH = 2_147_483_647;
 
 /**
- * The metadata envelope `value` carries as standard base64, or undefined when
- * it is not one this service can store. `epoch` is the request's `metaEpoch`.
+ * One envelope `value` carries as standard base64, or undefined when it is not
+ * one this service can store under a `ceiling`. `epoch` is the epoch the
+ * request carries beside it.
  *
  * Only the encoded string is read here; a caller passes the decoded bytes on to
  * the store, so nothing else in the service has to know the layout.
  *
- * @param {unknown} value the request's `metaEnvelope`
- * @param {unknown} epoch the request's `metaEpoch`
+ * @param {unknown} value the request's envelope, standard base64
+ * @param {unknown} epoch the epoch the request carries beside it
+ * @param {number} ceiling the largest blob this kind of envelope may be
  * @returns {Buffer | undefined}
  */
-export function decodeMetaEnvelope(value, epoch) {
+function decodeEnvelope(value, epoch, ceiling) {
   if (typeof value !== 'string' || value === '') return undefined;
   if (!isEpoch(epoch)) return undefined;
   // Length first: a non-canonical length cannot be a padded base64 string, and
@@ -61,10 +74,35 @@ export function decodeMetaEnvelope(value, epoch) {
   // two spellings of the same bytes cannot become two rows.
   if (bytes.toString('base64') !== value) return undefined;
   if (bytes.length < ENVELOPE_FIXED_BYTES) return undefined;
-  if (bytes.length > MAX_ENVELOPE_BYTES) return undefined;
+  if (bytes.length > ceiling) return undefined;
   if (bytes[0] !== ENVELOPE_VERSION) return undefined;
   if (bytes.readUInt32BE(1) !== epoch) return undefined;
   return bytes;
+}
+
+/**
+ * The calendar-metadata envelope (D-18): `decodeEnvelope` under the metadata
+ * ceiling. `epoch` is the request's `metaEpoch`.
+ *
+ * @param {unknown} value the request's `metaEnvelope`
+ * @param {unknown} epoch the request's `metaEpoch`
+ * @returns {Buffer | undefined}
+ */
+export function decodeMetaEnvelope(value, epoch) {
+  return decodeEnvelope(value, epoch, MAX_ENVELOPE_BYTES);
+}
+
+/**
+ * The event envelope of E13-R02: the same header and the same canonical-base64
+ * rule, under the 65,536-byte ceiling of `spec/crypto.md` §1.1. `epoch` is the
+ * request's `epoch`, and it has to be the epoch the header carries.
+ *
+ * @param {unknown} value the request's `envelope`
+ * @param {unknown} epoch the request's `epoch`
+ * @returns {Buffer | undefined}
+ */
+export function decodeEventEnvelope(value, epoch) {
+  return decodeEnvelope(value, epoch, MAX_EVENT_ENVELOPE_BYTES);
 }
 
 /**

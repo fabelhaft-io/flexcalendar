@@ -86,6 +86,12 @@ const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 /** A well-formed envelope hash for the sidecar envelope of E13-R02. */
 const HASH = 'a'.repeat(64);
+/**
+ * The hash of a **re-sealed** envelope: what a patch that moves `DTSTART` or
+ * the end has to carry, because both are bound into the envelope's AAD
+ * (`spec/crypto.md` §2.2). The stored object's hash stays `HASH` until then.
+ */
+const RESEALED_HASH = 'b'.repeat(64);
 const STAMP = '20261014T090000Z';
 /** The stored object whose master has an override beside it (E15-R01 corpus). */
 const OVERRIDE_UID = '5d6c7b8a-9012-4ef3-8abc-0123456789ab';
@@ -412,6 +418,9 @@ test('a TZID event carries its VTIMEZONE through create, read and patch', async 
       headers: { 'if-match': stored.etag },
       payload: {
         end: { local: '20261014T060000', tzid: 'America/New_York' },
+        // The end is bound into the envelope's AAD, so moving it needs a
+        // re-sealed envelope's hash (E13-R02).
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(patched.statusCode, 200, patched.body);
@@ -501,7 +510,10 @@ test('a stored zone the resolver cannot read survives a patch that leaves the ti
       url,
       subject: 'owner',
       headers: { 'if-match': stored.etag },
-      payload: { start: { utc: '20300601T120000Z' } },
+      payload: {
+        start: { utc: '20300601T120000Z' },
+        envelopeSha256: RESEALED_HASH,
+      },
     });
     assert.equal(refused.statusCode, 422, refused.body);
     assertProblem(refused.json(), 'invalid-input');
@@ -520,6 +532,7 @@ test('a stored zone the resolver cannot read survives a patch that leaves the ti
       payload: {
         start: { utc: '20300601T120000Z' },
         end: { utc: '20300601T130000Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(replaced.statusCode, 200, replaced.body);
@@ -652,8 +665,11 @@ test('every create refusal is one 422 with a fixed body, and none of them reache
         'attendees on a Private calendar',
         createBody({ attendees: ['mailto:a@example.test'] }),
       ],
+      // A Private create may name its `UID` (the envelope's AAD binds it, D-14),
+      // but only as the lowercase UUIDv4 the API itself writes (INV-03).
+      ['a uid that is not a uuidv4', createBody({ uid: 'Not-A-Uuid' })],
+      ['a uid of another shape', createBody({ uid: CANARY })],
       // The recurrence itself never comes from a client (INV-05).
-      ['a uid', createBody({ uid: randomUUID() })],
       ['an exdate', createBody({ exdate: '20261021T090000Z' })],
       ['a recurrenceId', createBody({ recurrenceId: '20261021T090000Z' })],
       ['a mode', createBody({ mode: 'private' })],
@@ -854,6 +870,8 @@ test('a patch needs If-Match, forwards it, and changes only what it was asked to
         start: { utc: '20261014T110000Z' },
         end: { utc: '20261014T113000Z' },
         alarm: null,
+        // Moving a bound time needs a re-sealed envelope's hash (E13-R02).
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(patched.statusCode, 200, patched.body);
@@ -861,7 +879,10 @@ test('a patch needs If-Match, forwards it, and changes only what it was asked to
     assert.match(after.ical, /^DTSTART:20261014T110000Z$/m);
     assert.match(after.ical, /^DTEND:20261014T113000Z$/m);
     assert.ok(!/^BEGIN:VALARM$/m.test(after.ical), 'the alarm was not removed');
-    assert.equal(valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'), HASH);
+    assert.equal(
+      valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'),
+      RESEALED_HASH,
+    );
     // The revision moved, so `SEQUENCE` and `DTSTAMP` did too.
     assert.match(after.ical, /^SEQUENCE:1$/m);
     assert.equal(after.parsed.sequence, 1);
@@ -904,6 +925,7 @@ test('a patch of a master leaves the overrides and every other property untouche
       payload: {
         start: { utc: '20261021T100000Z' },
         end: { utc: '20261021T110000Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(response.statusCode, 200, response.body);
@@ -941,6 +963,7 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
       payload: {
         start: { utc: '20301231T235900Z' },
         end: { utc: '20301231T235959Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(response.statusCode, 412, response.body);
@@ -997,6 +1020,7 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
       payload: {
         start: { utc: '20301231T235900Z' },
         end: { utc: '20301231T235959Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(raced.statusCode, 404, raced.body);
@@ -1374,7 +1398,9 @@ test('only a valid start/end pair is written, on a create and against the stored
         url,
         subject: 'owner',
         headers: { 'if-match': stored.etag },
-        payload,
+        // Each patch moves a bound time, so it carries the re-sealed envelope's
+        // hash and it is the start/end rule that refuses it (E13-R02).
+        payload: { ...payload, envelopeSha256: RESEALED_HASH },
       });
       assert.equal(response.statusCode, 422, `${what}: ${response.body}`);
       assertProblem(response.json(), 'invalid-input');
@@ -1399,6 +1425,7 @@ test('only a valid start/end pair is written, on a create and against the stored
       payload: {
         start: { utc: '20261014T110000Z' },
         end: { utc: '20261014T113000Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(moved.statusCode, 200, moved.body);

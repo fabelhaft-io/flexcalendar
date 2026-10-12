@@ -84,6 +84,7 @@ import { problemResponse, sendCalDavProblem, sendProblem } from './problem.mjs';
  * ignored: a misspelled `alarm` must not look like a successful write.
  */
 const CREATE_MEMBERS = [
+  'uid',
   'start',
   'end',
   'rrule',
@@ -96,12 +97,15 @@ const CREATE_MEMBERS = [
 ];
 
 /**
- * The fields a patch takes: the create list without `rrule` — a change to a
- * recurring event is an intent (E05-R06/R07). `uid`, `exdate` and `recurrenceId`
- * are outside it for the same reason: no request body ever carries the
- * recurrence itself (INV-05).
+ * The fields a patch takes: the create list without `rrule` and without `uid`.
+ * A change to a recurring event is an intent (E05-R06/R07), and the `UID` never
+ * changes — it is the object's name, the sidecar key and the envelope's AAD —
+ * so `exdate` and `recurrenceId` are outside the list for the same reason: no
+ * request body ever carries the recurrence or the identity (INV-05).
  */
-const UPDATE_MEMBERS = CREATE_MEMBERS.filter((member) => member !== 'rrule');
+const UPDATE_MEMBERS = CREATE_MEMBERS.filter(
+  (member) => member !== 'rrule' && member !== 'uid',
+);
 
 /** The fields that hold event content, which a Private calendar stores sealed. */
 const CONTENT_MEMBERS = ['summary', 'description', 'location', 'attendees'];
@@ -368,6 +372,35 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
   }
 
   /**
+   * The `uid` a create writes. A Private create may name it: a client seals the
+   * envelope before it writes the skeleton, the envelope's AAD binds the `UID`
+   * (D-14) and an offline create needs it before it reconnects (E10-R06), so
+   * the `UID` cannot always be minted here. What a client sends is validated
+   * exactly as a path parameter is — the lowercase UUIDv4 of INV-03 — and a
+   * value outside that shape is the fixed 422 **before CalDAV is asked**
+   * (E03-R11). A calendar that is not Private keeps minting: its objects are
+   * the stock apps' and may name any `UID` (INV-03).
+   *
+   * @param {import('fastify').FastifyRequest} request
+   * @param {import('fastify').FastifyReply} reply
+   * @param {unknown} requested the body's `uid`, if it has one
+   * @param {any} membership
+   * @returns {string | undefined}
+   */
+  function uidFor(request, reply, requested, membership) {
+    if (requested === undefined) return randomUUID();
+    if (
+      membership.mode !== 'private' ||
+      typeof requested !== 'string' ||
+      !UUID_V4.test(requested)
+    ) {
+      invalidInput(reply, request);
+      return undefined;
+    }
+    return requested;
+  }
+
+  /**
    * The rules a body has to satisfy on this calendar, before anything is
    * written. `false` means "refused, the reply is already sent".
    * @param {import('fastify').FastifyRequest} request
@@ -448,8 +481,10 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
         return undefined;
       }
 
-      // INV-03: the `UID` is minted here, random, never derived from content.
-      const uid = randomUUID();
+      // INV-03: the `UID` is a random UUIDv4. A Private client that sealed its
+      // envelope first named it, so it is validated rather than minted here.
+      const uid = uidFor(request, reply, body.uid, membership);
+      if (uid === undefined) return undefined;
       /** @type {any} */
       let calendar;
       const built = applyFields(request, reply, () => {
@@ -601,6 +636,32 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
           return undefined;
         }
         throw error;
+      }
+      // A Private skeleton's envelope is sealed over the times the skeleton
+      // spells — `DTSTART` and the end are bound into the envelope's AAD
+      // (`spec/crypto.md` §2.2) — so a patch that moves one of them without a
+      // **new** `envelopeSha256` would leave an envelope nothing can open. The
+      // refusal names the bound property, never a value, and the re-sealed
+      // envelope the client sends replaces the hash this patch writes.
+      if (membership.mode === 'private') {
+        /** @type {string | undefined} */
+        const moved =
+          body.start !== undefined
+            ? 'DTSTART'
+            : body.end !== undefined
+              ? 'DTEND'
+              : undefined;
+        if (
+          moved !== undefined &&
+          (body.envelopeSha256 === undefined ||
+            body.envelopeSha256 === before.envelopeSha256)
+        ) {
+          sendProblem(reply, 'invalid-input', {
+            instance: request.id,
+            property: moved,
+          });
+          return undefined;
+        }
       }
       /** @type {Record<string, unknown>} */
       const changes = {};

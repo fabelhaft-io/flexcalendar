@@ -137,6 +137,38 @@ const TOKEN = /^([0-9a-f-]{36}):(0|[1-9]\d{0,17})$/;
 const OBJECT_SUFFIX = '.ics';
 
 /**
+ * A token this API minted, decoded: the calendar it names and the number
+ * SabreDAV reported for it. `undefined` for anything else — a value that is
+ * not a string, a string outside the alphabet, a body that does not decode to
+ * exactly `<calendar id>:<number>`.
+ *
+ * It is module scope, and exported, because E13-R02's envelope read reads the
+ * same cursor: one token, one meaning, whichever route a client sends it to.
+ * @param {unknown} value
+ * @returns {{calendarId: string, number: string} | undefined}
+ */
+export function decodeChangeToken(value) {
+  if (typeof value !== 'string' || !TOKEN_ALPHABET.test(value)) {
+    return undefined;
+  }
+  const decoded = Buffer.from(value, 'base64url').toString('utf8');
+  const match = TOKEN.exec(decoded);
+  return match === null
+    ? undefined
+    : { calendarId: match[1], number: match[2] };
+}
+
+/**
+ * The token for a point in a collection. The number is canonical decimal
+ * (never a JS float), so base64url of the text is what the client stores.
+ * @param {string} calendarId
+ * @param {string} number
+ */
+export function changeToken(calendarId, number) {
+  return Buffer.from(`${calendarId}:${number}`).toString('base64url');
+}
+
+/**
  * A refusal every rule of this module shares: one status, one type, one body.
  * @param {import('fastify').FastifyReply} reply
  * @param {import('fastify').FastifyRequest} request
@@ -316,34 +348,6 @@ export function registerChangeRoutes(app, { store, oidc, calendars, caldav }) {
   }
 
   /**
-   * A token this API minted, decoded: the calendar it names and the number
-   * SabreDAV reported for it. `undefined` for anything else — a value that is
-   * not a string, a string outside the alphabet, a body that does not decode to
-   * exactly `<calendar id>:<number>`.
-   * @param {unknown} value
-   * @returns {{calendarId: string, number: string} | undefined}
-   */
-  function readSince(value) {
-    if (typeof value !== 'string' || !TOKEN_ALPHABET.test(value)) {
-      return undefined;
-    }
-    const decoded = Buffer.from(value, 'base64url').toString('utf8');
-    const match = TOKEN.exec(decoded);
-    return match === null
-      ? undefined
-      : { calendarId: match[1], number: match[2] };
-  }
-
-  /**
-   * The token for a point in a collection. The number is canonical decimal
-   * (never a JS float), so base64url of the text is what the client stores.
-   * @param {string} calendarId
-   * @param {string} number
-   */
-  const mint = (calendarId, number) =>
-    Buffer.from(`${calendarId}:${number}`).toString('base64url');
-
-  /**
    * One change entry, or `undefined` when this API cannot name its `uid` (a
    * tombstone whose object name is not the `UID` and that the outbox cannot
    * resolve).
@@ -388,7 +392,7 @@ export function registerChangeRoutes(app, { store, oidc, calendars, caldav }) {
       // client built itself never reaches the service, not even to be refused
       // there. A malformed one and another calendar's are the same 410.
       const raw = /** @type {{since?: unknown}} */ (request.query).since;
-      const since = raw === undefined ? undefined : readSince(raw);
+      const since = raw === undefined ? undefined : decodeChangeToken(raw);
       if (
         raw !== undefined &&
         (since === undefined || since.calendarId !== calendarId)
@@ -477,7 +481,7 @@ export function registerChangeRoutes(app, { store, oidc, calendars, caldav }) {
         if (entry !== undefined) changes.push(entry);
       }
 
-      return { token: mint(calendarId, number), changes };
+      return { token: changeToken(calendarId, number), changes };
     },
   );
 }

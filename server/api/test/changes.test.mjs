@@ -291,7 +291,12 @@ test('a create, an update and a delete between two tokens', async () => {
       url: `/calendars/${calendarId}/events/${updated.uid}`,
       subject: 'owner',
       headers: { 'if-match': updated.etag },
-      payload: { start: { utc: '20261014T083000Z' } },
+      // A moved time is bound into the envelope's AAD, so the patch carries a
+      // re-sealed envelope's hash (E13-R02).
+      payload: {
+        start: { utc: '20261014T083000Z' },
+        envelopeSha256: 'b'.repeat(64),
+      },
     });
     assert.equal(patch.statusCode, 200, patch.body);
     const after = patch.json();
