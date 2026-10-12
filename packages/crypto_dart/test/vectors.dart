@@ -158,6 +158,74 @@ void reportVectors(String fileName, List<Vector> vectors) {
   );
 }
 
+/// The structured recurrence id a vector's `inputs` describe, in the shape the API
+/// reports it in.
+///
+/// A vector spells `recurrence_id` as the canonical §5.2 value: `""` for the
+/// master, `YYYYMMDD` for an all-day occurrence, an instant otherwise. The library
+/// takes the value the API hands a client, so this maps one to the other.
+RecurrenceId? recurrenceInput(Vector vector) {
+  final canonical = vector.text('recurrence_id');
+  if (canonical.isEmpty) return null;
+  if (_compactDate.hasMatch(canonical)) return recurrenceIdOfDate(canonical);
+  return RecurrenceId.utc(canonical);
+}
+
+/// §5.2's `YYYYMMDD` as the dashed date the API reports.
+RecurrenceId recurrenceIdOfDate(String compact) => RecurrenceId.date(
+  '${compact.substring(0, 4)}-${compact.substring(4, 6)}-'
+  '${compact.substring(6, 8)}',
+);
+
+final RegExp _compactDate = RegExp(r'^\d{8}$');
+
+/// The structured recurrence id a canonical-timing vector spells as one content
+/// line beside its §3 timing fields.
+///
+/// The library never reads that line — a client addresses an occurrence with the id
+/// the API reported (INV-05) — so the vectors' split happens here: the one line that
+/// is neither a §3 timing field nor the extra-date line §2.6 leaves out of the AAD
+/// is the override's.
+RecurrenceId? skeletonRecurrenceInput(Vector vector) {
+  final lines = (vector.inputs['skeleton_properties'] as List).cast<String>();
+  final others = <IcalProperty>[];
+  for (final line in lines) {
+    final property = IcalProperty.parse(line);
+    if (!_timingFields.contains(property.name)) others.add(property);
+  }
+  if (others.isEmpty) return null;
+  if (others.length > 1) {
+    throw StateError(
+      '$vector spells ${others.length} lines beside §3\'s timing fields; this '
+      'helper expects at most one override',
+    );
+  }
+  return _recurrenceInputOfField(others.single);
+}
+
+/// §3's timing fields, plus the extra-date line §2.6 keeps out of the AAD.
+const Set<String> _timingFields = {
+  'UID',
+  'DTSTART',
+  'DTEND',
+  'DURATION',
+  'RRULE',
+  'RDATE',
+};
+
+/// The structured form of one parsed date/date-time content line, read by shape:
+/// the API's `date`, `local` beside its `tzid`, or `utc`.
+RecurrenceId _recurrenceInputOfField(IcalProperty property) {
+  if ((property.params['VALUE'] ?? '').toUpperCase() == 'DATE') {
+    return recurrenceIdOfDate(property.value);
+  }
+  final tzid = property.params['TZID'];
+  if (tzid != null) return RecurrenceId.local(property.value, tzid: tzid);
+  if (property.value.endsWith('Z')) return RecurrenceId.utc(property.value);
+  // The floating form, which §5.2 refuses and a negative vector pins.
+  return RecurrenceId.local(property.value);
+}
+
 /// Lowercase hex to bytes, refusing anything else.
 Uint8List hexToBytes(String value) {
   if (value.length.isOdd || !RegExp(r'^[0-9a-f]*$').hasMatch(value)) {

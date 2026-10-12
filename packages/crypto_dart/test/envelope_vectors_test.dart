@@ -18,7 +18,7 @@ EventSkeleton eventSkeletonOf(Vector vector) => EventSkeleton(
   dtstart: vector.text('dtstart'),
   end: vector.text('end'),
   rrule: vector.text('rrule'),
-  recurrenceId: vector.text('recurrence_id'),
+  recurrenceId: recurrenceInput(vector),
 );
 
 void main() {

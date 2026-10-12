@@ -31,7 +31,7 @@ vectors pin.
 |---|---|
 | `sealEvent` / `openEvent`, `sealCalendarMetadata` / `openCalendarMetadata` | §1 |
 | `EventSkeleton` / `CalendarSkeleton`, `frame`, the label and ceiling constants | §2 |
-| `CanonicalTiming.fromProperties`, `canonicalTimeField`, `canonicalDuration`, `canonicalRrule`, `canonicalRecurrenceId`, `instantOf` | §3, §5.2 |
+| `CanonicalTiming.fromProperties`, `canonicalTimeField`, `canonicalDuration`, `canonicalRrule`, `RecurrenceId`, `canonicalRecurrenceId`, `instantOf` | §3, §5.2 |
 | `jcsSerialise` / `jcsEncode`, `serialisePayload`, `validatePayload` | §4 |
 | `envelopeSha256Hex`, `verifyEnvelopeSha256` | §5.1 |
 | `CryptoError` / `CryptoException` | §0.3 |
@@ -56,12 +56,17 @@ parameter.
   and 6 bind the `TZID` and the wall clock, so a tzdata update cannot make stored
   envelopes unreadable (§3.5). The `timezone` package (ADR 0002) is used only
   where a real instant is needed: §5.2's canonical `recurrence_id` of a zoned
-  `RECURRENCE-ID`, and §3.4's cross-check. §3.4's answer is RFC 5545's, which is
+  occurrence, and §3.4's cross-check. §3.4's answer is RFC 5545's, which is
   *not* what `timezone` computes by itself (it follows Java and Joda): the
   pre-transition offset for both the spring gap and the autumn overlap is
   selected explicitly.
-- **`RDATE`/`EXDATE` are not bound** (§2.6): the AAD has no field for them, and
-  the vectors prove the master's AAD is unchanged when the skeleton gains them.
+- **The recurrence id is a value, never a parsed line.** An override's id reaches
+  the library as a `RecurrenceId` — the `date`, `utc` or `local`+`tzid` object the
+  API reports (E05) — and the library computes §5.2's canonical field from it. The
+  library never names or parses the stored property, because a client addresses an
+  occurrence with the id the server gave it and never writes one itself (INV-05).
+- **The extra-date line is not bound** (§2.6): the AAD has no field for it, and
+  the vectors prove the master's AAD is unchanged when the skeleton gains it.
 - **Dependencies:** `sodium` 4.1.1+2 (XChaCha20-Poly1305 and the CSPRNG; E12-R02
   found `sodium_libs` is discontinued and only re-exports it), `timezone` 0.11.2
   (`TZID` handling, ADR 0002) and `crypto` 3.0.7 (SHA-256 for §5.1). `sodium`

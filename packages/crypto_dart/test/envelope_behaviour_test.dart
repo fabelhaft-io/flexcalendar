@@ -182,7 +182,7 @@ void main() {
               dtstart: duplicate.text('dtstart'),
               end: duplicate.text('end'),
               rrule: duplicate.text('rrule'),
-              recurrenceId: duplicate.text('recurrence_id'),
+              recurrenceId: recurrenceInput(duplicate),
             ),
           ),
         ),

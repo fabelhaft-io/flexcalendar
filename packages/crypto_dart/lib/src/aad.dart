@@ -85,25 +85,29 @@ class EventSkeleton {
     required this.dtstart,
     required this.end,
     required this.rrule,
-    this.recurrenceId = '',
+    this.recurrenceId,
   });
 
   /// Builds the skeleton from the skeleton's iCalendar content lines (§3).
   ///
-  /// `RECURRENCE-ID` is optional (its absence is the master), `DTSTART` and `UID`
-  /// are not.
+  /// [recurrenceId] is optional — its absence is the master — and `DTSTART` and
+  /// `UID` in the lines are not.
   factory EventSkeleton.fromProperties({
     required String calendarId,
     required List<String> properties,
+    RecurrenceId? recurrenceId,
   }) {
-    final timing = CanonicalTiming.fromProperties(properties);
+    final timing = CanonicalTiming.fromProperties(
+      properties,
+      recurrenceId: recurrenceId,
+    );
     return EventSkeleton(
       calendarId: calendarId,
       uid: timing.uid,
       dtstart: timing.dtstart,
       end: timing.end,
       rrule: timing.rrule,
-      recurrenceId: timing.recurrenceId,
+      recurrenceId: recurrenceId,
     );
   }
 
@@ -122,8 +126,13 @@ class EventSkeleton {
   /// Canonical `RRULE`, or the literal `none` (§3.3).
   final String rrule;
 
-  /// Canonical `RECURRENCE-ID`; empty for the master (§5.2).
-  final String recurrenceId;
+  /// The override this envelope belongs to, as the API reports it; absent for the
+  /// master (§5.2).
+  ///
+  /// It is a [RecurrenceId], never the stored property text: a client addresses an
+  /// occurrence with the value the API gave it (INV-05), and the canonical §5.2
+  /// field of the AAD is computed from it here.
+  final RecurrenceId? recurrenceId;
 
   /// The seven fields of §2.2, bound to [epoch].
   Uint8List aad(int epoch) {
@@ -138,7 +147,7 @@ class EventSkeleton {
     return frame(eventAadLabel, [
       utf8.encode(calendarId),
       utf8.encode(uid),
-      utf8.encode(recurrenceId),
+      utf8.encode(canonicalRecurrenceId(recurrenceId)),
       utf8.encode(epoch.toString()),
       utf8.encode(dtstart),
       utf8.encode(end),

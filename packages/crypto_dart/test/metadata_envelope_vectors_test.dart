@@ -105,7 +105,7 @@ void _open(Vector vector) {
             dtstart: vector.text('dtstart'),
             end: vector.text('end'),
             rrule: vector.text('rrule'),
-            recurrenceId: vector.text('recurrence_id'),
+            recurrenceId: recurrenceInput(vector),
           ),
         )
       : openCalendarMetadata(

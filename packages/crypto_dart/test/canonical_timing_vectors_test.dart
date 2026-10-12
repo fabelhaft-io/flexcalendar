@@ -4,7 +4,7 @@
 /// The AAD binds a zoned time as its `TZID` and its wall clock, so a tzdata
 /// update cannot make stored envelopes unreadable. `instants` in `expected` is
 /// §3.4's cross-check of the RFC 5545 answer for the same value: it is asserted
-/// here too, through the same code that converts a zoned `RECURRENCE-ID`.
+/// here too, through the same code that converts a zoned recurrence id.
 library;
 
 import 'package:crypto_dart/crypto_dart.dart';
@@ -26,15 +26,22 @@ void main() {
       test('${vector.id} — ${vector.purpose}', () {
         final properties = (vector.inputs['skeleton_properties'] as List)
             .cast<String>();
+        final recurrenceId = skeletonRecurrenceInput(vector);
         if (vector.isNegative) {
           expectRefusal(
             vector.pinnedError,
-            () => CanonicalTiming.fromProperties(properties),
+            () => CanonicalTiming.fromProperties(
+              properties,
+              recurrenceId: recurrenceId,
+            ),
             '${vector.id} canonical_timing',
           );
           return;
         }
-        final timing = CanonicalTiming.fromProperties(properties);
+        final timing = CanonicalTiming.fromProperties(
+          properties,
+          recurrenceId: recurrenceId,
+        );
         final expected = vector.expected;
         expect(timing.dtstart, expected['dtstart'], reason: 'AAD field 5');
         expect(timing.end, expected['end'], reason: 'AAD field 6');

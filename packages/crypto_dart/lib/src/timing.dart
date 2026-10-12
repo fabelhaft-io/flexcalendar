@@ -11,7 +11,7 @@
 /// The AAD binds a zoned time as its `TZID` and its **wall clock**, never an
 /// instant a zone database computes (§3.5): a tzdata update must not make stored
 /// envelopes unreadable. A zone database is still needed for §3.4's answers — the
-/// canonical `recurrence_id` of a zoned `RECURRENCE-ID` is converted to UTC — so
+/// canonical `recurrence_id` of a zoned recurrence id is converted to UTC — so
 /// those conversions go through the `timezone` package (ADR 0002).
 library;
 
@@ -139,13 +139,21 @@ class CanonicalTiming {
   /// AAD field 7: `rrule:…` or the literal `none`.
   final String rrule;
 
-  /// §5.2's canonical `RECURRENCE-ID`: empty for the master, `YYYYMMDD` for a
-  /// `DATE`, or a UTC instant.
+  /// §5.2's canonical `recurrence_id`: empty for the master, `YYYYMMDD` for an
+  /// all-day occurrence, or a UTC instant.
   final String recurrenceId;
 
   /// §3's fields of the skeleton in [properties] (a list of iCalendar content
-  /// lines).
-  factory CanonicalTiming.fromProperties(List<String> properties) {
+  /// lines), and §5.2's canonical `recurrence_id` of [recurrenceId].
+  ///
+  /// [recurrenceId] is the structured value the API reports for the occurrence —
+  /// `GET …/occurrences` and the parsed event view carry it — never a content
+  /// line: a client addresses an occurrence with the id the server gave it and
+  /// never writes one itself (INV-05). It is absent for the master.
+  factory CanonicalTiming.fromProperties(
+    List<String> properties, {
+    RecurrenceId? recurrenceId,
+  }) {
     final lines = <String, String>{};
     for (final line in properties) {
       final parsed = IcalProperty.parse(line);
@@ -198,21 +206,17 @@ class CanonicalTiming {
       dtstart: canonicalTimeField(start.params, start.value),
       end: end,
       rrule: rrule,
-      recurrenceId: canonicalRecurrenceId(lines),
+      recurrenceId: canonicalRecurrenceId(recurrenceId),
     );
   }
 }
 
 /// AAD field 5/6 of one `DTSTART`/`DTEND`-shaped property (§3.1, §3.2).
 ///
-/// [floating] is the code a `DATE-TIME` with neither `Z` nor `TZID` gets: §3.1
-/// refuses a floating `DTSTART`/`DTEND` with `E_UNSUPPORTED` (INV-04), while §5.2
-/// refuses a floating `RECURRENCE-ID` with `E_SKELETON`.
-String canonicalTimeField(
-  Map<String, String> params,
-  String value, {
-  CryptoError floating = CryptoError.unsupported,
-}) {
+/// A `DATE-TIME` with neither `Z` nor `TZID` is floating and refused with
+/// `E_UNSUPPORTED` (INV-04); a recurrence id that carries no zone is refused too,
+/// by [canonicalRecurrenceId] (§5.2).
+String canonicalTimeField(Map<String, String> params, String value) {
   if ((params['VALUE'] ?? '').toUpperCase() == 'DATE') {
     return 'date:${_checkDate(value)}';
   }
@@ -238,7 +242,10 @@ String canonicalTimeField(
   if (value.endsWith('Z')) {
     return 'utc:${_checkInstant(value)}';
   }
-  throw CryptoException(floating, 'a floating DATE-TIME has no AAD field');
+  throw const CryptoException(
+    CryptoError.unsupported,
+    'a floating DATE-TIME has no AAD field',
+  );
 }
 
 /// §3.2.1's duration: components exactly as parsed, no carrying, no leading `+`,
@@ -481,30 +488,104 @@ String canonicalRrule(String text) {
   return out.join(';');
 }
 
-/// §5.2's canonical `recurrence_id` of a skeleton's `RECURRENCE-ID`, if any.
-String canonicalRecurrenceId(Map<String, String> lines) {
-  if (!lines.containsKey('RECURRENCE-ID')) return '';
-  final property = IcalProperty.parse(lines['RECURRENCE-ID']!);
-  if (property.name != 'RECURRENCE-ID') {
+/// One occurrence's recurrence id, in the shape the API reports it to a client.
+///
+/// `GET …/occurrences` and the parsed event view carry exactly these forms for an
+/// occurrence an override replaces, and nothing at all for a master: an all-day
+/// date, an instant, or a wall clock beside the zone it is written in. It is what
+/// an edit intent sends back to address one occurrence — a client never writes
+/// the stored property itself (INV-05, §5.2).
+class RecurrenceId {
+  /// An all-day occurrence: `YYYY-MM-DD`, the spelling the API reports.
+  const RecurrenceId.date(this.value) : tzid = null, _form = _Form.date;
+
+  /// An instant: `YYYYMMDDTHHMMSSZ`.
+  const RecurrenceId.utc(this.value) : tzid = null, _form = _Form.utc;
+
+  /// A wall clock (`YYYYMMDDTHHMMSS`) beside the zone it is written in.
+  ///
+  /// Without a [tzid] this is the floating form §5.2 refuses, and
+  /// [canonicalRecurrenceId] raises `E_SKELETON` for it rather than reading the
+  /// clock as UTC.
+  const RecurrenceId.local(this.value, {this.tzid}) : _form = _Form.local;
+
+  /// The API's `recurrenceId` object, as its own clients parse it.
+  ///
+  /// The map may carry more than one field: the API reports a zoned occurrence as
+  /// `local`, `tzid` **and** the instant that reading names. The wall clock and its
+  /// zone decide, because §5.2's canonical value is computed from them with §3.4's
+  /// answers, not from an instant some other library computed for them.
+  factory RecurrenceId.fromJson(Map<String, Object?> json) {
+    final local = json['local'];
+    final tzid = json['tzid'];
+    if (local is String && tzid is String) {
+      return RecurrenceId.local(local, tzid: tzid);
+    }
+    final utc = json['utc'];
+    if (utc is String) return RecurrenceId.utc(utc);
+    if (local is String) return RecurrenceId.local(local);
+    final date = json['date'];
+    if (date is String) return RecurrenceId.date(date);
     throw const CryptoException(
       CryptoError.skeleton,
-      'a RECURRENCE-ID is spelled wrong',
+      'a recurrence id with no date, instant or wall clock',
     );
   }
-  final field = canonicalTimeField(
-    property.params,
-    property.value,
-    floating: CryptoError.skeleton,
-  );
-  if (field.startsWith('date:')) return field.substring('date:'.length);
-  final instant = instantOf(field);
-  if (instant == null) {
+
+  /// The date, instant or wall clock, spelled as the API spells it.
+  final String value;
+
+  /// The zone a [RecurrenceId.local] reading is written in, when the API names
+  /// one.
+  final String? tzid;
+
+  final _Form _form;
+}
+
+enum _Form { date, utc, local }
+
+/// §5.2's canonical `recurrence_id`: `''` for the master, `YYYYMMDD` for an
+/// all-day occurrence, a UTC instant otherwise.
+///
+/// A wall clock beside its zone is converted with §3.4's answers — the offset in
+/// force *before* a gap or an overlap — so one occurrence has one value and one
+/// sidecar key whichever way the stored object spells it. A reading with no zone,
+/// or with a zone the database does not know, is `E_SKELETON`: §5.2 refuses to
+/// read a local clock as UTC.
+String canonicalRecurrenceId(RecurrenceId? recurrenceId) {
+  if (recurrenceId == null) return '';
+  switch (recurrenceId._form) {
+    case _Form.date:
+      return _checkDate(_compactDate(recurrenceId.value));
+    case _Form.utc:
+      return _checkInstant(recurrenceId.value);
+    case _Form.local:
+      final tzid = recurrenceId.tzid;
+      if (tzid == null) {
+        throw const CryptoException(
+          CryptoError.skeleton,
+          'a recurrence id that carries no zone has no canonical value',
+        );
+      }
+      return instantOfZoned(tzid, recurrenceId.value);
+  }
+}
+
+/// `YYYY-MM-DD`, the spelling the API reports a date in, as §5.2's `YYYYMMDD`.
+///
+/// The shape is checked here; [_checkDate] then refuses a date that is not a date.
+String _compactDate(String value) {
+  final pieces = value.split('-');
+  if (pieces.length != 3 ||
+      pieces[0].length != 4 ||
+      pieces[1].length != 2 ||
+      pieces[2].length != 2) {
     throw const CryptoException(
       CryptoError.skeleton,
-      'a RECURRENCE-ID must be a date or a date-time',
+      'a date must be YYYY-MM-DD',
     );
   }
-  return instant;
+  return '${pieces[0]}${pieces[1]}${pieces[2]}';
 }
 
 /// The UTC instant of a canonical §3 timing field, or `null` for a `date:` one.
@@ -534,7 +615,7 @@ String? instantOf(String field) {
 /// §3.4's answer for `TZID` + wall clock: `YYYYMMDDTHHMMSSZ`.
 ///
 /// A zone name the database does not know is `E_SKELETON` — §5.2 refuses a
-/// `RECURRENCE-ID` with no resolvable `TZID` rather than reading a local clock as
+/// recurrence id with no resolvable zone rather than reading a local clock as
 /// UTC.
 String instantOfZoned(String tzid, String local) {
   final wall = _wallClock(local);

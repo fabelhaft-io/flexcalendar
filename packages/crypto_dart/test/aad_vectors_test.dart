@@ -2,8 +2,8 @@
 ///
 /// The AAD is the only thing that binds an envelope to its calendar, its event,
 /// its override and its epoch, so every vector in the file matters: field order,
-/// the `lp32` framing, one field changed at a time, and `RDATE`/`EXDATE` sitting
-/// outside the AAD.
+/// the `lp32` framing, one field changed at a time, and the extra-date line §2.6
+/// keeps outside the AAD.
 library;
 
 import 'dart:typed_data';
@@ -98,7 +98,7 @@ Uint8List _aadOf(Vector vector) {
       dtstart: vector.text('dtstart'),
       end: vector.text('end'),
       rrule: vector.text('rrule'),
-      recurrenceId: vector.text('recurrence_id'),
+      recurrenceId: recurrenceInput(vector),
     ).aad(epoch);
   }
   return CalendarSkeleton(calendarId: vector.text('calendar_id')).aad(epoch);
@@ -168,10 +168,14 @@ void _buildAad(Vector vector) {
     final fromSkeleton = EventSkeleton.fromProperties(
       calendarId: vector.text('calendar_id'),
       properties: properties.cast<String>(),
+      recurrenceId: recurrenceInput(vector),
     );
     expect(_hex(fromSkeleton.aad(epoch)), expected['aad_hex']);
     expect(fromSkeleton.uid, vector.text('uid'));
-    expect(fromSkeleton.recurrenceId, vector.text('recurrence_id'));
+    expect(
+      canonicalRecurrenceId(fromSkeleton.recurrenceId),
+      vector.text('recurrence_id'),
+    );
     expect(fromSkeleton.dtstart, vector.text('dtstart'));
     expect(fromSkeleton.end, vector.text('end'));
     expect(fromSkeleton.rrule, vector.text('rrule'));
