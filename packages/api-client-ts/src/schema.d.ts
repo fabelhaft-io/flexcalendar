@@ -389,8 +389,6 @@ export interface components {
         };
         /** @description One stored object the expansion left out, with the reason. It is not an error: the rest of the window is answered as usual. */
         UnsupportedObject: {
-            /** @description The CalDAV path of the object, as the report named it. */
-            href: string;
             /** @description The `UID` of the master VEVENT of the object. */
             uid: string;
             /**

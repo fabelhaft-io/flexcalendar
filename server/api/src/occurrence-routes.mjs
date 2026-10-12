@@ -173,13 +173,9 @@ export const unsupportedSchema = {
   type: 'object',
   description:
     'One stored object the expansion left out, with the reason. It is not an error: the rest of the window is answered as usual.',
-  required: ['href', 'uid', 'reason'],
+  required: ['uid', 'reason'],
   additionalProperties: false,
   properties: {
-    href: {
-      type: 'string',
-      description: 'The CalDAV path of the object, as the report named it.',
-    },
     uid: {
       type: 'string',
       description: 'The `UID` of the master VEVENT of the object.',
