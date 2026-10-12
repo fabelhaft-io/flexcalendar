@@ -113,11 +113,18 @@ Two harnesses, both under `infra/dev/zitadel-role-eval/` (see its
   with the throwaway passwords filtered out. Every criterion that belongs to the container is
   therefore measured, not pending. Run 1's harness **did not run at all**: `lib.sh` re-assigned the
   `readonly` variables its caller had set (`PROJECT: readonly variable`) and a `printf` format began
-  with `-`; the reviewer patched a scratch copy to get these numbers, and this branch now carries the
-  fix, so the committed scripts reproduce them. The few things that still have not run are named in
-  [Open questions](#open-questions).
+  with `-`; the reviewer patched a scratch copy to get the 2026-10-12 numbers, and this branch
+  carries the fix.
 
-| Run | Log |
+  The reviewer then re-ran the **committed** scripts, unpatched, on 2026-10-12 (review 2, same host
+  Podman `6.1.3`, `./option-*.sh` with the committed `0755` modes). Those logs are under
+  [`infra/dev/zitadel-role-eval/results/2026-10-12-review-2/`](../../infra/dev/zitadel-role-eval/results/2026-10-12-review-2/):
+  they reproduce every number below unpatched, and they add the two baseline modes review 1 did not
+  run (`option-c.sh --starts 10`, `option-c.sh --upgrade`), which § 3 and § 6 use. Nothing a
+  container run can answer is unmeasured any more; [Open questions](#open-questions) names what is
+  left.
+
+| Run (review 1, patched scratch copy) | Log |
 |---|---|
 | `bash option-c.sh` | `results/2026-10-12/option-c.txt` |
 | `bash option-a.sh` | `results/2026-10-12/option-a.txt` |
@@ -128,6 +135,13 @@ Two harnesses, both under `infra/dev/zitadel-role-eval/` (see its
 | `bash option-a.sh --upgrade` | `results/2026-10-12/option-a-upgrade.txt` |
 | `bash option-b2.sh --upgrade` | `results/2026-10-12/option-b2-upgrade.txt` |
 | the eight runs in order | `results/2026-10-12/run.txt` |
+
+| Run (review 2, committed scripts, unpatched) | Log |
+|---|---|
+| `./option-c.sh`, `./option-a.sh`, `./option-b.sh` (expected to fail), `./option-b2.sh` | `results/2026-10-12-review-2/option-c.txt`, `option-a.txt`, `option-b.txt`, `option-b2.txt` |
+| `./option-c.sh --starts 10`, `./option-a.sh --starts 10`, `./option-b2.sh --starts 10` | `results/2026-10-12-review-2/option-c-starts.txt`, `option-a-starts.txt`, `option-b2-starts.txt` |
+| `./option-c.sh --upgrade`, `./option-a.sh --upgrade`, `./option-b2.sh --upgrade` | `results/2026-10-12-review-2/option-c-upgrade.txt`, `option-a-upgrade.txt`, `option-b2-upgrade.txt` |
+| the twelve runs in order | `results/2026-10-12-review-2/run.txt` |
 
 The harness removes its own `podman compose` project on every exit, failure included (an `EXIT`
 trap), and prints no password: the SQL client reads a `.pgpass` written inside the Postgres
@@ -242,7 +256,8 @@ role owns it (option B2/B) or because `zitadel init` grants `ALL` on it (option 
 shows the optional extra step that closes even the connection; E08-R11 may take it, and nothing
 depends on it.
 
-**In the container** (`option-c.txt`, `option-a.txt`, `option-b2.txt`). The same checks, run by the
+**In the container** (`option-c.txt`, `option-a.txt`, `option-b2.txt`; the review-2 rerun under
+`results/2026-10-12-review-2/` reproduces all three unpatched). The same checks, run by the
 reviewer inside the `podman compose` projects, on the images the pods really run. Option C:
 
 ```
@@ -329,7 +344,8 @@ sees an `ADMIN_*` variable. Option C: the runtime container *is* the admin.
   -> 2 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the runtime environment      (C)
 ```
 
-**In the container** (`option-a.txt`, `option-b2.txt`, `option-c.txt`) — the criterion as written.
+**In the container** (`option-a.txt`, `option-b2.txt`, `option-c.txt`; again reproduced by the
+review-2 rerun under `results/2026-10-12-review-2/`) — the criterion as written.
 `podman exec <cid> env` cannot answer it: the image has no `env`, no `ls` and no `sh` at all, so the
 script shows that failure and then reads the environment Podman gave the container:
 
@@ -369,9 +385,11 @@ start  1/10: rc=0 time_to_ready=4s          …   start 10/10: rc=0 time_to_read
 ### option b2: 10/10 first starts from an empty data directory reached /debug/ready (wall 92s)
 ```
 
-Options A and B2: **10/10**, 4–5 s each. Option C: one start measured, 5 s (`… c`).
+Options A and B2: **10/10**, 4–5 s each on the probe. Option C: one start on the probe, 5 s
+(`… c`) — and ten in the container below.
 
-**In the container** (`option-a-starts.txt`, `option-b2-starts.txt`) — the same loop in
+**In the container** (`option-a-starts.txt`, `option-b2-starts.txt`, and
+`option-c-starts.txt` from the review-2 rerun) — the same loop in
 `podman compose`, where `postgres:18-alpine`'s entrypoint race — a temporary server that listens on
 the Unix socket only, so a socket probe goes green before TCP clients are accepted — is part of what
 is being measured:
@@ -390,12 +408,24 @@ start 10/10: rc=0 time_to_ready=5s wall=5s
 $ bash option-b2.sh --starts 10         # results/2026-10-12/option-b2-starts.txt
 
 ### calflex-zre-b2: 10/10 first starts from an empty volume reached /debug/ready (wall 208s)
+$ bash option-c.sh --starts 10          # results/2026-10-12-review-2/option-c-starts.txt
+start 1/10: /debug/ready -> HTTP 200 after 5s
+start  1/10: rc=0 time_to_ready=5s wall=5s
+start 7/10: /debug/ready -> HTTP 200 after 4s
+start  7/10: rc=0 time_to_ready=4s wall=4s
+…                                                                 (2.–6./8.–10. all rc=0, 5 s each)
+start 10/10: /debug/ready -> HTTP 200 after 5s
+start 10/10: rc=0 time_to_ready=5s wall=5s
+
+### calflex-zre-c: 10/10 first starts from an empty volume reached /debug/ready (wall 149s)
 ```
 
-**20/20 cold starts reached `/debug/ready`** (10 for A, 10 for B2), 4–6 s each, and the entrypoint
-race did not appear in any of them. The healthcheck that gates `depends_on: service_healthy` probes
-TCP (`pg_isready --host 127.0.0.1`), so it does not go green on the bootstrap's temporary
-socket-only server. Option C was started once (5 s, § 1); `--starts 10` was not run for it.
+**30/30 cold starts reached `/debug/ready`** (10 each for A, B2 and the baseline C), 4–6 s each, and
+the entrypoint race did not appear in any of them. The healthcheck that gates
+`depends_on: service_healthy` probes TCP (`pg_isready --host 127.0.0.1`), so it does not go green on
+the bootstrap's temporary socket-only server. The baseline's ten starts are from the review-2 run
+(`results/2026-10-12-review-2/option-c-starts.txt`, best 4 s, worst 5 s, wall 149 s), which also
+re-ran the loop for A and B2 (10/10 each again, wall 159 s and 193 s).
 
 ### 4. Does the shape start at all?
 
@@ -504,7 +534,8 @@ ERROR … parent="initialize database failed: ERROR: permission denied to create
 -- 03_grant_user.sql GRANT ALL ON DATABASE "%[1]s" TO "%[2]s";
 ```
 
-**In the container, the other half of the same question** (`option-b2.txt`): `zitadel init zitadel`
+**In the container, the other half of the same question** (`option-b2.txt`, reproduced by the
+review-2 rerun): `zitadel init zitadel`
 — "initialize ZITADEL internals" — ran **as `calflex_zitadel`**, with no admin credentials anywhere,
 and exited 0 after creating everything `setup` needs:
 
@@ -557,8 +588,9 @@ The `v4.19.4` index digest was verified before the pull
 migrations actually running (`79_backfill_unique_constraint_owners` among them). So `setup` runs as
 the app role across a minor upgrade, with no admin rights — of either shape.
 
-**In the container** (`option-a-upgrade.txt`, `option-b2-upgrade.txt`): the same rehearsal with the
-images pulled from GHCR by Podman, which is what E08-R08 will do on staging.
+**In the container** (`option-a-upgrade.txt`, `option-b2-upgrade.txt`, and the review-2 rerun's
+`option-c-upgrade.txt`): the same rehearsal with the images pulled from GHCR by Podman, which is
+what E08-R08 will do on staging.
 
 ```
 $ bash option-a.sh --upgrade            # results/2026-10-12/option-a-upgrade.txt
@@ -574,11 +606,23 @@ $ bash option-b2.sh --upgrade           # results/2026-10-12/option-b2-upgrade.t
 pinned v4.16.0: /debug/ready -> HTTP 200 after 5s
 image tag for this run: v4.19.4
 upgrade v4.19.4: /debug/ready -> HTTP 200 after 2s
+$ bash option-c.sh --upgrade            # results/2026-10-12-review-2/option-c-upgrade.txt
+image tag for this run: v4.16.0
+pinned v4.16.0: /debug/ready -> HTTP 200 after 5s
+### upgrade rehearsal: same role, database created by v4.16.0, image v4.19.4
+image tag for this run: v4.19.4
++ podman compose -p calflex-zre-c up -d --force-recreate zitadel   # ZRE_IMAGE_TAG=v4.19.4
+upgrade v4.19.4: /debug/ready -> HTTP 200 after 2s
++ podman inspect --format '{{.Config.Cmd}} {{.Args}} {{.ImageName}}' fc8d553941d6…
+[start-from-init --masterkey ***] [start-from-init --masterkey ***] ghcr.io/zitadel/zitadel:v4.19.4
+-> 3 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the container
 ```
 
-Both shapes upgraded from the pinned `v4.16.0` to the newest v4 release (`v4.19.4`) as the runtime
-role, and the container still held 0 `ADMIN_*` variables afterwards. Option C's `--upgrade` was not
-run.
+All three shapes upgraded from the pinned `v4.16.0` to the newest v4 release (`v4.19.4`) as their
+runtime role, each ready within 1–2 s: 1 s for A and 2 s for B2 in the review-1 fence above, 1 s each
+for A and B2 and 2 s for C (as the superuser `zre_root`) in the review-2 rerun. Afterwards A and B2
+still held 0 `ADMIN_*` variables and **C still held 3** (`option-c-upgrade.txt`), the environment
+check from § 2 repeated after the upgrade.
 
 ## The criteria that are not measurements
 
@@ -676,27 +720,17 @@ default changes.
 
 ## Open questions
 
-1. **The container runs were made with a scratch-patched copy of the harness.** The eight runs in
-   `results/2026-10-12/` were produced with a copy patched to get the scripts past run 1's three bugs
-   (`lib.sh` re-assigning a `readonly` variable, a `printf` format starting with `-`, the missing
-   execute bit). This branch carries the fix, so before the owner accepts, the reviewer should
-   re-run the committed scripts and see the same numbers: `bash option-c.sh`, `bash option-a.sh`,
-   `bash option-b.sh`, `bash option-b2.sh`, `bash option-a.sh --starts 10`,
-   `bash option-b2.sh --starts 10`, `bash option-a.sh --upgrade`, `bash option-b2.sh --upgrade`.
-   The two modes never run for the baseline are worth adding: `bash option-c.sh --starts 10` and
-   `bash option-c.sh --upgrade`. No *shape* is unverified any more; what is unverified is that the
-   committed scripts reproduce those outputs.
-2. **`calflex_tofu`'s exact privileges are not measured.** The OpenTofu private-backend requirements
+1. **`calflex_tofu`'s exact privileges are not measured.** The OpenTofu private-backend requirements
    (whether it insists on creating the schema itself) have to be confirmed in E08-R11 by running
    `make zitadel-plan` with the new `PG_CONN_STR` against the local stack; the sandbox has no OpenTofu
    and no Podman.
-3. **Whether the shared `zitadel` database's owner should be the app role or the deploy step's admin
+2. **Whether the shared `zitadel` database's owner should be the app role or the deploy step's admin
    account** (option A leaves it with the admin, B2 with the app role). B2's ownership is what makes
    `init zitadel` work without a grant; if the owner is untouchable in production, `GRANT CREATE ON
    DATABASE zitadel TO calflex_zitadel` has to be added by the deploy step instead.
-4. **The first-start race is measured in the container now**: 20/20 across A and B2 (§ 3), with
-   `depends_on: service_healthy` in play. Still unmeasured: the baseline's `--starts 10`, and a start
-   under load or with a cold image cache.
-5. **`docs/00-overview.md` needs the ADR's one-line entry** under "Decision Records", and this
+3. **The first-start race is measured in the container now**: 30/30 across A, B2 and the baseline C
+   (§ 3), with `depends_on: service_healthy` in play. Still unmeasured: a start under load or with a
+   cold image cache.
+4. **`docs/00-overview.md` needs the ADR's one-line entry** under "Decision Records", and this
    repository's convention wants the decision reflected in `02` § Runtime layout. Both files are
    outside E08-R10's writable paths, so neither is touched here.
