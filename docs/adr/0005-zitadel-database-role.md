@@ -689,7 +689,7 @@ default changes.
 - **A new operational step exists**: a one-off init job that must run before the service on an empty
   cluster. Compose profiles and `make deploy` steps already carry that kind of job
   (`migrate`, `seed`, `zitadel-config`), so it adds no new concept.
-- **The ADR stays `Proposed`** until the owner accepts or amends it; E08-R11 waits for that.
+- **Accepted by the owner on 2026-10-12** (option B2, with A as the fallback); E08-R11 implements it.
   `docs/00-overview.md`'s "Decision Records" list needs the one-line entry, which is outside this
   requirement's writable paths.
 
