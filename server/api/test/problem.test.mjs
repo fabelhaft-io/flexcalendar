@@ -58,6 +58,10 @@ test('a status is normalised to the kind that declares it', () => {
   for (const slug of ['private-skeleton-only', 'unmapped-collection']) {
     assert.equal(PROBLEM_TYPES[slug].status, 403);
   }
+  // The two 422 kinds the routes choose by hand, beside the status-only one.
+  for (const slug of ['too-many-instances', 'window-too-large']) {
+    assert.equal(PROBLEM_TYPES[slug].status, 422);
+  }
   // An error thrown with an undocumented status becomes a documented one, and
   // an impossible status becomes a 500.
   assert.equal(problemForStatus(418), 'bad-request');
@@ -112,6 +116,19 @@ test('the CalDAV mapping covers every kind and never forwards a body', () => {
         'calendars/x/y/',
       ]),
       'unmapped-collection',
+    ],
+    // RFC 4791 § 5.3.2.1: a series over the collection's bound. The adapter
+    // reports the fixed element name; the mapping gives it a kind of its own.
+    [
+      new CalDavError('forbidden', 403, ['C:max-instances']),
+      'too-many-instances',
+    ],
+    [
+      new CalDavError('forbidden', 403, [
+        'C:max-instances',
+        'CALFLEX_EVENT_CONTENT_CANARY',
+      ]),
+      'too-many-instances',
     ],
   ];
   for (const [error, problem] of /** @type {[CalDavError, string][]} */ (

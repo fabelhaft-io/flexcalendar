@@ -50,6 +50,7 @@ export const PROBLEM_TYPES = {
     title: 'Unsupported media type',
   },
   'invalid-input': { status: 422, title: 'Rejected input' },
+  'too-many-instances': { status: 422, title: 'Too many instances' },
   'window-too-large': { status: 422, title: 'Window too large' },
   'precondition-required': {
     status: 428,
@@ -95,6 +96,8 @@ const NIL_UUID = '00000000-0000-4000-8000-000000000000';
 const SKELETON_PRECONDITION = 'cf:private-skeleton-only';
 /** …and the one an unmapped collection carries. */
 const UNMAPPED_PRECONDITION = 'cf:unmapped-collection';
+/** RFC 4791 § 5.3.2.1's `C:max-instances`, the bound a write crossed (E03-R12). */
+const MAX_INSTANCES_PRECONDITION = 'C:max-instances';
 /** The only shape of a property name the guard ever emits (E03-R09). */
 const PROPERTY_NAME = /^[A-Z][A-Z0-9-]{0,63}$/;
 
@@ -161,10 +164,10 @@ export function sendProblem(reply, slug, options = {}) {
 
 /**
  * The one kind per HTTP status. Three kinds share 403 — a generic refusal and
- * the two Private-write preconditions — and two share 422, the generic rejected
- * input and the occurrence window this API refuses for its size (E05-R05); only
- * the generic one of each is chosen by status alone, and the others are sent by
- * the route that means them.
+ * the two Private-write preconditions — and three share 422, the generic
+ * rejected input, the occurrence window this API refuses for its size (E05-R05)
+ * and the series too long to write (E03-R12); only the generic one of each is
+ * chosen by status alone, and the others are sent by the route that means them.
  */
 export const PROBLEM_STATUS = new Map([
   [400, 'bad-request'],
@@ -259,6 +262,13 @@ export function classifyCalDavError(error) {
     }
     if (preconditions.includes(UNMAPPED_PRECONDITION)) {
       return { problem: 'unmapped-collection' };
+    }
+    // RFC 4791 § 5.3.2.1: the object's series has more instances than the
+    // collection accepts. The occurrence endpoint reports the same cap on an
+    // object it expands as `too-many-instances` (E05-R05); this is that cap on a
+    // write (E03-R12).
+    if (preconditions.includes(MAX_INSTANCES_PRECONDITION)) {
+      return { problem: 'too-many-instances' };
     }
     return { problem: 'forbidden' };
   }

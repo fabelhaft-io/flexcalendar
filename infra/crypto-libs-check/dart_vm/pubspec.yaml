@@ -1,0 +1,24 @@
+name: crypto_libs_check_dart_vm
+description: >-
+  E12-R02 probe: the primitives ADR 0002 names, called for real on the Dart VM.
+  Run once and record the output in docs/verification/crypto-libs-2026-10-12.md.
+publish_to: none
+
+environment:
+  # The Dart inside the pinned Flutter 3.47.6 (apps/mobile/.fvmrc).
+  sdk: ^3.13.5
+
+dependencies:
+  # `sodium` 4.x builds its own libsodium from the source archive it vendors,
+  # through a build hook — there is no system-libsodium binding any more. The
+  # Flutter companion package `sodium_libs` is deprecated and only re-exports
+  # this one; see ../README.md.
+  sodium: 4.1.1+2
+  # Only for `bin/system_libsodium.dart`, which loads the host's libsodium with
+  # DynamicLibrary.open directly.
+  ffi: 2.2.0
+
+dev_dependencies:
+  # `test/checks_test.dart` exists to answer one question for E12-R01: does
+  # `dart test` honour the `sodium` build hook? (See ../README.md.)
+  test: ^1.32.0

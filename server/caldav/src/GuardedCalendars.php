@@ -107,7 +107,12 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
             return $result;
         } catch (\Throwable $exception) {
             $this->rollBack();
-            throw $exception;
+            // E03-R12: a series `sabre/vobject` cannot walk within the bound is
+            // RFC 4791's `403` `CALDAV:max-instances`, on every calendar mode,
+            // not a `500`. The walk runs before any row is written, and the
+            // rollback above covers the transaction, so the refusal stores
+            // nothing: no object row, no `calendarchanges` row, no outbox row.
+            throw MaxInstances::translate($exception);
         }
     }
 
@@ -125,7 +130,8 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
             return $result;
         } catch (\Throwable $exception) {
             $this->rollBack();
-            throw $exception;
+            // The same bound on a rewrite: the object is left as it was.
+            throw MaxInstances::translate($exception);
         }
     }
 
