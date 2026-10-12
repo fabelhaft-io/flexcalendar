@@ -76,6 +76,14 @@ verify-corpus: ## Run registered corpus checks against the local stack
 verify-%:
 	node infra/scripts/verify.mjs $*
 
+.PHONY: verify-mobile
+
+# E10-R01 names the app's gate `verify-mobile`. It is the `verify-%` component
+# gate for `apps-mobile` — `pub get`, `dart format --set-exit-if-changed`,
+# `flutter analyze --fatal-infos` and `flutter test` — not a second
+# implementation, so the two can never drift apart.
+verify-mobile: verify-apps-mobile
+
 .PHONY: host-tools
 
 # `make verify` and `make gen` need PHP, Composer, Flutter and Dart on PATH, and the

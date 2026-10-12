@@ -1,0 +1,94 @@
+# --- E08-R10 · option C: the status quo --------------------------------------
+#
+# Project `calflex-zre-c`, its own volume and network. Run through
+# `option-c.sh`; it never touches the `flexcalendar-dev` project.
+#
+# The shape the local stack has today: one login — the cluster superuser — is
+# the DSN user *and* the admin. `start-from-init` runs init, setup and start on
+# every start, as that login. Everything Zitadel touches is reachable, and so is
+# every other database in the cluster.
+#
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-c.txt): this
+# starts (ready after 5 s), the runtime role is a superuser that can read the
+# sibling `caldav` database, `CREATE ROLE` and `CREATE DATABASE`, and the
+# running container holds 3 `ZITADEL_DATABASE_POSTGRES_ADMIN_*` variables.
+#
+# The passwords are throwaway values for this throwaway cluster only.
+name: calflex-zre-c
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zre_root
+      POSTGRES_PASSWORD: zre-throwaway-root
+      POSTGRES_DB: caldav
+      ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
+      ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
+      ZRE_PREPROVISION: "false"
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --host 127.0.0.1 --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - stack
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:${ZRE_IMAGE_TAG:-v4.16.0}
+    restart: unless-stopped
+    command:
+      - start-from-init
+      - --masterkey
+      - ${ZRE_MASTERKEY:-MasterkeyNeedsToHave32Characters}
+    environment:
+      ZITADEL_PORT: "8080"
+      ZITADEL_EXTERNALDOMAIN: auth.localhost
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      # The status quo: the same login for the user and the admin connection.
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zre_root
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zre-throwaway-root
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: zre_root
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: zre-throwaway-root
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: flexcalendar
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: calflex-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ZreThrowaway1!
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+    ports:
+      - "127.0.0.1:18083:8080"
+    healthcheck:
+      test: [CMD, /app/zitadel, ready]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stack
+
+volumes:
+  pgdata:
+
+networks:
+  stack:

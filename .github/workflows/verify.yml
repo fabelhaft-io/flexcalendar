@@ -63,6 +63,12 @@ jobs:
         env:
           COMPONENT: ${{ matrix.component }}
         run: make "verify-$COMPONENT"
+      # E10-R01: the Android build runs from the start. The `dev` flavor in
+      # debug mode needs no signing key and no secret.
+      - name: Build the Android debug APK
+        if: matrix.component == 'apps-mobile'
+        working-directory: apps/mobile
+        run: flutter build apk --flavor dev --debug
   cross-cutting:
     name: Cross-cutting gates
     needs: changes
@@ -100,6 +106,10 @@ jobs:
           component: all
       - uses: ./.github/actions/stack
       - run: make verify
+      # E10-R01: the full run builds the Android app too (debug, `dev` flavor).
+      - name: Build the Android debug APK
+        working-directory: apps/mobile
+        run: flutter build apk --flavor dev --debug
       - name: Stop stack
         if: always()
         run: make dev-down

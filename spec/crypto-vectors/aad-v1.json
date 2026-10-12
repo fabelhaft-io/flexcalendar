@@ -1,0 +1,468 @@
+{
+  "file": "aad-v1.json",
+  "format": "calflex-crypto-vectors/1",
+  "generator": "spec/crypto-vectors/gen/generate.py",
+  "note": "Invented test values only. No real key material, calendar or event content.",
+  "spec": "spec/crypto.md",
+  "vectors": [
+    {
+      "expected": {
+        "aad_bytes": 185,
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "field_length_prefixes_hex": [
+          "00000024",
+          "00000024",
+          "00000000",
+          "00000001",
+          "00000023",
+          "00000023",
+          "00000004"
+        ],
+        "fields": [
+          "11111111-1111-4111-8111-111111111111",
+          "55555555-5555-4555-8555-555555555555",
+          "",
+          "1",
+          "zoned:Europe/Berlin@20260401T110000",
+          "zoned:Europe/Berlin@20260401T120000",
+          "none"
+        ],
+        "label": "calflex-v1",
+        "label_hex": "63616c666c65782d7631"
+      },
+      "id": "aad-event-master",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "The seven fields of the master's AAD; the master's recurrence_id field is empty.",
+      "spec": "§2.2"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "fields": {
+          "dtstart": "zoned:Europe/Berlin@20260401T110000",
+          "end": "zoned:Europe/Berlin@20260401T120000",
+          "recurrence_id": "",
+          "rrule": "none"
+        }
+      },
+      "id": "aad-from-skeleton-master",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DTEND;TZID=Europe/Berlin:20260401T120000"
+        ],
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "The same AAD, built the way a client builds it: parsed skeleton properties.",
+      "same_as": "aad-event-master",
+      "spec": "§3"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000103230323630343031543039303030305a0000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65"
+      },
+      "id": "aad-event-override",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "20260401T090000Z",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "An override's AAD carries the canonical recurrence_id in field 3.",
+      "spec": "§5.2"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "fields": {
+          "dtstart": "zoned:Europe/Berlin@20260401T110000",
+          "end": "zoned:Europe/Berlin@20260401T120000",
+          "recurrence_id": "",
+          "rrule": "none"
+        }
+      },
+      "id": "aad-event-rdate-exdate-not-bound",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DTEND;TZID=Europe/Berlin:20260401T120000",
+          "RDATE;TZID=Europe/Berlin:20260408T110000",
+          "EXDATE;TZID=Europe/Berlin:20260415T110000"
+        ],
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "RDATE and EXDATE are in the skeleton and not in the AAD: the master's AAD is unchanged.",
+      "same_as": "aad-event-master",
+      "spec": "§2.6"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d31313131313131313131313100000013c39c62756e672028746573742076616c756529000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "uid_length_prefix_hex": "00000013",
+        "uid_utf8_bytes": 19
+      },
+      "id": "aad-uid-multibyte",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "Übung (test value)"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "The length prefix counts UTF-8 bytes: a two-byte character counts twice.",
+      "spec": "§2.1"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d31313131313131313131313100000003610062000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "uid_length_prefix_hex": "00000003"
+      },
+      "id": "aad-uid-embedded-nul",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "a\u0000b"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A length prefix, not a terminator: a NUL inside a UID stays inside the field.",
+      "spec": "§2.1"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d313131313131313131313131000000076162632c646566000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "skeleton_property": "UID:abc\\,def"
+      },
+      "id": "aad-event-uid-text-unescaped",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "abc,def"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "Field 2 is the parsed UID value: `UID:abc\\,def` binds `abc,def`.",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002439393939393939392d393939392d343939392d383939392d393939393939393939393939000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65"
+      },
+      "id": "aad-diff-uid",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "99999999-9999-4999-8999-999999999999"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A different UID gives a different AAD (field 2).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002461616161616161612d616161612d346161612d386161612d6161616161616161616161610000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65"
+      },
+      "id": "aad-diff-calendar-id",
+      "inputs": {
+        "calendar_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A different calendar gives a different AAD (field 1, D-14).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000132000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65"
+      },
+      "id": "aad-diff-epoch",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 2,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A different epoch gives a different AAD (field 4).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000103230323630343031543039303030305a0000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65"
+      },
+      "id": "aad-diff-recurrence-id",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "20260401T090000Z",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A recurrence_id gives a different AAD (field 3, D-14).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313030303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65"
+      },
+      "id": "aad-diff-dtstart",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T100000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A different DTSTART gives a different AAD (field 5).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000086475723a50543148000000046e6f6e65"
+      },
+      "id": "aad-diff-end",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A different end gives a different AAD (field 6).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e403230323630343031543132303030300000001a7272756c653a465245513d5745454b4c593b434f554e543d3130"
+      },
+      "id": "aad-diff-rrule",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=WEEKLY;COUNT=10",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "A rule gives a different AAD (field 7).",
+      "spec": "§2.2"
+    },
+    {
+      "differs_from": "aad-event-master",
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a417369612f43616c637574746140323032363034303154313533303030000000237a6f6e65643a417369612f43616c637574746140323032363034303154313633303030000000046e6f6e65"
+      },
+      "id": "aad-diff-tzid-spelling",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Asia/Calcutta@20260401T153000",
+        "end": "zoned:Asia/Calcutta@20260401T163000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "The bound TZID is the skeleton's spelling: a link name is not normalised.",
+      "spec": "§2.2"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000a32313437343833363437000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "epoch_field": "2147483647",
+        "epoch_field_length_prefix_hex": "0000000a"
+      },
+      "id": "aad-epoch-max-decimal",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 2147483647,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "build_aad",
+      "purpose": "The epoch is canonical decimal, so 2^31-1 is ten digits with no padding.",
+      "spec": "§2.2"
+    },
+    {
+      "expected": {
+        "event_label_byte_8": "v",
+        "first_differing_index": 8,
+        "meta_label_byte_8": "m"
+      },
+      "id": "aad-label-byte-8",
+      "inputs": {
+        "event_label_hex": "63616c666c65782d7631",
+        "meta_aad_hex": "63616c666c65782d6d6574612d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000000131",
+        "meta_label_hex": "63616c666c65782d6d6574612d7631"
+      },
+      "kind": "positive",
+      "op": "constants",
+      "purpose": "The two labels differ at byte 8, so no field content can make the two AADs collide.",
+      "spec": "§1.4"
+    },
+    {
+      "expected": {
+        "error": "E_ENCODING"
+      },
+      "id": "aad-calendar-id-uppercase-refused",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "build_aad",
+      "purpose": "An uppercase UUID is not the canonical text form.",
+      "spec": "§0.2"
+    },
+    {
+      "expected": {
+        "error": "E_ENCODING"
+      },
+      "id": "aad-calendar-id-not-v4-refused",
+      "inputs": {
+        "calendar_id": "11111111-1111-1111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "build_aad",
+      "purpose": "A UUIDv1 is not an identifier this format accepts (INV-03).",
+      "spec": "§0.2"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "aad-uid-empty-refused",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": ""
+      },
+      "kind": "negative",
+      "op": "build_aad",
+      "purpose": "The UID field may not be empty; only the master's recurrence_id may.",
+      "spec": "§2.2"
+    },
+    {
+      "expected": {
+        "error": "E_EPOCH"
+      },
+      "id": "aad-epoch-over-max-refused",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 2147483648,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "build_aad",
+      "purpose": "2^31 has no canonical field: the epoch range is checked before the AAD is built.",
+      "spec": "§2.2"
+    }
+  ]
+}

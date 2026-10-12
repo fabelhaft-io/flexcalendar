@@ -1,0 +1,752 @@
+{
+  "file": "canonical-timing-v1.json",
+  "format": "calflex-crypto-vectors/1",
+  "generator": "spec/crypto-vectors/gen/generate.py",
+  "note": "Invented test values only. No real key material, calendar or event content.",
+  "spec": "spec/crypto.md",
+  "vectors": [
+    {
+      "expected": {
+        "dtstart": "date:20260401",
+        "end": "date:20260402",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-dtstart-date",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;VALUE=DATE:20260401",
+          "DTEND;VALUE=DATE:20260402"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "An all-day start binds the date, never a midnight instant (INV-04).",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "dtstart": "utc:20260401T090000Z",
+        "end": "utc:20260401T100000Z",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-dtstart-utc",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART:20260401T090000Z",
+          "DTEND:20260401T100000Z"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A UTC start binds the instant it spells.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "instants": [
+          "20260401T090000Z"
+        ],
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-dtstart-zoned",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DTEND;TZID=Europe/Berlin:20260401T120000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A TZID start binds the zone name and the wall clock, not a computed instant.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Asia/Calcutta@20260401T153000",
+        "end": "zoned:Asia/Calcutta@20260401T163000",
+        "instants": [
+          "20260401T100000Z"
+        ],
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-dtstart-zoned-link-name",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Asia/Calcutta:20260401T153000",
+          "DTEND;TZID=Asia/Calcutta:20260401T163000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A link name is bound as written: normalising it would move the AAD.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "error": "E_UNSUPPORTED"
+      },
+      "id": "timing-dtstart-floating-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART:20260401T090000"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "A DATE-TIME with neither Z nor TZID is floating and refused (INV-04).",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "error": "E_UNSUPPORTED"
+      },
+      "id": "timing-dtstart-leap-second-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART:20261231T235960Z"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "Seconds 60 has no representation here.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-dtstart-bad-date-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;VALUE=DATE:20260230"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "30 February is not a date.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-dtstart-missing-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTEND:20260401T100000Z"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "DTSTART is required in a VEVENT and in the AAD.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H30M",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-end-duration",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H30M"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A DURATION is bound as a duration, not converted to an end.",
+      "spec": "§3.2"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "none",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-end-none",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "No end property at all binds the literal `none`.",
+      "spec": "§3.2"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-end-both-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DTEND;TZID=Europe/Berlin:20260401T120000",
+          "DURATION:PT1H"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "DTEND and DURATION together are forbidden by RFC 5545 §3.6.1.",
+      "spec": "§3.2"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:-PT15M",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-duration-negative",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:-PT15M"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A negative duration keeps its sign and drops nothing else.",
+      "spec": "§3.2.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT0S",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-duration-zero",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:+P0DT0H0M0S"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "Zero is written PT0S, with no sign.",
+      "spec": "§3.2.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT60M",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-duration-sixty-minutes",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT60M"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "No carrying: PT60M stays PT60M, so a nominal duration is never silently rewritten.",
+      "spec": "§3.2.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:P2W",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-duration-weeks",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:P2W"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "Weeks stand alone (RFC 5545 forbids P1W2D).",
+      "spec": "§3.2.1"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-duration-mixed-week-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:P1W2D"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "Weeks mixed with days are invalid.",
+      "spec": "§3.2.1"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-duration-missing-unit-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:P1H"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "`P1H` has no unit for the 1.",
+      "spec": "§3.2.1"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=DAILY;COUNT=5"
+      },
+      "id": "timing-rrule-interval-one-dropped",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DTEND;TZID=Europe/Berlin:20260401T120000",
+          "RRULE:FREQ=DAILY;INTERVAL=1;COUNT=5"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "INTERVAL=1 is the RFC's default and is dropped: two spellings, one AAD field.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=DAILY;COUNT=5"
+      },
+      "id": "timing-rrule-plain-count",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DTEND;TZID=Europe/Berlin:20260401T120000",
+          "RRULE:FREQ=DAILY;COUNT=5"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "The same rule without the redundant INTERVAL.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=MONTHLY;BYDAY=2MO,-1FR"
+      },
+      "id": "timing-rrule-byday-sorted",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=MONTHLY;BYDAY=-1FR,2MO;WKST=MO"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "BYDAY is sorted (weekday, then ordinal) and WKST=MO is the default and dropped.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=MONTHLY;BYMONTHDAY=15,30"
+      },
+      "id": "timing-rrule-numeric-list-sorted",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=MONTHLY;BYMONTHDAY=+30,15,30"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "Numeric lists are ascending, deduplicated and unsigned.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=WEEKLY;COUNT=10;BYDAY=TU,TH"
+      },
+      "id": "timing-rrule-part-order",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:BYDAY=TU,TH;COUNT=10;FREQ=WEEKLY"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "Parts are emitted in the ABNF order, whatever order the skeleton used.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=DAILY;UNTIL=20260410T090000Z"
+      },
+      "id": "timing-rrule-until-utc",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=DAILY;UNTIL=20260410T090000Z"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "UNTIL is written as a UTC instant.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "date:20260401",
+        "end": "date:20260402",
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=WEEKLY;UNTIL=20260630"
+      },
+      "id": "timing-rrule-until-date",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;VALUE=DATE:20260401",
+          "DTEND;VALUE=DATE:20260402",
+          "RRULE:FREQ=WEEKLY;UNTIL=20260630"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "An all-day rule's UNTIL stays a date.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "recurrence_id": "",
+        "rrule": "none"
+      },
+      "id": "timing-rrule-none",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RDATE;TZID=Europe/Berlin:20260408T110000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "No RRULE binds the literal `none`; a DTSTART with only RDATEs is legitimate.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "error": "E_UNSUPPORTED"
+      },
+      "id": "timing-rrule-x-part-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=DAILY;X-CALFLEX-SKIP=1"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "An X- rule part is forbidden by the owner's ruling of 2026-10-12.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-rrule-duplicate-part-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=DAILY;COUNT=5;COUNT=6"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "COUNT twice is a malleability hole, not a last-one-wins.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-rrule-missing-freq-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:COUNT=5"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "FREQ is required.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-rrule-out-of-range-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=YEARLY;BYMONTH=13"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "BYMONTH 13 is out of range.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-rrule-until-and-count-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=DAILY;UNTIL=20260410T090000Z;COUNT=5"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "UNTIL and COUNT are mutually exclusive.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "cases_json_id": "berlin-2026-spring-skipped",
+        "dtstart": "zoned:Europe/Berlin@20260329T023000",
+        "end": "zoned:Europe/Berlin@20260329T033000",
+        "ical_js_note": "ical.js with a VTIMEZONE gives 20260329T003000Z here, which is why the AAD does not bind the instant.",
+        "instants": [
+          "20260329T013000Z"
+        ],
+        "recurrence_id": "",
+        "rfc": "RFC 5545 §3.3.5 form 3: a local time that does not occur is read with the UTC offset before the gap.",
+        "rrule": "none"
+      },
+      "id": "timing-dst-europe-berlin-spring-skipped",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260329T023000",
+          "DTEND;TZID=Europe/Berlin:20260329T033000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A local time in the spring gap: the AAD binds the wall clock, and the instant uses the offset before the gap.",
+      "spec": "§3.4"
+    },
+    {
+      "expected": {
+        "cases_json_id": "berlin-2026-fall-repeated",
+        "dtstart": "zoned:Europe/Berlin@20261025T023000",
+        "end": "zoned:Europe/Berlin@20261025T033000",
+        "ical_js_note": "ical.js with a VTIMEZONE gives the second occurrence, 20261025T013000Z.",
+        "instants": [
+          "20261025T003000Z"
+        ],
+        "recurrence_id": "",
+        "rfc": "RFC 5545 §3.3.5 form 3: a local time that occurs twice refers to the first occurrence.",
+        "rrule": "none"
+      },
+      "id": "timing-dst-europe-berlin-autumn-repeated",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20261025T023000",
+          "DTEND;TZID=Europe/Berlin:20261025T033000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A local time in the autumn overlap: the first occurrence, i.e. the pre-transition offset.",
+      "spec": "§3.4"
+    },
+    {
+      "expected": {
+        "cases_json_id": "berlin-2026-spring-daily-skipped",
+        "dtstart": "zoned:Europe/Berlin@20260327T023000",
+        "end": "dur:PT1H",
+        "instants": [
+          "20260327T013000Z",
+          "20260328T013000Z",
+          "20260329T013000Z",
+          "20260330T003000Z",
+          "20260331T003000Z"
+        ],
+        "recurrence_id": "",
+        "rfc": "RFC 5545 §3.3.10 as ruled on 2026-10-12 (docs/02 § Recurrence).",
+        "rrule": "rrule:FREQ=DAILY;COUNT=5"
+      },
+      "id": "timing-dst-daily-skipped-instance",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260327T023000",
+          "DURATION:PT1H",
+          "RRULE:FREQ=DAILY;COUNT=5"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "The ruling of 2026-10-12: a daily instance whose local time does not exist is kept, counted, and read with the offset before the gap.",
+      "spec": "§3.4"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "recurrence_id": "20260401T090000Z",
+        "rrule": "none"
+      },
+      "id": "timing-recurrence-id-two-spellings-utc",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RECURRENCE-ID:20260401T090000Z"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A RECURRENCE-ID written as a UTC instant.",
+      "spec": "§5.2"
+    },
+    {
+      "expected": {
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "note": "Both spellings give the recurrence_id 20260401T090000Z, so one occurrence has one sidecar key (E04-R04).",
+        "recurrence_id": "20260401T090000Z",
+        "rrule": "none"
+      },
+      "id": "timing-recurrence-id-two-spellings-tzid",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RECURRENCE-ID;TZID=Europe/Berlin:20260401T110000"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "The same instant written with a TZID: one occurrence, one canonical recurrence_id.",
+      "spec": "§5.2"
+    },
+    {
+      "expected": {
+        "dtstart": "date:20260401",
+        "end": "date:20260402",
+        "recurrence_id": "20260401",
+        "rrule": "none"
+      },
+      "id": "timing-recurrence-id-date",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;VALUE=DATE:20260401",
+          "DTEND;VALUE=DATE:20260402",
+          "RECURRENCE-ID;VALUE=DATE:20260401"
+        ]
+      },
+      "kind": "positive",
+      "op": "canonical_timing",
+      "purpose": "A DATE RECURRENCE-ID stays eight digits.",
+      "spec": "§5.2"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "timing-recurrence-id-floating-refused",
+      "inputs": {
+        "skeleton_properties": [
+          "UID:55555555-5555-4555-8555-555555555555",
+          "DTSTART;TZID=Europe/Berlin:20260401T110000",
+          "DURATION:PT1H",
+          "RECURRENCE-ID:20260401T110000"
+        ]
+      },
+      "kind": "negative",
+      "op": "canonical_timing",
+      "purpose": "A floating RECURRENCE-ID is refused rather than read as UTC (recurrence-key.mjs).",
+      "spec": "§5.2"
+    }
+  ]
+}
