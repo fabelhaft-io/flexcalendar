@@ -123,8 +123,8 @@ final class GuardCases
 
     /**
      * E03-R11 — updates that are accepted. The stored `UID` is the authority, so
-     * an uppercase UUIDv4 or a UUIDv7 a stock app wrote while the calendar was
-     * not Private is kept (INV-03), name and all.
+     * an uppercase UUIDv4 or a version-7 UUID a stock app wrote while the
+     * calendar was not Private is kept (INV-03), name and all.
      *
      * @return array<string, array{text: string, stored: string}>
      */
@@ -133,7 +133,7 @@ final class GuardCases
         return [
             'keeps_uuid_v4' => ['text' => self::skeleton(), 'stored' => self::UID],
             'keeps_stock_app_uppercase_uuid' => ['text' => self::skeleton('1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D'), 'stored' => '1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D'],
-            'keeps_stock_app_uuidv7' => ['text' => self::skeleton('9f2c4d31-6e08-7a55-b3c2-0d1e2f3a4b5c'), 'stored' => '9f2c4d31-6e08-7a55-b3c2-0d1e2f3a4b5c'],
+            'keeps_stock_app_version7' => ['text' => self::skeleton('9f2c4d31-6e08-7a55-b3c2-0d1e2f3a4b5c'), 'stored' => '9f2c4d31-6e08-7a55-b3c2-0d1e2f3a4b5c'],
             'keeps_legacy_alarm_without_uid' => ['text' => self::alarm(null), 'stored' => self::UID],
             'keeps_master_and_override' => ['text' => self::allowed()['master_and_override'], 'stored' => self::UID],
             'keeps_rdate' => ['text' => self::eventLine('RDATE:20261013T100000Z'), 'stored' => self::UID],

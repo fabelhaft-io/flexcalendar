@@ -266,12 +266,12 @@ final class GuardTest extends TestCase
      * no response body and no response header (`make test-caldav` scans the
      * service log for the same marker).
      *
-     * `uid_mixed` and `update_mixed_uid` are the two rows SabreDAV answers
-     * itself: its CalDAV profile validation refuses components with different
-     * `UID`s with a level-3 message before the backend is reached, which is a
-     * `415`, never our `403`. The guard checks them anyway — a direct backend
-     * call is what the unit table pins — so the refusal exists where SabreDAV's
-     * check cannot answer first.
+     * `uid_mixed` and `update_mixed_uid` are the two rows SabreDAV's own CalDAV
+     * profile validation would refuse first with a `415` for, before the backend
+     * is reached — `GuardPlugin` runs the guard on `beforeCreateFile` /
+     * `beforeWriteContent` ahead of that validation, so the `403` is what a
+     * mixed-`UID` write gets over HTTP. A body Sabre's reader cannot parse at
+     * all is still the `415` of `testPutGuardAndMarkers` below.
      */
     public function testUidBackstopRefusalsAndAcceptedShapes(): void
     {
@@ -285,11 +285,6 @@ final class GuardTest extends TestCase
 
         foreach (\Calflex\Tests\GuardCases::objectCreatesRejected() as $case => $row) {
             $response = $this->request('PUT', $at($row['uri']), $row['text'], ['Content-Type' => 'text/calendar']);
-            if ($case === 'uid_mixed') {
-                self::assertSame(415, $response['status'], $case);
-                self::assertStringNotContainsString('CALFLEX_GUARD_MARKER', $response['body'], $case);
-                continue;
-            }
             $this->rejected($response, $row['name']);
         }
 
@@ -322,10 +317,6 @@ final class GuardTest extends TestCase
             }
             self::assertSame(\Calflex\Tests\GuardCases::UID, $row['stored'], $case);
             $response = $this->request('PUT', $target, $row['text'], ['Content-Type' => 'text/calendar']);
-            if ($case === 'update_mixed_uid') {
-                self::assertSame(415, $response['status'], $case);
-                continue;
-            }
             $this->rejected($response, $row['name']);
         }
         $after = $this->request('GET', $target);

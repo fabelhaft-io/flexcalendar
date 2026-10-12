@@ -157,13 +157,13 @@ final class BackendAccessTest extends TestCase
         $etag = $this->etag($uri);
 
         foreach ([$this->viewer, $this->stranger] as $actor) {
-            $this->forbidden(fn () => $this->backend($actor)->updateCalendarObject($this->pair(), $uri, self::at('120000')));
+            $this->forbidden(fn () => $this->backend($actor)->updateCalendarObject($this->pair(), $uri, self::at('120000', $uid)));
             self::assertSame($etag, $this->etag($uri), 'A refused update must leave the object alone');
             self::assertSame($changes, $this->changes(), 'A refused update must record no Sabre change');
             self::assertSame(1, $this->outbox(), 'A refused update must not reach the outbox');
         }
 
-        self::assertIsString($this->backend($this->editor)->updateCalendarObject($this->ids, $uri, self::at('120000')));
+        self::assertIsString($this->backend($this->editor)->updateCalendarObject($this->ids, $uri, self::at('120000', $uid)));
         self::assertNotSame($etag, $this->etag($uri));
         self::assertSame($changes + 1, $this->changes());
         self::assertSame(2, $this->outbox());
@@ -472,8 +472,8 @@ final class BackendAccessTest extends TestCase
     }
 
     /** The valid skeleton with one property value moved, so the etag changes. */
-    private static function at(string $time): string
+    private static function at(string $time, string $uid = GuardCases::UID): string
     {
-        return str_replace('DTSTART:20261012T100000Z', 'DTSTART:20261012T' . $time . 'Z', GuardCases::skeleton());
+        return str_replace('DTSTART:20261012T100000Z', 'DTSTART:20261012T' . $time . 'Z', GuardCases::skeleton($uid));
     }
 }

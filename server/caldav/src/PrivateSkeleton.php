@@ -99,6 +99,22 @@ final class PrivateSkeleton
         self::ruleParts($root);
     }
 
+    /**
+     * E03-R11 — the `UID` the store already holds, read out of an object's
+     * stored bytes, for the pre-validation hook that must compare an update
+     * against it before SabreDAV's CalDAV-profile validation can answer first.
+     * `null` when the bytes carry no single `UID`; the update rule then refuses
+     * exactly as it refuses a row whose `uid` column is empty.
+     */
+    public static function storedUid(string $text): ?string
+    {
+        try {
+            return self::uid(self::root($text));
+        } catch (SkeletonViolation) {
+            return null;
+        }
+    }
+
     private static function root(string $text): Component
     {
         try {

@@ -113,7 +113,7 @@ Collection XML names are reduced to uppercase local names before that check.
 The guard checks names, parameters, components and the listed fixed values, not
 the free-text values of allowed properties (`PRODID`, a `TZID` parameter,
 `TZURL`, `X-LIC-LOCATION`, `TZNAME`). A `UID`'s value is checked, but by E03-R11
-below, on the entry point that has the object name and the stored row; the
+below, on the entry points that have the object name and the stored row; the
 allow-list entry point (`PrivateSkeleton::calendar`, the one the round-trip
 corpus uses) still reads names only.
 A `VTIMEZONE` from tzurl.org carries `X-PROLEPTIC-TZNAME`, which the guard rejects
@@ -126,7 +126,9 @@ guard. Empty creation properties are allowed; displayname, if supplied, must be
 `Private calendar`. No rule beyond E03-R09's and E03-R11's tables is imposed by
 the guard.
 
-Unit tests exercise the allow-list and injected modes. Integration GuardTest
+Unit tests exercise the allow-list, the value backstop and the pre-validation
+hook's own decisions (`GuardPluginTest`: a Private write is guarded, a Shared,
+Published or unknown collection is untouched). Integration GuardTest
 exercises delegated requests, persistence after denials, copy/move, collection
 and object properties, malformed-body redaction and marker responses/headers.
 `make test-caldav` also scans service logs for guard markers; run it twice.
@@ -136,10 +138,9 @@ and object properties, malformed-body redaction and marker responses/headers.
 E03-R09 checks names, not values, and the `UID` is the one free-text value that
 travels: into the object name, the outbox row, the delta feed, URLs, log
 correlations and the sidecar key (ADR 0001 § Amendments, 2026-10-12). So
-`PrivateSkeleton::createObject` and `PrivateSkeleton::updateObject` — reached
-through `GuardedCalendars::createCalendarObject` and `updateCalendarObject`, and
-nowhere else — add to the allow-list, on a Private calendar only and with the
-same `403` `cf:private-skeleton-only`:
+`PrivateSkeleton::createObject` and `PrivateSkeleton::updateObject` add to the
+allow-list, on a Private calendar only and with the same `403`
+`cf:private-skeleton-only`:
 
 - **create** (a `PUT` to a name the collection does not hold, and the `COPY` in
   and cross-collection `MOVE` SabreDAV turns into one): every `VEVENT` `UID` a
@@ -151,20 +152,22 @@ same `403` `cf:private-skeleton-only`:
   `spec/ical-fixtures/ours/private-valarm.ics` write an alarm without a `UID`,
   and the requirement's accept criterion is that the API's create path still
   passes against the live stack.
-  On a `COPY` (and the copy half of a cross-collection `MOVE`) this guard is the
-  *only* check: `Sabre\DAV\Tree::copyNode` calls the collection's `createFile`
-  directly, so the CalDAV plugin's `beforeCreateFile` — and the validation and
-  repair it does — never runs for those bytes.
-- **a `PUT` without a `UID`**, create or update. SabreDAV's CalDAV plugin runs
-  its `beforeCreateFile`/`beforeWriteContent` validation *before* the backend, so
-  its repair has already given such a body `sabre-vobject-<uuid>` — which is not
-  a UUIDv4, so it is refused after the repair too. A body with no `UID` line at
-  all is refused by this guard's own walk when the backend is called directly.
-- **update**: the body must keep the `UID` the store holds, compared against
-  `sabredav.calendarobjects.uid` read before the guard. Any shape is kept, so a
-  Shared calendar switched to Private keeps its stock-app `UID`s (INV-03), and a
-  stored row without a `UID` is refused rather than accepted. The object name is
-  not checked on an update: an object created before this rule keeps its name.
+  On a `COPY` (and the copy half of a cross-collection `MOVE`) the backend call
+  below is the *only* check: `Sabre\DAV\Tree::copyNode` calls the collection's
+  `createFile` directly, so neither the CalDAV plugin's `beforeCreateFile` nor
+  `GuardPlugin`'s runs for those bytes.
+- **a `PUT` without a `UID`**, create or update. SabreDAV's CalDAV plugin repairs
+  such a body to `sabre-vobject-<uuid>` before the backend sees it — which is not
+  a UUIDv4, so it is refused after the repair too. `GuardPlugin` runs the same
+  function on the body as it arrived, so it refuses the body with no `UID` line
+  before the repair, and a direct backend call gets the repaired one.
+- **update**: the body must keep the `UID` the store holds, compared against the
+  stored row: `sabredav.calendarobjects.uid` in the backend, and the object's
+  own stored bytes (`PrivateSkeleton::storedUid`) in `GuardPlugin`. Any shape is
+  kept, so a Shared calendar switched to Private keeps its stock-app `UID`s
+  (INV-03), and a stored row without a `UID` is refused rather than accepted. The
+  object name is not checked on an update: an object created before this rule
+  keeps its name.
 - **`RRULE` with an `X-` rule part** (`RRULE:FREQ=DAILY;X-NOTE=…`), on create
   and update, at any depth, including the `RRULE`s of a `VTIMEZONE`'s `STANDARD`
   and `DAYLIGHT`.
@@ -174,24 +177,34 @@ The rejection names `UID`, the object name as the fixed token `OBJECT-NAME`, or
 which is what the marker test pins. `PRODID`, `TZID`, `X-LIC-LOCATION`, `TZNAME`
 and `TZURL` stay unchecked; the API writes them from its own data.
 
-**SabreDAV answers the mixed-`UID` case first over HTTP.** Its own CalDAV-profile
-validation in `sabre/vobject` refuses a calendar object whose components carry
-different `UID`s with a level-3 message, so `Sabre\CalDAV\Plugin::validateICalendar`
-throws `UnsupportedMediaType` — a `415` — before the backend runs, and our `403`
-is never reached; `tests/Integration/GuardTest.php` pins that status, so the
-difference is visible rather than assumed. The guard checks the case itself all
-the same, which is what a direct backend call gets and what the unit table pins,
-so the refusal exists wherever SabreDAV's check cannot answer first.
+**Two entry points, one function.** `Calflex\GuardPlugin` runs the same checks
+from `beforeCreateFile` and `beforeWriteContent` at priority 90, below
+`Sabre\CalDAV\Plugin`'s own (the default 100), for a Private collection only; a
+Shared or Published write and a collection that is not a calendar id are left
+alone. That is what makes the epic's `403` answer the mixed-`UID` case over
+HTTP: `sabre/vobject`'s CalDAV-profile validation calls two `VEVENT`s with
+different `UID`s a level-3 error, so `Sabre\CalDAV\Plugin::validateICalendar`
+would throw `UnsupportedMediaType` — a `415` — before the backend runs, and the
+guard has to answer first. A body Sabre's own reader cannot parse, or that is
+not a `VCALENDAR` at all, is not a Private-object question and is left to that
+validation, so a broken body still gets the `415` it always did.
+`GuardedCalendars::createCalendarObject` and `updateCalendarObject` keep the
+same call as the backstop for what does not emit those events (`COPY`, the copy
+half of a cross-collection `MOVE`, a direct backend call): there the update's
+authority is the stored `uid` column, read before the transaction opens.
 
 `tests/GuardCases.php` holds both tables beside E03-R09's —
 `objectCreatesRejected`/`objectCreatesAllowed` and
-`objectUpdatesRejected`/`objectUpdatesAllowed` — and `tests/Unit/GuardTest.php`
-plus `tests/Integration/GuardTest.php` read them. The integration half seeds the
-accepted update case directly in `sabredav.calendarobjects`: a stock-app `UID`
-written while the calendar was not Private, which a create can no longer write
-(Phase 4's mode switch is where one arrives in practice). The API's create path
-(`make test-api-caldav`) is unchanged and still passes: `randomUUID()` is a
-lowercase UUIDv4 and E05-R04 names the object `<uid>.ics`.
+`objectUpdatesRejected`/`objectUpdatesAllowed` — and `tests/Unit/GuardTest.php`,
+`tests/Unit/GuardPluginTest.php` and `tests/Integration/GuardTest.php` read them.
+The integration half seeds the accepted update case directly in
+`sabredav.calendarobjects`: a stock-app `UID` written while the calendar was not
+Private, which a create can no longer write (Phase 4's mode switch is where one
+arrives in practice). The API's create path (`make test-api-caldav`) is unchanged
+and still passes: `randomUUID()` is a lowercase UUIDv4 and E05-R04 names the
+object `<uid>.ics`. The in-process double the API's unit suites drive
+(`server/api/test/support/caldav-store.mjs`) mirrors the same value rules, so a
+unit test cannot pass a shape the live service refuses.
 
 ## Recurrence bound (E03-R12)
 
