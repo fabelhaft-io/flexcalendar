@@ -638,15 +638,16 @@ function unreadableZone(start, end) {
  * The expansion of one stored object.
  * @param {{href: string, ical: string}} object
  * @param {{from: number, to: number, tz: string}} window
- * @returns {{entries: Entry[]} | {unsupported: {href: string, uid: string, reason: string}}}
+ * @returns {{entries: Entry[]} | {unsupported: {uid: string, reason: string}}}
  */
 function expandObject(object, window) {
   const { from, to, tz } = window;
   const calendar = parse(object.ical);
   const parsed = describe(calendar);
   /** @param {string} reason */
+  // The `uid` names the object to a client; its CalDAV path stays here.
   const unsupported = (reason) => ({
-    unsupported: { href: object.href, uid: parsed.uid, reason },
+    unsupported: { uid: parsed.uid, reason },
   });
 
   const events = calendar.getAllSubcomponents('vevent');
@@ -889,14 +890,14 @@ function untilOf(rule, anchor) {
  * The windowed expansion of a set of stored objects.
  * @param {Array<{href: string, ical: string}>} objects
  * @param {{from: string, to: string, tz: string}} window
- * @returns {{occurrences: any[], unsupported: Array<{href: string, uid: string, reason: string}>}}
+ * @returns {{occurrences: any[], unsupported: Array<{uid: string, reason: string}>}}
  */
 export function expandOccurrences(objects, { from, to, tz }) {
   const fromEpoch = epochOf(from);
   const toEpoch = epochOf(to);
   /** @type {Entry[]} */
   const entries = [];
-  /** @type {Array<{href: string, uid: string, reason: string}>} */
+  /** @type {Array<{uid: string, reason: string}>} */
   const unsupported = [];
   for (const object of objects) {
     const result = expandObject(object, {

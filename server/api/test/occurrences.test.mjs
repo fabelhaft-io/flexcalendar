@@ -489,7 +489,6 @@ test('an object whose stored TZID is not a zone this resolver reads is left out'
   const result = expandOccurrences(objects, { ...YEAR, tz: 'UTC' });
   assert.deepEqual(result.unsupported, [
     {
-      href: `/calendars/00000000-0000-4000-8000-000000000000/${id(1)}.ics`,
       uid: id(1),
       reason: 'unknown-zone',
     },
@@ -534,7 +533,6 @@ test('an expansion that does not stop inside the bound is unsupported, not an an
   assert.deepEqual(result.occurrences, []);
   assert.deepEqual(result.unsupported, [
     {
-      href: `/calendars/00000000-0000-4000-8000-000000000000/${id(1)}.ics`,
       uid: id(1),
       reason: 'too-many-instances',
     },
