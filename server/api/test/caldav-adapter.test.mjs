@@ -11,6 +11,7 @@ import { test } from 'node:test';
 
 import {
   CalDavError,
+  MAX_INSTANCES_PRECONDITION,
   PRECONDITION_SCAN_LIMIT_BYTES,
   PRIVATE_CALENDAR_DISPLAY_NAME,
   PRINCIPAL_HEADER,
@@ -1025,6 +1026,25 @@ test('a DAV:error precondition carries element names and nothing else', async ()
   );
 });
 
+test('a CalDAV `403` over the recurrence bound reaches the adapter as the max-instances precondition', async () => {
+  const body = `<?xml version="1.0" encoding="utf-8"?>
+<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><C:max-instances xmlns:C="urn:ietf:params:xml:ns:caldav"><C:reason>CALFLEX_BODY_MARKER</C:reason></C:max-instances></d:error>`;
+  const { adapter } = adapterFor(plain(403, body));
+  await assert.rejects(
+    () =>
+      adapter
+        .forUser(USER)
+        .putObject(CALENDAR, 'one.ics', 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n'),
+    (/** @type {CalDavError} */ error) => {
+      assert.equal(error.kind, 'forbidden');
+      assert.equal(error.status, 403);
+      assert.deepEqual(error.preconditions, ['C:max-instances']);
+      assert.ok(!JSON.stringify(error).includes('CALFLEX_BODY_MARKER'));
+      return true;
+    },
+  );
+});
+
 test('parsePreconditions reads only well-formed cf: names out of a DAV:error', () => {
   /** @param {string} children @returns {string} */
   /** @param {string} children @returns {string} */
@@ -1099,6 +1119,70 @@ test('parsePreconditions reads only well-formed cf: names out of a DAV:error', (
     'SUMMARY',
     'cf:x',
   ]);
+});
+
+test('parsePreconditions reports RFC 4791 max-instances and nothing else of the CalDAV namespace', () => {
+  /** @param {string} children @returns {string} */
+  const wrap = (children) => `<d:error xmlns:d="DAV:">${children}</d:error>`;
+  const caldav = 'xmlns:C="urn:ietf:params:xml:ns:caldav"';
+  assert.equal(MAX_INSTANCES_PRECONDITION, 'C:max-instances');
+  assert.deepEqual(
+    parsePreconditions(Buffer.from(wrap(`<C:max-instances ${caldav}/>`))),
+    ['C:max-instances'],
+  );
+  // The prefix is irrelevant: the namespace is what is read, so a body that
+  // spells it `cal:` or `x:` is the same precondition.
+  for (const prefix of ['cal', 'x']) {
+    assert.deepEqual(
+      parsePreconditions(
+        Buffer.from(
+          wrap(
+            `<${prefix}:max-instances xmlns:${prefix}="urn:ietf:params:xml:ns:caldav"/>`,
+          ),
+        ),
+      ),
+      ['C:max-instances'],
+    );
+  }
+  // Its text and its attributes are never read, so a hostile body cannot leave
+  // through them.
+  assert.deepEqual(
+    parsePreconditions(
+      Buffer.from(
+        wrap(
+          `<C:max-instances ${caldav} marker="CALFLEX_BODY_MARKER">CALFLEX_BODY_MARKER</C:max-instances>`,
+        ),
+      ),
+    ),
+    ['C:max-instances'],
+  );
+  // Another namespace's `max-instances` is not the precondition — and ours is
+  // still read as the `cf:` element it is, never as the RFC's.
+  assert.deepEqual(
+    parsePreconditions(
+      Buffer.from(
+        wrap('<m:max-instances xmlns:m="https://example.invalid/ns"/>'),
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    parsePreconditions(
+      Buffer.from(
+        wrap('<m:max-instances xmlns:m="https://flexcalendar.de/ns/caldav"/>'),
+      ),
+    ),
+    ['cf:max-instances'],
+  );
+  // Only a `DAV:error` root is read at all.
+  assert.deepEqual(
+    parsePreconditions(
+      Buffer.from(
+        `<d:multistatus xmlns:d="DAV:"><C:max-instances ${caldav}/></d:multistatus>`,
+      ),
+    ),
+    [],
+  );
 });
 
 test('parsePreconditions reads a bounded, linear amount of a hostile body', () => {

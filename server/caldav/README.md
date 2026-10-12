@@ -127,6 +127,44 @@ exercises delegated requests, persistence after denials, copy/move, collection
 and object properties, malformed-body redaction and marker responses/headers.
 `make test-caldav` also scans service logs for guard markers; run it twice.
 
+## Recurrence bound (E03-R12)
+
+`sabre/vobject` walks a series to its last instance, `Settings::$maxRecurrences`
+at a time (3,500 by default), and SabreDAV's PDO backend makes that walk on
+**every** object create and update to store `lastoccurence`, so a daily
+`COUNT=4000`, a daily `UNTIL` in 2040 or an hourly series for a year used to
+answer `500`. `Calflex\RecurrenceBound` sets the bound to **50,000** — the same
+cap at which the API reports an object as `too-many-instances` (E05-R05) — and
+`Service::create` installs it, so it is applied once, where the service is
+configured, and never in vendor code.
+
+A series over the bound is RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances`
+(`Calflex\MaxInstances`, a DAV exception that serialises the one precondition
+element, in `urn:ietf:params:xml:ns:caldav`, and no message or trace).
+`GuardedCalendars` translates `MaxInstancesExceededException` on object create
+and update only; the walk runs before any row is written and the write's
+transaction is rolled back, so a refusal leaves no object row, no
+`calendarchanges` row and no `caldav_changes` row. It sits **outside** the
+private write guard, so it applies on every calendar mode; only `private` can be
+stored in M1 (ADR 0003), which is why the integration suite can only exercise
+that mode. A `calendar-query` whose `time-range` still overflows the bound stays
+a `500` (the ruling's own words): that path is SabreDAV's query validator, not
+the write pipeline, and it is not widened.
+
+The same plugin answers `CALDAV:max-instances` = 50000 on `PROPFIND` for every
+calendar collection (`{urn:ietf:params:xml:ns:caldav}max-instances` is already a
+protected property in `Sabre\CalDAV\Plugin`, which does not serve it), so a
+client can read the bound the precondition refers to. A calendar home is not a
+calendar collection and answers `404` for it.
+
+Unit tests apply the bound, walk a 60,000-instance series to the vendor's
+throw, translate it, serialise the precondition and read the property. The
+integration suite (`tests/Integration/RecurrenceBoundTest.php`) stores the three
+series, refuses the over-bound one and proves nothing was stored, answers an
+instance in a `time-range` window over a daily series that started 20 years
+earlier, and reads the advertised bound. It needs Postgres — the `caldav-test`
+image — so it runs in `make test-caldav` outside the sandbox; run it twice.
+
 ## Request log and error responses (E05-R10)
 
 The internal listener writes **one access line per request**, from fixed fields

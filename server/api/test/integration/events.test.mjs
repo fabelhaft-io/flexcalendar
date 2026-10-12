@@ -547,3 +547,74 @@ test('the live guard refuses a content write, and the mapping the API uses names
     await app.close();
   }
 });
+
+test('a series over the recurrence bound is a 422, and the CalDAV 403 behind it is the max-instances precondition', async () => {
+  const { app } = build();
+  try {
+    const calendarId = await calendar(app);
+    // The `FREQ=MINUTELY;COUNT=60000` series is over the service's 50,000
+    // instances and finished well before 2038, so the walk SabreDAV makes on
+    // every write is the one that crosses the bound.
+    const refused = await request(
+      app,
+      'a',
+      'POST',
+      `/calendars/${calendarId}/events`,
+      body({ rrule: 'FREQ=MINUTELY;COUNT=60000' }),
+    );
+    assert.equal(refused.statusCode, 422, refused.body);
+    assert.deepEqual(
+      { type: refused.json().type, status: refused.json().status },
+      {
+        type: 'https://flexcalendar.de/problems/too-many-instances',
+        status: 422,
+      },
+    );
+    assert.ok(!refused.body.includes('MINUTELY'), refused.body);
+
+    // The `403` the API's answer is mapped from, read from the live service.
+    const uid = randomUUID();
+    const skeleton =
+      [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Calflex//EN',
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        'DTSTAMP:20260101T000000Z',
+        'DTSTART:20260101T090000Z',
+        'DTEND:20260101T100000Z',
+        'RRULE:FREQ=MINUTELY;COUNT=60000',
+        `X-CALFLEX-ENVELOPE-SHA256:${HASH}`,
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n') + '\r\n';
+    const error = await (async () => {
+      try {
+        await adapter
+          .forUser(users.a)
+          .putObject(calendarId, `${uid}.ics`, skeleton, { ifNoneMatch: '*' });
+      } catch (thrown) {
+        return thrown;
+      }
+      return assert.fail('the service stored a series over the bound');
+    })();
+    assert.ok(error instanceof CalDavError);
+    assert.equal(error.status, 403);
+    assert.ok(error.preconditions.includes('C:max-instances'), error.message);
+    const classified = classifyCalDavError(error);
+    assert.equal(classified.problem, 'too-many-instances');
+    assert.ok(!classified.property);
+
+    // Nothing of the refused write was stored.
+    await assert.rejects(
+      () => adapter.forUser(users.a).getObject(calendarId, `${uid}.ics`),
+      (/** @type {CalDavError} */ read) => {
+        assert.equal(read.kind, 'not-found');
+        return true;
+      },
+    );
+  } finally {
+    await app.close();
+  }
+});
