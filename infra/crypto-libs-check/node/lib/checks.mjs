@@ -62,6 +62,69 @@ export const RFC5869_TC3 = {
 /** A 10-byte ASCII info, compared with the Dart VM probe's result. */
 export const ASCII_HKDF_INFO = 'calflexhk';
 
+/**
+ * The values every probe must reproduce, byte for byte — **the same expectations
+ * as `frozenValues` in `dart_vm/lib/checks.dart`** (and its copy under
+ * `flutter/lib/`), so a change in any of the three libraries' output fails its
+ * probe instead of only showing up in a printed diff. They were frozen from the
+ * first full run of the three probes (2026-10-12), where the Dart VM and the
+ * Node runs already agreed; `packages/crypto_dart` (E12-R01/R03) and
+ * `packages/crypto-ts` are held to them. Sealed boxes and the RNG are
+ * randomised, so only their lengths are frozen.
+ *
+ * The four `kdf.hkdf_sha256.*` entries are computed through `node:crypto` here,
+ * because neither `libsodium-wrappers` nor `-sumo` 0.8.4 exports HKDF (see the
+ * gap): the line names and the expectations are still the Dart ones, so the two
+ * web builds are held to the same bytes as the Dart ones, and a change in the
+ * RFC 5869 vectors fails the run. `kdf.hkdf_sha256.source` records where the
+ * value came from.
+ */
+export const FROZEN_VALUES = {
+  'aead.xchacha20poly1305_ietf.ciphertext':
+    'b2556008b3811573e190e6cc8fd954a0bfe89df6332921f50854c535933ba4680105dbb564a0cacb1b6a',
+  'aead.xchacha20poly1305_ietf.decrypted':
+    '666c657863616c656e646172204531322d5230322070726f6265',
+  'box.seal.overhead_bytes': '48',
+  'sign.ed25519.public_key':
+    '29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7',
+  'sign.ed25519.signature':
+    'a0060e738f9b9107b9656b9cebc3721bf9425295af8f6b11ce030a14cee9dbe77ac9f6ed23acb6bb8b423cad37e6fa8ba707780f011a0428926df206d3ab900c',
+  'kdf.derive_from_key.subkey':
+    'a377a3cab11df056b2f26740a10101b9fb451c47d5e393da2c3312dd064d9f9e',
+  'kdf.hkdf_sha256.rfc5869_tc1_prk':
+    '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5',
+  'kdf.hkdf_sha256.rfc5869_tc3_prk':
+    '19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04',
+  'kdf.hkdf_sha256.rfc5869_tc3_okm42':
+    '8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8',
+  'kdf.hkdf_sha256.ascii_info_okm42':
+    '8f1021c886806450618d011707fd796d80c674f1258afcb6c2f7e92ab407e3234e4c8778a10ebbe432ce',
+};
+
+/**
+ * The [`FROZEN_VALUES`] a report does not reproduce, as
+ * `name: expected …, saw …` — empty when every frozen value matches.
+ *
+ * @param report the object `runChecks` returned
+ * @returns {string[]}
+ */
+export function frozenValueMismatches(report) {
+  const seen = new Map(
+    report.lines.map((line) => {
+      const separator = line.indexOf('=');
+      return separator > 0
+        ? [line.slice(0, separator), line.slice(separator + 1)]
+        : [line, ''];
+    }),
+  );
+  return Object.entries(FROZEN_VALUES)
+    .filter(([name, expected]) => seen.get(name) !== expected)
+    .map(
+      ([name, expected]) =>
+        `${name}: expected ${expected}, saw ${seen.get(name) ?? '<missing>'}`,
+    );
+}
+
 /** The primitives E12-R02 asks about, as libsodium-wrappers spells them. */
 export const REQUIRED_EXPORTS = {
   'aead.xchacha20poly1305_ietf': [
@@ -352,6 +415,12 @@ export async function runChecks(
     has(sodium, 'crypto_kdf_hkdf_sha256_extract') &&
     has(sodium, 'crypto_kdf_hkdf_sha256_expand');
   report.value(`${hkdfPrefix}.in_library`, hkdfInLibrary ? 'yes' : 'no');
+  report.value(
+    `${hkdfPrefix}.source`,
+    hkdfInLibrary
+      ? 'sodium (crypto_kdf_hkdf_sha256_extract/_expand)'
+      : 'node:crypto (RFC 5869; this build exports no HKDF function)',
+  );
   for (const name of [
     'crypto_auth_hmacsha256',
     'crypto_auth_hmacsha256_init',
@@ -397,6 +466,8 @@ export async function runChecks(
     );
     // Node's own HKDF is RFC 5869, so the vector still has a reference value —
     // and the TS library could build HKDF from HMAC-SHA-256 (present above).
+    // The lines carry the same names as the Dart probes', so the frozen-value
+    // comparison below holds all three probes to the same bytes.
     const prk = createHmac('sha256', Buffer.from(RFC5869_TC1.salt))
       .update(Buffer.from(RFC5869_TC1.ikm))
       .digest();
@@ -409,8 +480,8 @@ export async function runChecks(
         RFC5869_TC1.okmLength,
       ),
     );
-    report.value(`${hkdfPrefix}.rfc5869_tc1_prk_node_crypto`, prk.toString('hex'));
-    report.value(`${hkdfPrefix}.rfc5869_tc1_okm42_node_crypto`, okm.toString('hex'));
+    report.value(`${hkdfPrefix}.rfc5869_tc1_prk`, prk.toString('hex'));
+    report.value(`${hkdfPrefix}.rfc5869_tc1_okm42`, okm.toString('hex'));
     if (prk.toString('hex') !== RFC5869_TC1.prk) {
       report.fail(`${hkdfPrefix}.prk_node_crypto`, 'differs from RFC 5869 A.1');
     }
@@ -426,7 +497,7 @@ export async function runChecks(
       .update(Buffer.from(RFC5869_TC3.ikm))
       .digest()
       .toString('hex');
-    report.value(`${hkdfPrefix}.rfc5869_tc3_prk_node_crypto`, tc3Prk);
+    report.value(`${hkdfPrefix}.rfc5869_tc3_prk`, tc3Prk);
     if (tc3Prk !== RFC5869_TC3.prk) {
       report.fail(`${hkdfPrefix}.tc3_prk_node_crypto`, 'differs from RFC 5869 A.3');
     }
@@ -441,7 +512,7 @@ export async function runChecks(
         ),
       ).toString('hex');
     const tc3Okm = okmOf(RFC5869_TC3.salt, RFC5869_TC3.info);
-    report.value(`${hkdfPrefix}.rfc5869_tc3_okm42_node_crypto`, tc3Okm);
+    report.value(`${hkdfPrefix}.rfc5869_tc3_okm42`, tc3Okm);
     if (tc3Okm !== RFC5869_TC3.okm) {
       report.fail(
         `${hkdfPrefix}.tc3_okm_node_crypto`,
@@ -450,7 +521,7 @@ export async function runChecks(
     }
     report.value(`${hkdfPrefix}.ascii_info`, ASCII_HKDF_INFO);
     report.value(
-      `${hkdfPrefix}.ascii_info_okm42_node_crypto`,
+      `${hkdfPrefix}.ascii_info_okm42`,
       okmOf(RFC5869_TC3.salt, Buffer.from(ASCII_HKDF_INFO, 'utf8')),
     );
   }

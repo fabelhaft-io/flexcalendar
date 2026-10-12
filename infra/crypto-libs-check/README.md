@@ -11,7 +11,7 @@ output is recorded in the verification doc; they are not a test suite for the pr
 | Directory | Target | Run it with | Status |
 |---|---|---|---|
 | `dart_vm/` | the Dart VM, via the `sodium` package (the binding `packages/crypto_dart` will use) | `dart run bin/probe.dart`, plus `dart test` and `dart run bin/system_libsodium.dart` | run in the agent sandbox, passing |
-| `flutter/` | an Android emulator or device, via `sodium_libs` (the package ADR 0001 names) | `flutter test integration_test -d <device-id>` (host-only checks: `flutter analyze`, `flutter test`) | written, resolved and analysed; **the Android run is the reviewer's** — no Android SDK in the agent sandbox |
+| `flutter/` | an Android emulator or device, via `sodium_libs` (the package ADR 0001 names) | `flutter test integration_test -d <device-id>` (host-only checks: `flutter analyze`, `flutter test`) | written, resolved and analysed; the Android run was made by the reviewer on 2026-10-12 (API 37 `x86_64`, pass — no Android SDK in the agent sandbox) |
 | `node/` | Node 24, via `libsodium-wrappers` and `libsodium-wrappers-sumo` | `npm install && node probe.mjs && node probe-sumo.mjs && node compare-exports.mjs` | run in the agent sandbox, passing |
 
 You need the pinned toolchain on `PATH`: Flutter 3.47.6 / Dart 3.13.5 ([`apps/mobile/.fvmrc`](../../apps/mobile/.fvmrc)),
@@ -26,8 +26,9 @@ fail; Ed25519 detached sign/verify and a flipped message byte must fail; HKDF-SH
 PRK, and A.3 end to end) and `crypto_kdf` (`derive_from_key`, BLAKE2b); `randombytes_buf`; and the library's own
 `sodium_version_string`. The results are byte-comparable because every key, nonce, message and Ed25519 seed is a
 **fixed, invented test value** — sealed boxes and the RNG are randomised, so only their round trips and lengths are
-compared. The frozen expectations are in `frozenValues` (`dart_vm/lib/checks.dart` and the copy under `flutter/lib/`),
-and every probe asserts them.
+compared. The frozen expectations are in `frozenValues` (`dart_vm/lib/checks.dart` and the copy under `flutter/lib/`)
+and in `FROZEN_VALUES` (`node/lib/checks.mjs`), and every probe asserts them — a mismatch prints the mismatching
+names and exits 1 (see `docs/verification/crypto-libs-2026-10-12.md` § 2.3).
 
 ## Rules these probes obey
 
