@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 3 (Android: R01–R06, R07 periodic sync, R10, R11 Play track); 4 (R07 push, R09); 5 (iOS: R08, R11 App Store, iOS CI build), per ADR 0003 |
-| Status | R01 is ready; the rest follow their own Deps (planning of 2026-10-12) |
+| Status | In progress: R01 ([PR #93](https://github.com/fabelhaft-io/flexcalendar/pull/93)), R02 ([PR #102](https://github.com/fabelhaft-io/flexcalendar/pull/102)) and R04 ([PR #104](https://github.com/fabelhaft-io/flexcalendar/pull/104)) Done, 2026-10-12; R03 is next; the rest follow their own Deps (planning of 2026-10-12) |
 | Executor | `agent`; `human` for store submission and device checks |
 | Depends on | E02-R07 (generated Dart client), E05-R03, E05-R04, E05-R05, E05-R08, E05-R09, E05-R10 (the API it reads); each requirement names the rest (E06, E12, E13); E07 for push (Phase 4) |
 | Spec | ADR 0002, ADR 0003, `02` § Mobile clients, `04` Phases 3 and 5 |

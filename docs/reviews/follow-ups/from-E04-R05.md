@@ -1,4 +1,4 @@
 - **From the E04-R05 review 2, for later requirements** (R05 itself is in PR #48):
-  - **E12-R01:** the sealed and signed CCK record in `spec/crypto.md` must carry its signer's user id (or `calendar_keys` needs a signer column): the table has `calendar_id`, `epoch`, `user_id` (the recipient) and the opaque `record`. Wrapped private keys and records have no size limit in the database; the API checks sizes;
+  - **E13 and E14 (the API's writes of `calendar_keys` and `user_key_wraps`):** the CCK record carries its signer's user id itself (`spec/crypto.md` §6.6), so the table needs no signer column. The database has no size limit, so the API checks the sizes `spec/crypto.md` gives: a CCK record is exactly 162 bytes, a wrapped private key 42 to 512 (147 for `recovery_code`, §6.3.3);
   - **E14-R01:** its migration drops `user_key_wraps_no_escrow_check` by name and its `down` re-adds it (named in the epic since E04-R05); `user_key_wraps` is keyed `(user_id, kind)`, so an escrow wrap is a second row beside the `recovery_code` one;
   - **E13-R01:** "key-capable" means a `user_keys` row.
