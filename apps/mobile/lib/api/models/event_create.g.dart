@@ -8,6 +8,7 @@ part of 'event_create.dart';
 
 EventCreate _$EventCreateFromJson(Map<String, dynamic> json) => EventCreate(
   start: EventTime.fromJson(json['start'] as Map<String, dynamic>),
+  uid: json['uid'] as String?,
   end: json['end'] == null
       ? null
       : EventTime.fromJson(json['end'] as Map<String, dynamic>),
@@ -16,6 +17,8 @@ EventCreate _$EventCreateFromJson(Map<String, dynamic> json) => EventCreate(
       ? null
       : EventAlarm.fromJson(json['alarm'] as Map<String, dynamic>),
   envelopeSha256: json['envelopeSha256'] as String?,
+  envelope: json['envelope'] as String?,
+  epoch: (json['epoch'] as num?)?.toInt(),
   summary: json['summary'] as String?,
   description: json['description'] as String?,
   location: json['location'] as String?,
@@ -26,11 +29,14 @@ EventCreate _$EventCreateFromJson(Map<String, dynamic> json) => EventCreate(
 
 Map<String, dynamic> _$EventCreateToJson(EventCreate instance) =>
     <String, dynamic>{
+      'uid': instance.uid,
       'start': instance.start,
       'end': instance.end,
       'rrule': instance.rrule,
       'alarm': instance.alarm,
       'envelopeSha256': instance.envelopeSha256,
+      'envelope': instance.envelope,
+      'epoch': instance.epoch,
       'summary': instance.summary,
       'description': instance.description,
       'location': instance.location,

@@ -35,7 +35,7 @@
 // run twice in a row.
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
@@ -44,6 +44,7 @@ import { buildApp } from '../../src/app.mjs';
 import { createCalendarStore } from '../../src/calendar-store.mjs';
 import { createCalDavAdapter } from '../../src/caldav/adapter.mjs';
 import { readConfig } from '../../src/config.mjs';
+import { createEnvelopeStore } from '../../src/envelope-store.mjs';
 import { createUserStore } from '../../src/store.mjs';
 
 const databaseUrl = process.env.CALFLEX_DATABASE_URL;
@@ -52,11 +53,6 @@ const delegationKeys = process.env.CALFLEX_DELEGATION_KEYS;
 
 const ISSUER = 'https://auth.example.test';
 const AUDIENCE = 'project-id';
-/** The envelope hash a Private create needs; opaque to this suite. */
-const HASH = 'c'.repeat(64);
-/** The envelope hash the override VEVENT carries; opaque as well. */
-const OVERRIDE_HASH = 'd'.repeat(64);
-
 /**
  * An envelope of `length` bytes with the header the API's create requires
  * (first byte `1`, the epoch as a `uint32` at offset 1, at least 45 bytes) —
@@ -69,6 +65,23 @@ function envelopeOf(epoch, length = 60) {
   bytes.writeUInt32BE(epoch, 1);
   return bytes.toString('base64');
 }
+
+/**
+ * The sealed event envelope a Private create commits beside its skeleton
+ * (E13-R02): a well-formed header and opaque bytes. The API checks the header,
+ * the size and that the bytes hash to `envelopeSha256`, and never opens one
+ * (INV-07). The same shape `test/integration/events.test.mjs` uses.
+ */
+const EVENT_ENVELOPE = (() => {
+  const bytes = Buffer.alloc(60, 0x5a);
+  bytes[0] = 1;
+  bytes.writeUInt32BE(1, 1);
+  return bytes;
+})();
+/** The hash a Private create's skeleton carries — and each master's own here. */
+const HASH = createHash('sha256').update(EVENT_ENVELOPE).digest('hex');
+/** The envelope hash the override VEVENT carries; opaque to this suite. */
+const OVERRIDE_HASH = 'd'.repeat(64);
 
 /** The subject this suite's user is identified by. */
 const RUN = randomUUID();
@@ -127,6 +140,7 @@ function build() {
     },
     store: createUserStore(pool),
     calendars: createCalendarStore(pool),
+    envelopes: createEnvelopeStore(pool),
     caldav: adapter,
     logger: { stream: capture.stream },
   });
@@ -168,7 +182,11 @@ async function calendar(/** @type {import('fastify').FastifyInstance} */ app) {
   return response.json().id;
 }
 
-/** Creates one event through the API and returns it. */
+/**
+ * Creates one event through the API and returns it. A Private create names its
+ * own lowercase UUIDv4 `uid` and carries the sealed envelope whose SHA-256 the
+ * skeleton will hold (E13-R02, E03-R11): the fields a client must send.
+ */
 async function event(
   /** @type {import('fastify').FastifyInstance} */ app,
   /** @type {string} */ calendarId,
@@ -178,7 +196,13 @@ async function event(
     app,
     'POST',
     `/calendars/${calendarId}/events`,
-    { envelopeSha256: HASH, ...body },
+    {
+      uid: randomUUID(),
+      epoch: 1,
+      envelope: EVENT_ENVELOPE.toString('base64'),
+      envelopeSha256: HASH,
+      ...body,
+    },
   );
   assert.equal(response.statusCode, 201, response.body);
   return response.json();

@@ -38,7 +38,7 @@
 //     line, whatever the store throws.
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { test } from 'node:test';
@@ -49,6 +49,7 @@ import { readConfig } from '../src/config.mjs';
 import { rawLines } from './ical-roundtrip.mjs';
 import { createMemoryCalDavStore } from './support/caldav-store.mjs';
 import { createMemoryCalendarStore } from './support/calendar-store.mjs';
+import { createMemoryEnvelopeStore } from './support/envelope-store.mjs';
 import { assertProblem } from './support/problem.mjs';
 
 const ISSUER = 'https://auth.example.test';
@@ -84,8 +85,26 @@ const USERS = {
 const CANARY = 'CALFLEX_EVENT_CONTENT_CANARY';
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-/** A well-formed envelope hash for the sidecar envelope of E13-R02. */
-const HASH = 'a'.repeat(64);
+/**
+ * The sealed envelope a Private create commits beside its skeleton (E13-R02):
+ * version `0x01`, the epoch, and opaque bytes. Its only job here is to be a
+ * well-formed envelope whose SHA-256 the skeleton can carry, since the API
+ * checks the header, the size and the hash and never opens the bytes (INV-07).
+ */
+const ENVELOPE = (() => {
+  const bytes = Buffer.alloc(60, 0x11);
+  bytes[0] = 1;
+  bytes.writeUInt32BE(1, 1);
+  return bytes;
+})();
+/** The SHA-256 of the default envelope, which the skeleton carries. */
+const HASH = createHash('sha256').update(ENVELOPE).digest('hex');
+/**
+ * The hash of a **re-sealed** envelope: what a patch that moves `DTSTART` or
+ * the end has to carry, because both are bound into the envelope's AAD
+ * (`spec/crypto.md` §2.2). The stored object's hash stays `HASH` until then.
+ */
+const RESEALED_HASH = 'b'.repeat(64);
 const STAMP = '20261014T090000Z';
 /** The stored object whose master has an override beside it (E15-R01 corpus). */
 const OVERRIDE_UID = '5d6c7b8a-9012-4ef3-8abc-0123456789ab';
@@ -156,6 +175,7 @@ async function setup() {
   const events = [];
   const calendars = createMemoryCalendarStore({ events });
   const caldav = createMemoryCalDavStore({ events });
+  const envelopes = createMemoryEnvelopeStore({ events });
   const app = buildApp({
     config: readConfig({
       CALFLEX_OIDC_ISSUER: ISSUER,
@@ -167,6 +187,7 @@ async function setup() {
     store: usersStore,
     calendars,
     caldav,
+    envelopes,
     logger: { stream: capture.stream },
   });
   const calendarId = randomUUID();
@@ -179,7 +200,7 @@ async function setup() {
   });
   calendars.addMember(calendarId, EDITOR.id, 'editor');
   calendars.addMember(calendarId, VIEWER.id, 'viewer');
-  return { app, capture, calendars, caldav, events, calendarId };
+  return { app, capture, calendars, caldav, envelopes, events, calendarId };
 }
 
 /**
@@ -205,11 +226,19 @@ async function call(
   );
 }
 
-/** A create body with every optional member absent. */
+/**
+ * A create body with the fields a Private create requires: the client-chosen
+ * `UID` (the envelope's AAD binds it, D-14), the skeleton's times, and the
+ * sealed envelope the one request commits in D-06 order (E13-R02). Every call
+ * mints a fresh `UID`, so two creates never collide.
+ */
 const createBody = (/** @type {Record<string, unknown>} */ over = {}) => ({
+  uid: randomUUID(),
   start: { utc: STAMP },
   end: { utc: '20261014T100000Z' },
   alarm: { trigger: '-PT15M' },
+  epoch: 1,
+  envelope: ENVELOPE.toString('base64'),
   envelopeSha256: HASH,
   ...over,
 });
@@ -265,20 +294,22 @@ const linesOf = (text, path) =>
         `${line.kind} ${line.name} ${line.parameters.join(';')} ${line.value}`,
     );
 
-test('create mints a UUIDv4 uid, writes a guard-accepted skeleton and answers 201', async () => {
-  const { app, caldav, calendarId } = await setup();
+test('a Private create writes the client uid and commits the envelope in D-06 order', async () => {
+  const { app, caldav, envelopes, calendarId } = await setup();
   try {
+    const uid = randomUUID();
     const response = await call(app, {
       method: 'POST',
       url: `/calendars/${calendarId}/events`,
       subject: 'editor',
-      payload: createBody(),
+      payload: createBody({ uid }),
     });
     assert.equal(response.statusCode, 201, response.body);
     const body = response.json();
 
-    // INV-03: the `UID` is a random UUIDv4, minted here, and the object is
-    // addressed by it.
+    // INV-03: the `UID` is a lowercase UUIDv4 the client named, and the object
+    // is addressed by it.
+    assert.equal(body.uid, uid);
     assert.match(body.uid, UUID_V4);
     assert.equal(body.parsed.uid, body.uid);
     assert.equal(
@@ -305,6 +336,24 @@ test('create mints a UUIDv4 uid, writes a guard-accepted skeleton and answers 20
     assert.match(body.ical, /^BEGIN:VALARM$/m);
     assert.match(body.ical, /^TRIGGER:-PT15M$/m);
     assert.match(body.ical, /^DESCRIPTION:Reminder$/m);
+
+    // D-06: the sidecar row is committed **before** the skeleton is written.
+    const ops = opsOf(caldav.events);
+    const insertIndex = ops.indexOf('envelopeInsert');
+    const putIndex = ops.findIndex((op) => op === 'putObject');
+    assert.ok(insertIndex !== -1, 'the envelope row was never inserted');
+    assert.ok(putIndex !== -1, 'the skeleton was never written');
+    assert.ok(
+      insertIndex < putIndex,
+      'the envelope row must be inserted before the skeleton PUT (D-06)',
+    );
+    // The skeleton names the bytes the row holds, and the row holds exactly
+    // what the client sealed.
+    const rows = envelopes.rows();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].uid, uid);
+    assert.equal(rows[0].envelopeSha256, HASH);
+    assert.equal(rows[0].envelope, ENVELOPE.toString('base64'));
 
     // The parsed view: the master VEVENT, nothing else, no content.
     assert.deepEqual(body.parsed, {
@@ -333,12 +382,16 @@ test('create mints a UUIDv4 uid, writes a guard-accepted skeleton and answers 20
 test('a create with a rule and an all-day time writes exactly what was asked', async () => {
   const { app, calendarId } = await setup();
   try {
-    const body = await created(app, calendarId, {
-      start: { date: '2026-10-12' },
-      end: { date: '2026-10-13' },
-      rrule: 'FREQ=DAILY;COUNT=3',
-      envelopeSha256: HASH,
-    });
+    const body = await created(
+      app,
+      calendarId,
+      createBody({
+        start: { date: '2026-10-12' },
+        end: { date: '2026-10-13' },
+        rrule: 'FREQ=DAILY;COUNT=3',
+        alarm: null,
+      }),
+    );
     assert.match(body.ical, /^DTSTART;VALUE=DATE:20261012$/m);
     assert.match(body.ical, /^DTEND;VALUE=DATE:20261013$/m);
     assert.match(body.ical, /^RRULE:FREQ=DAILY;COUNT=3$/m);
@@ -347,10 +400,11 @@ test('a create with a rule and an all-day time writes exactly what was asked', a
     assert.equal(body.parsed.alarm, null);
 
     // An `end` the caller left out is no `DTEND` at all, not a guessed one.
-    const open = await created(app, calendarId, {
-      start: { utc: STAMP },
-      envelopeSha256: HASH,
-    });
+    const open = await created(
+      app,
+      calendarId,
+      createBody({ start: { utc: STAMP }, end: undefined, alarm: null }),
+    );
     assert.ok(!/^DTEND/m.test(open.ical));
     assert.equal(open.parsed.end, null);
   } finally {
@@ -412,6 +466,9 @@ test('a TZID event carries its VTIMEZONE through create, read and patch', async 
       headers: { 'if-match': stored.etag },
       payload: {
         end: { local: '20261014T060000', tzid: 'America/New_York' },
+        // The end is bound into the envelope's AAD, so moving it needs a
+        // re-sealed envelope's hash (E13-R02).
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(patched.statusCode, 200, patched.body);
@@ -501,7 +558,10 @@ test('a stored zone the resolver cannot read survives a patch that leaves the ti
       url,
       subject: 'owner',
       headers: { 'if-match': stored.etag },
-      payload: { start: { utc: '20300601T120000Z' } },
+      payload: {
+        start: { utc: '20300601T120000Z' },
+        envelopeSha256: RESEALED_HASH,
+      },
     });
     assert.equal(refused.statusCode, 422, refused.body);
     assertProblem(refused.json(), 'invalid-input');
@@ -520,6 +580,7 @@ test('a stored zone the resolver cannot read survives a patch that leaves the ti
       payload: {
         start: { utc: '20300601T120000Z' },
         end: { utc: '20300601T130000Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(replaced.statusCode, 200, replaced.body);
@@ -533,7 +594,7 @@ test('a stored zone the resolver cannot read survives a patch that leaves the ti
 });
 
 test('every create refusal is one 422 with a fixed body, and none of them reaches CalDAV', async () => {
-  const { app, capture, caldav, calendarId } = await setup();
+  const { app, capture, caldav, envelopes, calendarId } = await setup();
   try {
     /** @type {[string, unknown][]} */
     const cases = [
@@ -628,6 +689,43 @@ test('every create refusal is one 422 with a fixed body, and none of them reache
         createBody({ alarm: { trigger: 'fifteen minutes' } }),
       ],
       ['an envelope that is missing', { start: { utc: STAMP } }],
+      ['a create with no uid', createBody({ uid: undefined })],
+      ['a create with no envelope', createBody({ envelope: undefined })],
+      ['a create with no epoch', createBody({ epoch: undefined })],
+      [
+        'an envelope that is not base64',
+        createBody({ envelope: 'not base64 !' }),
+      ],
+      [
+        'an envelope shorter than the fixed fields',
+        createBody({ envelope: Buffer.alloc(44, 1).toString('base64') }),
+      ],
+      [
+        'an envelope with the wrong version byte',
+        createBody({
+          envelope: Buffer.concat([
+            Buffer.from([0x02]),
+            ENVELOPE.subarray(1),
+          ]).toString('base64'),
+        }),
+      ],
+      ['an epoch that is not the header epoch', createBody({ epoch: 2 })],
+      ['an epoch above the column range', createBody({ epoch: 2147483648 })],
+      [
+        'an envelope over the 64 KiB ceiling',
+        createBody({
+          envelope: (() => {
+            const bytes = Buffer.alloc(65_537, 7);
+            bytes[0] = 1;
+            bytes.writeUInt32BE(1, 1);
+            return bytes.toString('base64');
+          })(),
+        }),
+      ],
+      [
+        'a hash that is not the hash of the bytes',
+        createBody({ envelopeSha256: 'a'.repeat(64) }),
+      ],
       [
         'an envelope that is not hex',
         createBody({ envelopeSha256: 'not a hash' }),
@@ -652,8 +750,11 @@ test('every create refusal is one 422 with a fixed body, and none of them reache
         'attendees on a Private calendar',
         createBody({ attendees: ['mailto:a@example.test'] }),
       ],
+      // A Private create may name its `UID` (the envelope's AAD binds it, D-14),
+      // but only as the lowercase UUIDv4 the API itself writes (INV-03).
+      ['a uid that is not a uuidv4', createBody({ uid: 'Not-A-Uuid' })],
+      ['a uid of another shape', createBody({ uid: CANARY })],
       // The recurrence itself never comes from a client (INV-05).
-      ['a uid', createBody({ uid: randomUUID() })],
       ['an exdate', createBody({ exdate: '20261021T090000Z' })],
       ['a recurrenceId', createBody({ recurrenceId: '20261021T090000Z' })],
       ['a mode', createBody({ mode: 'private' })],
@@ -678,6 +779,8 @@ test('every create refusal is one 422 with a fixed body, and none of them reache
         op,
       );
     }
+    // No envelope was committed either: every refusal happened before the row.
+    assert.equal(envelopes.rows().length, 0);
     assert.ok(!capture.text().includes(CANARY), capture.text());
 
     // A body that is not JSON at all never reaches a handler: the route takes
@@ -854,6 +957,8 @@ test('a patch needs If-Match, forwards it, and changes only what it was asked to
         start: { utc: '20261014T110000Z' },
         end: { utc: '20261014T113000Z' },
         alarm: null,
+        // Moving a bound time needs a re-sealed envelope's hash (E13-R02).
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(patched.statusCode, 200, patched.body);
@@ -861,7 +966,10 @@ test('a patch needs If-Match, forwards it, and changes only what it was asked to
     assert.match(after.ical, /^DTSTART:20261014T110000Z$/m);
     assert.match(after.ical, /^DTEND:20261014T113000Z$/m);
     assert.ok(!/^BEGIN:VALARM$/m.test(after.ical), 'the alarm was not removed');
-    assert.equal(valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'), HASH);
+    assert.equal(
+      valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'),
+      RESEALED_HASH,
+    );
     // The revision moved, so `SEQUENCE` and `DTSTAMP` did too.
     assert.match(after.ical, /^SEQUENCE:1$/m);
     assert.equal(after.parsed.sequence, 1);
@@ -904,6 +1012,7 @@ test('a patch of a master leaves the overrides and every other property untouche
       payload: {
         start: { utc: '20261021T100000Z' },
         end: { utc: '20261021T110000Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(response.statusCode, 200, response.body);
@@ -941,6 +1050,7 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
       payload: {
         start: { utc: '20301231T235900Z' },
         end: { utc: '20301231T235959Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(response.statusCode, 412, response.body);
@@ -997,6 +1107,7 @@ test('a stale If-Match is a 412 carrying the current representation and nothing 
       payload: {
         start: { utc: '20301231T235900Z' },
         end: { utc: '20301231T235959Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(raced.statusCode, 404, raced.body);
@@ -1374,7 +1485,9 @@ test('only a valid start/end pair is written, on a create and against the stored
         url,
         subject: 'owner',
         headers: { 'if-match': stored.etag },
-        payload,
+        // Each patch moves a bound time, so it carries the re-sealed envelope's
+        // hash and it is the start/end rule that refuses it (E13-R02).
+        payload: { ...payload, envelopeSha256: RESEALED_HASH },
       });
       assert.equal(response.statusCode, 422, `${what}: ${response.body}`);
       assertProblem(response.json(), 'invalid-input');
@@ -1399,6 +1512,7 @@ test('only a valid start/end pair is written, on a create and against the stored
       payload: {
         start: { utc: '20261014T110000Z' },
         end: { utc: '20261014T113000Z' },
+        envelopeSha256: RESEALED_HASH,
       },
     });
     assert.equal(moved.statusCode, 200, moved.body);

@@ -13,6 +13,7 @@
 
 import { buildApp } from './app.mjs';
 import { createCalendarStore } from './calendar-store.mjs';
+import { createEnvelopeStore } from './envelope-store.mjs';
 import { readConfig } from './config.mjs';
 import { createPool, createUserStore } from './store.mjs';
 
@@ -25,6 +26,7 @@ const app = buildApp({
   config,
   store: createUserStore(pool),
   calendars: createCalendarStore(pool),
+  envelopes: createEnvelopeStore(pool),
 });
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';

@@ -6,6 +6,9 @@ import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 
 import '../models/calendar_changes.dart';
+import '../models/envelope_list.dart';
+import '../models/envelope_stamp.dart';
+import '../models/envelope_write.dart';
 import '../models/event.dart';
 import '../models/event_create.dart';
 import '../models/event_update.dart';
@@ -19,9 +22,10 @@ abstract class EventsClient {
 
   /// Create an event.
   ///
-  /// The client sends fields, never iCalendar: the API mints the `UID` (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client never writes the recurrence itself — an exception or an occurrence override is an intent (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
+  /// The client sends fields, never iCalendar: the API builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client never writes the recurrence itself — an exception or an occurrence override is an intent (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
   /// A time is a `date`, an `utc` instant or a `local` wall clock beside an IANA `tzid`: a `TZID` write is written as the wall clock it spells, with the `TZID` parameter and a generated `VTIMEZONE` for that zone embedded in the object, so an object always defines the zones it uses (E05-R09). A zone that is not an IANA name in its exact spelling — a Windows zone name, a wrong-case spelling, an unknown one — is a 422.
-  /// The answer carries the raw iCalendar object (`ical`, byte for byte), the CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003), so the object is a skeleton: `summary`, `description`, `location` and `attendees` are refused with 422 (they arrive with Shared calendars) and `envelopeSha256` is required, because a Private `VEVENT` carries exactly one `X-CALFLEX-ENVELOPE-SHA256` (E03-R09, D-18).
+  /// The answer carries the raw iCalendar object (`ical`, byte for byte), the CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003), so the object is a skeleton: `summary`, `description`, `location` and `attendees` are refused with 422 (they arrive with Shared calendars).
+  /// On a Private calendar the create is **one request that commits skeleton and envelope in D-06's order** (E13-R02). The client names the `UID` (`uid` is required, a lowercase UUIDv4 — the envelope's AAD binds it, D-14, so the API cannot mint one) and seals the envelope over the same skeleton, which is why `envelope`, `epoch` and `envelopeSha256` are required: `envelope` is the sealed bytes in standard base64, `epoch` is the CCK epoch its header carries, and `envelopeSha256` is their SHA-256, the value the skeleton's `X-CALFLEX-ENVELOPE-SHA256` will hold. The API checks only the header (version `0x01`, the epoch), the size (at most 65,536 bytes, `spec/crypto.md` §1.1) and that the bytes hash to `envelopeSha256`; it never opens an envelope (INV-07). It inserts the sidecar row first, then writes the skeleton, so a crash between the two steps leaves an orphan row no skeleton names — never a skeleton whose envelope never existed — which the 24-hour sweep removes. A Shared create (Phase 4) has no envelope and keeps minting the `UID`.
   /// The request body is validated by the route rather than by a schema: a schema-refused body is a 400, and every rule above must answer 422.
   ///
   /// [calendarId] - The `calendars.id` uuid of the calendar to write into.
@@ -93,6 +97,44 @@ abstract class EventsClient {
   Future<CalendarChanges> listCalendarChanges({
     @Path('calendarId') required String calendarId,
     @Query('since') String? since,
+  });
+
+  /// Read a calendar's sidecar envelopes.
+  ///
+  /// The event content a Private calendar keeps out of the `VEVENT`: one sealed envelope per `VEVENT`, keyed `(uid, recurrenceId, hash)` and stored opaquely in `event_envelopes` (D-06). The API never opens one (INV-07): it answers the bytes the sidecar row holds, standard base64.
+  /// Three reads share this operation and are mutually exclusive: with no query the whole calendar; with `uid` (repeated) the named objects; with `since` the ones that changed since that token — the same token `GET /calendars/{calendarId}/changes` mints, so a client fetches the pointers and the envelopes from one cursor.
+  /// **An answer carries only an envelope a skeleton names.** For every `VEVENT` the object holds, its `X-CALFLEX-ENVELOPE-SHA256` and its canonical recurrence identity select the one row that may be returned; a row no skeleton carries is left out. That is D-06's read gate, and it is what makes a crash between D-06's write steps harmless: the previous skeleton still names the previous envelope.
+  /// Every member of the calendar may read, and a caller who is not a member gets the 404 an unknown id gets.
+  ///
+  /// [calendarId] - The `calendars.id` uuid of the calendar.
+  ///
+  /// [uid] - One `VEVENT` `UID`, repeated to name several. Only those objects are read. Not allowed together with `since`.
+  ///
+  /// [since] - The `token` a previous answer of this operation or of `GET /calendars/{calendarId}/changes` returned. Only the envelopes of the objects changed since then are read, and a tombstone reports the uid of a deleted object. Not allowed together with `uid`. A value that is not one of ours, or one minted for another calendar, is a 410.
+  @GET('/calendars/{calendarId}/envelopes')
+  Future<EnvelopeList> listEnvelopes({
+    @Path('calendarId') required String calendarId,
+    @Query('uid') List<String>? uid,
+    @Query('since') String? since,
+  });
+
+  /// Store a sealed envelope and commit it with the skeleton.
+  ///
+  /// D-06's write, in D-06's order: the envelope row is inserted first, then the stored skeleton is re-written with `X-CALFLEX-ENVELOPE-SHA256` set to the new hash and the caller's `If-Match`, then the superseded row is garbage-collected. A crash between the first two steps leaves the previous skeleton naming the previous envelope, so the old version stays readable; the row left behind is an orphan no skeleton names, and it is removed after 24 hours.
+  /// The API checks the envelope's header (version `0x01`, epoch `0` through `2147483647`), its size (at most 65,536 bytes, `spec/crypto.md` §1.1) and that `envelopeSha256` is the SHA-256 of the bytes sent — the same value the skeleton then carries. It never opens an envelope (INV-07), and it never logs or echoes one.
+  /// The object's times and rule are not part of this request: the envelope is sealed over the skeleton the collection already holds, so committing it rewrites that skeleton's hash and nothing else. `recurrenceId` selects the `VEVENT` the envelope belongs to — the master when absent.
+  ///
+  /// [calendarId] - The `calendars.id` uuid of the calendar.
+  ///
+  /// [uid] - The `VEVENT` `UID`, a lowercase UUIDv4. The object is `<uid>.ics`.
+  ///
+  /// [ifMatch] - The skeleton's `ETag`, as the read answered it. A list of validators and `*` are allowed; the store decides which of them matches.
+  @PUT('/calendars/{calendarId}/envelopes/{uid}')
+  Future<EnvelopeStamp> writeEnvelope({
+    @Path('calendarId') required String calendarId,
+    @Path('uid') required String uid,
+    @Header('If-Match') required String ifMatch,
+    @Body() required EnvelopeWrite body,
   });
 
   /// Expand a window of a calendar's occurrences.

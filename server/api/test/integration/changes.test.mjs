@@ -23,7 +23,7 @@
 // run twice in a row.
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
@@ -32,6 +32,7 @@ import { buildApp } from '../../src/app.mjs';
 import { createCalendarStore } from '../../src/calendar-store.mjs';
 import { createCalDavAdapter } from '../../src/caldav/adapter.mjs';
 import { readConfig } from '../../src/config.mjs';
+import { createEnvelopeStore } from '../../src/envelope-store.mjs';
 import { PROBLEM_TYPE_BASE, PROBLEM_TYPES } from '../../src/problem.mjs';
 import { createUserStore } from '../../src/store.mjs';
 
@@ -80,7 +81,20 @@ const delegationKeys = process.env.CALFLEX_DELEGATION_KEYS;
 
 const ISSUER = 'https://auth.example.test';
 const AUDIENCE = 'project-id';
-const HASH = 'c'.repeat(64);
+
+/**
+ * The sealed envelope a Private create commits beside its skeleton (E13-R02):
+ * a well-formed header and opaque bytes. The API checks the header, the size and
+ * that the bytes hash to `envelopeSha256`, and never opens one (INV-07).
+ */
+const ENVELOPE = (() => {
+  const bytes = Buffer.alloc(60, 0x44);
+  bytes[0] = 1;
+  bytes.writeUInt32BE(1, 1);
+  return bytes;
+})();
+/** The SHA-256 of the default envelope, which the skeleton carries. */
+const HASH = createHash('sha256').update(ENVELOPE).digest('hex');
 
 const RUN = randomUUID();
 const SUBJECTS = {
@@ -143,6 +157,7 @@ function build() {
     },
     store: createUserStore(pool),
     calendars: createCalendarStore(pool),
+    envelopes: createEnvelopeStore(pool),
     caldav: adapter,
     logger: { stream: capture.stream },
   });
@@ -199,10 +214,13 @@ async function calendar(/** @type {import('fastify').FastifyInstance} */ app) {
   return response.json().id;
 }
 
-/** A create body for one event. */
+/** A create body for one event: the fields a Private create requires (E13-R02). */
 const body = (/** @type {Record<string, unknown>} */ over = {}) => ({
+  uid: randomUUID(),
   start: { utc: '20261014T090000Z' },
   end: { utc: '20261014T100000Z' },
+  epoch: 1,
+  envelope: ENVELOPE.toString('base64'),
   envelopeSha256: HASH,
   ...over,
 });
@@ -325,16 +343,40 @@ test('a create, an update and a delete between two tokens', async () => {
 
     // A create, an update and a delete *between two tokens*.
     const added = await created(app, calendarId);
+    // A moved time is bound into the envelope's AAD (`spec/crypto.md` §2.2), so
+    // the patch carries a re-sealed envelope's hash, and the client commits that
+    // envelope through the sidecar write — exactly the two writes a client makes
+    // (E13-R02).
+    const reSealed = Buffer.alloc(64, 0x55);
+    reSealed[0] = 1;
+    reSealed.writeUInt32BE(2, 1);
+    const reSealedHash = createHash('sha256').update(reSealed).digest('hex');
     const patch = await request(
       app,
       'a',
       'PATCH',
       `/calendars/${calendarId}/events/${touched.uid}`,
-      { start: { utc: '20261014T083000Z' } },
+      { start: { utc: '20261014T083000Z' }, envelopeSha256: reSealedHash },
       { 'if-match': touched.etag },
     );
     assert.equal(patch.statusCode, 200, patch.body);
     const updated = patch.json();
+    const sealed = await request(
+      app,
+      'a',
+      'PUT',
+      `/calendars/${calendarId}/envelopes/${touched.uid}`,
+      {
+        envelope: reSealed.toString('base64'),
+        epoch: 2,
+        envelopeSha256: reSealedHash,
+      },
+      { 'if-match': updated.etag },
+    );
+    assert.equal(sealed.statusCode, 200, sealed.body);
+    // The sidecar commit re-writes the skeleton with the new hash, so its
+    // `ETag` — not the patch's — is the object's current version.
+    const current = sealed.json();
     const drop = await request(
       app,
       'a',
@@ -359,7 +401,7 @@ test('a create, an update and a delete between two tokens', async () => {
       answer.changes.find(
         (/** @type {any} */ entry) => entry.uid === updated.uid,
       ),
-      { uid: updated.uid, deleted: false, etag: updated.etag },
+      { uid: updated.uid, deleted: false, etag: current.etag },
     );
     const tombstone = answer.changes.find(
       (/** @type {any} */ entry) => entry.uid === doomed.uid,

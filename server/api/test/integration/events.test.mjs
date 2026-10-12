@@ -23,7 +23,7 @@
 // the live service produces, and that the marker never comes back.
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
@@ -32,6 +32,7 @@ import { buildApp } from '../../src/app.mjs';
 import { createCalendarStore } from '../../src/calendar-store.mjs';
 import { CalDavError, createCalDavAdapter } from '../../src/caldav/adapter.mjs';
 import { readConfig } from '../../src/config.mjs';
+import { createEnvelopeStore } from '../../src/envelope-store.mjs';
 import { classifyCalDavError } from '../../src/problem.mjs';
 import { createUserStore } from '../../src/store.mjs';
 import { rawLines } from '../ical-roundtrip.mjs';
@@ -47,7 +48,25 @@ const ISSUER = 'https://auth.example.test';
 const AUDIENCE = 'project-id';
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const HASH = 'b'.repeat(64);
+/**
+ * The sealed event envelope a Private create commits beside its skeleton
+ * (E13-R02): a well-formed header and opaque bytes. The API checks the header,
+ * the size and that the bytes hash to `envelopeSha256`, and never opens one
+ * (INV-07).
+ */
+const EVENT_ENVELOPE = (() => {
+  const bytes = Buffer.alloc(60, 0x66);
+  bytes[0] = 1;
+  bytes.writeUInt32BE(1, 1);
+  return bytes;
+})();
+const HASH = createHash('sha256').update(EVENT_ENVELOPE).digest('hex');
+/**
+ * The hash of a re-sealed envelope. A patch that moves `start` or `end` carries
+ * one, because both are bound into the envelope's AAD (`spec/crypto.md` §2.2,
+ * E13-R02).
+ */
+const RESEALED_HASH = 'c'.repeat(64);
 
 /** The two users this suite owns, by the subject their token carries. */
 const RUN = randomUUID();
@@ -111,6 +130,7 @@ function build() {
     },
     store: createUserStore(pool),
     calendars: createCalendarStore(pool),
+    envelopes: createEnvelopeStore(pool),
     caldav: adapter,
     logger: { stream: capture.stream },
   });
@@ -177,11 +197,14 @@ async function calendar(/** @type {import('fastify').FastifyInstance} */ app) {
   return response.json().id;
 }
 
-/** A create body for one event. */
+/** A create body for one event: the fields a Private create requires (E13-R02). */
 const body = (/** @type {Record<string, unknown>} */ over = {}) => ({
+  uid: randomUUID(),
   start: { utc: '20261014T090000Z' },
   end: { utc: '20261014T100000Z' },
   alarm: { trigger: '-PT15M' },
+  epoch: 1,
+  envelope: EVENT_ENVELOPE.toString('base64'),
   envelopeSha256: HASH,
   ...over,
 });
@@ -257,7 +280,8 @@ test('create, read back byte for byte, patch on the right precondition, delete',
     );
     assert.equal(created.statusCode, 201, created.body);
     const event = created.json();
-    // INV-03: the UID is a random UUIDv4, and the object is addressed by it.
+    // INV-03: the `UID` is a random UUIDv4 — here chosen by the client, because
+    // a Private create names it (E13-R02) — and the object is addressed by it.
     assert.match(event.uid, UUID_V4);
     assert.equal(
       created.headers.location,
@@ -291,6 +315,7 @@ test('create, read back byte for byte, patch on the right precondition, delete',
       {
         start: { utc: '20301231T235900Z' },
         end: { utc: '20301231T235959Z' },
+        envelopeSha256: RESEALED_HASH,
       },
       { 'if-match': '"stale"' },
     );
@@ -325,6 +350,7 @@ test('create, read back byte for byte, patch on the right precondition, delete',
         start: { utc: '20261014T110000Z' },
         end: { utc: '20261014T113000Z' },
         alarm: null,
+        envelopeSha256: RESEALED_HASH,
       },
       { 'if-match': event.etag },
     );
@@ -333,7 +359,10 @@ test('create, read back byte for byte, patch on the right precondition, delete',
     assert.equal(valueOf(after.ical, 'DTSTART'), '20261014T110000Z');
     assert.equal(valueOf(after.ical, 'DTEND'), '20261014T113000Z');
     assert.equal(valueOf(after.ical, 'SEQUENCE'), '1');
-    assert.equal(valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'), HASH);
+    assert.equal(
+      valueOf(after.ical, 'X-CALFLEX-ENVELOPE-SHA256'),
+      RESEALED_HASH,
+    );
     assert.equal(valueOf(after.ical, 'TRIGGER'), undefined);
     assert.equal(after.parsed.sequence, 1);
     assert.notEqual(after.etag, event.etag);
@@ -419,7 +448,10 @@ test('a TZID event with its VTIMEZONE is accepted by the live write guard', asyn
       'a',
       'PATCH',
       `/calendars/${calendarId}/events/${event.uid}`,
-      { end: { local: '20261014T120000', tzid: 'Europe/Berlin' } },
+      {
+        end: { local: '20261014T120000', tzid: 'Europe/Berlin' },
+        envelopeSha256: RESEALED_HASH,
+      },
       { 'if-match': event.etag },
     );
     assert.equal(patched.statusCode, 200, patched.body);

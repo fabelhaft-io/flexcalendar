@@ -104,9 +104,10 @@ export interface paths {
         put?: never;
         /**
          * Create an event
-         * @description The client sends fields, never iCalendar: the API mints the `UID` (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client never writes the recurrence itself — an exception or an occurrence override is an intent (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
+         * @description The client sends fields, never iCalendar: the API builds the object with `ical.js` and writes it with `If-None-Match: *`, so two creates cannot overwrite each other and a client never writes the recurrence itself — an exception or an occurrence override is an intent (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
          *     A time is a `date`, an `utc` instant or a `local` wall clock beside an IANA `tzid`: a `TZID` write is written as the wall clock it spells, with the `TZID` parameter and a generated `VTIMEZONE` for that zone embedded in the object, so an object always defines the zones it uses (E05-R09). A zone that is not an IANA name in its exact spelling — a Windows zone name, a wrong-case spelling, an unknown one — is a 422.
-         *     The answer carries the raw iCalendar object (`ical`, byte for byte), the CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003), so the object is a skeleton: `summary`, `description`, `location` and `attendees` are refused with 422 (they arrive with Shared calendars) and `envelopeSha256` is required, because a Private `VEVENT` carries exactly one `X-CALFLEX-ENVELOPE-SHA256` (E03-R09, D-18).
+         *     The answer carries the raw iCalendar object (`ical`, byte for byte), the CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003), so the object is a skeleton: `summary`, `description`, `location` and `attendees` are refused with 422 (they arrive with Shared calendars).
+         *     On a Private calendar the create is **one request that commits skeleton and envelope in D-06's order** (E13-R02). The client names the `UID` (`uid` is required, a lowercase UUIDv4 — the envelope's AAD binds it, D-14, so the API cannot mint one) and seals the envelope over the same skeleton, which is why `envelope`, `epoch` and `envelopeSha256` are required: `envelope` is the sealed bytes in standard base64, `epoch` is the CCK epoch its header carries, and `envelopeSha256` is their SHA-256, the value the skeleton's `X-CALFLEX-ENVELOPE-SHA256` will hold. The API checks only the header (version `0x01`, the epoch), the size (at most 65,536 bytes, `spec/crypto.md` §1.1) and that the bytes hash to `envelopeSha256`; it never opens an envelope (INV-07). It inserts the sidecar row first, then writes the skeleton, so a crash between the two steps leaves an orphan row no skeleton names — never a skeleton whose envelope never existed — which the 24-hour sweep removes. A Shared create (Phase 4) has no envelope and keeps minting the `UID`.
          *     The request body is validated by the route rather than by a schema: a schema-refused body is a 400, and every rule above must answer 422.
          */
         post: operations["createEvent"];
@@ -162,6 +163,51 @@ export interface paths {
          */
         get: operations["listCalendarChanges"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendars/{calendarId}/envelopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a calendar's sidecar envelopes
+         * @description The event content a Private calendar keeps out of the `VEVENT`: one sealed envelope per `VEVENT`, keyed `(uid, recurrenceId, hash)` and stored opaquely in `event_envelopes` (D-06). The API never opens one (INV-07): it answers the bytes the sidecar row holds, standard base64.
+         *     Three reads share this operation and are mutually exclusive: with no query the whole calendar; with `uid` (repeated) the named objects; with `since` the ones that changed since that token — the same token `GET /calendars/{calendarId}/changes` mints, so a client fetches the pointers and the envelopes from one cursor.
+         *     **An answer carries only an envelope a skeleton names.** For every `VEVENT` the object holds, its `X-CALFLEX-ENVELOPE-SHA256` and its canonical recurrence identity select the one row that may be returned; a row no skeleton carries is left out. That is D-06's read gate, and it is what makes a crash between D-06's write steps harmless: the previous skeleton still names the previous envelope.
+         *     Every member of the calendar may read, and a caller who is not a member gets the 404 an unknown id gets.
+         */
+        get: operations["listEnvelopes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendars/{calendarId}/envelopes/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store a sealed envelope and commit it with the skeleton
+         * @description D-06's write, in D-06's order: the envelope row is inserted first, then the stored skeleton is re-written with `X-CALFLEX-ENVELOPE-SHA256` set to the new hash and the caller's `If-Match`, then the superseded row is garbage-collected. A crash between the first two steps leaves the previous skeleton naming the previous envelope, so the old version stays readable; the row left behind is an orphan no skeleton names, and it is removed after 24 hours.
+         *     The API checks the envelope's header (version `0x01`, epoch `0` through `2147483647`), its size (at most 65,536 bytes, `spec/crypto.md` §1.1) and that `envelopeSha256` is the SHA-256 of the bytes sent — the same value the skeleton then carries. It never opens an envelope (INV-07), and it never logs or echoes one.
+         *     The object's times and rule are not part of this request: the envelope is sealed over the skeleton the collection already holds, so committing it rewrites that skeleton's hash and nothing else. `recurrenceId` selects the `VEVENT` the envelope belongs to — the master when absent.
+         */
+        put: operations["writeEnvelope"];
         post?: never;
         delete?: never;
         options?: never;
@@ -301,15 +347,21 @@ export interface components {
             ical: string;
             parsed: components["schemas"]["EventParsed"];
         };
-        /** @description A create request. `start` is required; the API mints the `UID` and the `DTSTAMP`. A `local` time is written with its `TZID` and a generated `VTIMEZONE` for that zone embedded in the object (E05-R09). On a Private calendar the content fields (`summary`, `description`, `location`, `attendees`) are a 422 and `envelopeSha256` is required — a Private object is a skeleton and the content lives in the sidecar (D-18, E03-R09). Any other member is a 422 as well. */
+        /** @description A create request. `start` is required; the API mints the `DTSTAMP` and, on a Shared calendar, the `UID`. A `local` time is written with its `TZID` and a generated `VTIMEZONE` for that zone embedded in the object (E05-R09). On a Private calendar `uid`, `envelope`, `epoch` and `envelopeSha256` are required and the content fields (`summary`, `description`, `location`, `attendees`) are a 422: the object is a skeleton and the content lives in the sidecar envelope, which the one request commits in D-06 order (D-18, E03-R09, E13-R02). The client names the `UID` because the envelope's AAD binds it (D-14, E10-R06). Any other member is a 422 as well. */
         EventCreate: {
+            /** @description The `UID`: a lowercase UUIDv4 (INV-03). Required on a Private calendar, where the client seals the envelope over it (the AAD binds the `UID`, D-14) so the API cannot mint one; a calendar that is not Private mints it and does not take it. */
+            uid?: string;
             start: components["schemas"]["EventTime"];
             end?: components["schemas"]["EventTime"];
             /** @description The recurrence rule, in the RFC 5545 § 3.3.10 form: `FREQ` first, only the parts the RFC names and each at most once, `COUNT` or `UNTIL` but not both, `UNTIL` with the value type of the start — a UTC `DATE-TIME` for any timed start, a `TZID` one included, and a `DATE` for an all-day one — and neither `BYWEEKNO` nor a yearly rule on a 29 February start. Create only: a change to a recurring event is an intent (E05-R06/R07), never a rule a client writes. */
             rrule?: null | string;
             alarm?: components["schemas"]["EventAlarm"];
-            /** @description The SHA-256 of the sealed content envelope, 64 lowercase hex digits. A Private VEVENT carries exactly one (E03-R09). */
+            /** @description The SHA-256 of the sealed content envelope, 64 lowercase hex digits. Required on a Private calendar, where the envelope and the skeleton are committed together (E03-R09, E13-R02); the API refuses bytes that do not hash to it. */
             envelopeSha256?: null | string;
+            /** @description The sealed envelope bytes in standard base64: version `0x01`, the big-endian uint32 epoch, the 24-byte nonce, ciphertext and tag. At least 45 bytes, at most 65,536 (`spec/crypto.md` §1.1). Required on a Private calendar and stored opaquely; the API never opens one (INV-07). */
+            envelope?: string;
+            /** @description The CCK epoch the envelope header carries, 0 through 2147483647. Required on a Private calendar and part of the sidecar key. */
+            epoch?: number;
             /** @description The title. Refused with 422 on a Private calendar (D-18); Shared calendars take one from Phase 4. */
             summary?: null | string;
             /** @description The description. Refused with 422 on a Private calendar (D-18). */
@@ -319,7 +371,7 @@ export interface components {
             /** @description The attendee addresses. Refused with 422 on a Private calendar (D-18). */
             attendees?: string[] | null;
         };
-        /** @description A patch request: the same fields as a create, minus `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. A time field takes the same three forms a create takes, and a zone the object does not define yet is embedded beside it (E05-R09). An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18). */
+        /** @description A patch request: the same fields as a create, minus `uid`, `rrule`, `envelope` and `epoch`. Every member is optional; `null` removes the property it names and an absent member is left alone. A time field takes the same three forms a create takes, and a zone the object does not define yet is embedded beside it (E05-R09). An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18), and moving `start` or `end` requires an `envelopeSha256` that differs from the stored skeleton's, because both are bound into the envelope's AAD (`spec/crypto.md` §2.2, E13-R02); a re-sealed envelope is written through `PUT /calendars/{calendarId}/envelopes/{uid}`, which commits it in D-06 order. */
         EventUpdate: {
             start?: components["schemas"]["EventTime"];
             end?: components["schemas"]["EventTime"];
@@ -350,6 +402,52 @@ export interface components {
             token: string;
             /** @description One entry per changed object, a tombstone for a deletion. Empty when nothing changed since `since`. */
             changes: components["schemas"]["Change"][];
+        };
+        /** @description One sealed envelope as the sidecar holds it, with the metadata that selects it. Opaque to the API, which never opens one (INV-07). A tombstone — the uid of an object deleted since `since` — is an entry carrying only `uid` and `deleted`. */
+        Envelope: {
+            /** @description The `VEVENT` `UID` the envelope belongs to. */
+            uid: string;
+            /** @description `true` for the uid of an object deleted since `since`, which has no envelope any more; `false` for an envelope a skeleton names. */
+            deleted: boolean;
+            /** @description The canonical recurrence identity of the `VEVENT` this envelope belongs to, `spec/crypto.md` §5.2, or null for the master. */
+            recurrenceId?: null | string;
+            /** @description The CCK epoch the envelope header carries. */
+            epoch?: number;
+            /** @description The SHA-256 of the complete envelope bytes, 64 lowercase hex digits, which is the value the skeleton carries. */
+            envelopeSha256?: string;
+            /** @description The sealed envelope bytes, standard base64 and opaque. */
+            envelope?: string;
+        };
+        /** @description The envelopes of one read, and the token that stands for the point in the collection they were read at. */
+        EnvelopeList: {
+            /** @description The sync token of the point this answer was read at, to send back as `since` next time. Bound to this calendar. */
+            token: string;
+            /** @description One entry per envelope a skeleton names, plus a tombstone per object deleted since `since`. */
+            envelopes: components["schemas"]["Envelope"][];
+        };
+        /** @description One envelope to store. The API checks its header, its size and that `envelopeSha256` is the SHA-256 of the bytes sent, and nothing else. */
+        EnvelopeWrite: {
+            /** @description The sealed envelope bytes in standard base64: version `0x01`, the big-endian uint32 epoch, the 24-byte nonce, ciphertext and tag. At least 45 bytes, at most 65,536. */
+            envelope: string;
+            /** @description The CCK epoch, which must equal the epoch the envelope header carries and be 0 through 2147483647. */
+            epoch: number;
+            /** @description The SHA-256 of the complete envelope bytes, 64 lowercase hex digits. The API refuses bytes that do not hash to it. */
+            envelopeSha256: string;
+            /** @description The canonical recurrence identity of the `VEVENT` this envelope belongs to, `spec/crypto.md` §5.2, or null or absent for the master. */
+            recurrenceId?: null | string;
+        };
+        /** @description The envelope that was committed, its key, and the skeleton `ETag` the commit left. */
+        EnvelopeStamp: {
+            /** @description The `VEVENT` `UID` the envelope belongs to. */
+            uid: string;
+            /** @description The canonical recurrence identity this envelope belongs to, or null for the master. */
+            recurrenceId: null | string;
+            /** @description The CCK epoch the envelope header carries. */
+            epoch: number;
+            /** @description The SHA-256 of the stored envelope bytes, 64 lowercase hex digits. */
+            envelopeSha256: string;
+            /** @description The CalDAV `ETag` of the skeleton the commit wrote, or null when the store answered without one. */
+            etag: null | string;
         };
         /** @description One occurrence time, in the zone the request asked for: the instant, the wall clock that zone reads for it, and the zone. An all-day occurrence is its `date` instead, because a day has no instant of its own and which instants it covers depends on the zone it is viewed from. */
         OccurrenceTime: {
@@ -1178,7 +1276,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description The `UID` this request minted already names an object in the collection. A fresh UUIDv4 colliding can only mean another create won; the client retries */
+            /** @description The `UID` this request names already names an object in the collection — a client-chosen `UID` on a Private calendar, or a minted one that collided. The client re-reads and retries with a fresh `UID` */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1205,7 +1303,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description A rule of the operation was broken: the body is not a JSON object; `start` is absent, or is not exactly one of `date`, `utc` or `local`+`tzid`, or names a time that does not exist; a `tzid` is not an IANA zone in its exact spelling that the IANA zone database resolves (a Windows name, `europe/berlin`, `Mars/Olympus` and an empty string are refused), or is sent beside `utc` or `date` or without its `local`, or names a reading outside the horizon the embedded `VTIMEZONE` covers (1970 through 2100 — a `utc` time is how a date outside it is written); `end`, `rrule` or `alarm` is not a value the API can write — a rule part RFC 5545 does not name, `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type is not its start's (a UTC `DATE-TIME` for a timed start, a `TZID` one included), or an `end` that is not the same value type as its `start` or is not later than it; `envelopeSha256` is absent or is not 64 lowercase hex digits; a content field (`summary`, `description`, `location`, `attendees`) was sent for a Private calendar; or the body carries a member the operation does not take — `uid` and the recurrence itself, an exception or an occurrence override included, which the API owns (INV-05); or the object's series has more instances than a calendar collection accepts, which the CalDAV service refuses with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances` and this API reports as the `too-many-instances` kind. The body never names a value. */
+            /** @description A rule of the operation was broken: the body is not a JSON object; `start` is absent, or is not exactly one of `date`, `utc` or `local`+`tzid`, or names a time that does not exist; a `tzid` is not an IANA zone in its exact spelling that the IANA zone database resolves (a Windows name, `europe/berlin`, `Mars/Olympus` and an empty string are refused), or is sent beside `utc` or `date` or without its `local`, or names a reading outside the horizon the embedded `VTIMEZONE` covers (1970 through 2100 — a `utc` time is how a date outside it is written); `end`, `rrule` or `alarm` is not a value the API can write — a rule part RFC 5545 does not name, `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type is not its start's (a UTC `DATE-TIME` for a timed start, a `TZID` one included), or an `end` that is not the same value type as its `start` or is not later than it; `uid` is absent on a Private calendar, was sent on a calendar that is not Private, or is not a lowercase UUIDv4; `envelopeSha256` is absent on a Private calendar or is not 64 lowercase hex digits; `envelope` is absent, is not canonical standard base64, is shorter than the 45 fixed bytes or over the 65,536-byte ceiling, has a version byte other than `0x01`, or its header epoch is not `epoch`; `epoch` is absent, is not a non-negative integer within 2147483647, or is not the epoch the envelope header carries; the bytes do not hash to `envelopeSha256`; `envelope` or `epoch` was sent for a calendar that is not Private; a content field (`summary`, `description`, `location`, `attendees`) was sent for a Private calendar; or the body carries a member the operation does not take — the recurrence itself, an exception or an occurrence override included, which the API owns (INV-05); or the object's series has more instances than a calendar collection accepts, which the CalDAV service refuses with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances` and this API reports as the `too-many-instances` kind. The body never names a value. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1604,7 +1702,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description A rule of the operation was broken: the body is not a JSON object; `rrule` or `uid` was sent, or a member naming a recurrence exception or an occurrence override, which the API owns (INV-05); a field is not a value the API can write — a `tzid` that is not an IANA zone in its exact spelling that the IANA zone database resolves, a `tzid` beside `utc` or `date` or without its `local`, a `local` reading outside the horizon the embedded `VTIMEZONE` covers (1970 through 2100), a rule part RFC 5545 does not name, `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type is not its start's, or an `end` that is not the same value type as its `start` or is not later than it; a time field of an object whose stored `TZID` cannot be resolved was patched without replacing both `start` and `end`; a content field was sent for a Private calendar; a `PATCH` carried no member at all; the body carries a member the operation does not take; or the object the patch produces has more instances than a calendar collection accepts, which the CalDAV service refuses with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances` and this API reports as the `too-many-instances` kind. The body never names a value. */
+            /** @description A rule of the operation was broken: the body is not a JSON object; `rrule` or `uid` was sent, or a member naming a recurrence exception or an occurrence override, which the API owns (INV-05); a field is not a value the API can write — a `tzid` that is not an IANA zone in its exact spelling that the IANA zone database resolves, a `tzid` beside `utc` or `date` or without its `local`, a `local` reading outside the horizon the embedded `VTIMEZONE` covers (1970 through 2100), a rule part RFC 5545 does not name, `BYWEEKNO`, a yearly 29-February start, an `UNTIL` whose value type is not its start's, or an `end` that is not the same value type as its `start` or is not later than it; a time field of an object whose stored `TZID` cannot be resolved was patched without replacing both `start` and `end`; `start` or `end` was patched on a Private calendar without an `envelopeSha256` that differs from the stored skeleton's, because both are bound into the envelope's AAD (`spec/crypto.md` §2.2) — the problem's `property` names the bound property, `DTSTART` or `DTEND`; a content field was sent for a Private calendar; a `PATCH` carried no member at all; the body carries a member the operation does not take; or the object the patch produces has more instances than a calendar collection accepts, which the CalDAV service refuses with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances` and this API reports as the `too-many-instances` kind. The body never names a value. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1733,6 +1831,304 @@ export interface operations {
             };
             /** @description `since` is not a token this calendar can be read from: it is not one this API minted, it was minted for another calendar, or it names a point the collection has never reached. The client reloads fully by asking again without `since`. The body never names the token. */
             410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listEnvelopes: {
+        parameters: {
+            query?: {
+                /** @description One `VEVENT` `UID`, repeated to name several. Only those objects are read. Not allowed together with `since`. */
+                uid?: string[];
+                /** @description The `token` a previous answer of this operation or of `GET /calendars/{calendarId}/changes` returned. Only the envelopes of the objects changed since then are read, and a tombstone reports the uid of a deleted object. Not allowed together with `uid`. A value that is not one of ours, or one minted for another calendar, is a 410. */
+                since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The envelopes the skeleton names, and the token for them */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeList"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, which is also the answer for an id that exists nowhere */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `since` is not a token this calendar can be read from: it is not one this API minted, or it was minted for another calendar, or it names a point the collection has never reached. The client reloads fully by asking again without `since`. The body never names the token. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request named both `uid` and `since`, which select different sets of objects */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests from this client address inside the window; the service answers again after `Retry-After` */
+            429: {
+                headers: {
+                    /** @description Seconds until the client's allowance is restored. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected server-side failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The identity provider or the CalDAV service could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No audience is configured yet, or the issuer has no usable signing keys */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A CalDAV call ran past its deadline */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    writeEnvelope: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The skeleton's `ETag`, as the read answered it. A list of validators and `*` are allowed; the store decides which of them matches. */
+                "If-Match": string;
+            };
+            path: {
+                /** @description The `calendars.id` uuid of the calendar. */
+                calendarId: string;
+                /** @description The `VEVENT` `UID`, a lowercase UUIDv4. The object is `<uid>.ics`. */
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvelopeWrite"];
+            };
+        };
+        responses: {
+            /** @description The envelope was committed and the skeleton carries its hash */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStamp"];
+                };
+            };
+            /** @description The request body is not well-formed JSON. A body that parses but is not a JSON object is a 422, not a 400 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing, duplicated, malformed, opaque, expired, wrongly addressed or otherwise unverifiable access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The issuer does not report the user's email as verified, or the caller is a member of the calendar but cannot write into it (its role is `viewer`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No calendar the caller is a member of has that id, or the collection holds no object named by that `uid`. Both are the answer for something that exists nowhere. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The method is not allowed on this path */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The `If-Match` names a version the collection no longer holds. The client re-reads the skeleton, re-seals over it and retries */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than the service accepts */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's media type is not supported */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A rule of the operation was broken: the body is not a JSON object, or carries a member the operation does not take; `envelope` is absent, or is not standard base64, or is shorter than 45 bytes, or longer than 65,536, or its version byte is not `0x01`; `epoch` is absent, is not an integer, or is outside `0` through `2147483647`, or is not the epoch the envelope header carries; `envelopeSha256` is absent, is not 64 lowercase hex digits, or is not the SHA-256 of the envelope bytes; `recurrenceId` is not the canonical form `spec/crypto.md` §5.2 pins, or names no `VEVENT` of the object. The body never names a value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request carries no `If-Match`, so there is no version to commit the skeleton against */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

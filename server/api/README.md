@@ -42,6 +42,13 @@ and hit CalDAV directly (CLAUDE.md).
   whether the object is gone, beside an opaque token the API mints for that
   calendar. A token the collection never reached — malformed, another calendar's,
   or ahead of it — is the fixed `410`, which tells the client to reload fully.
+- **Sidecar API (E13-R02):** see [Envelopes](#envelopes).
+  `GET /calendars/{calendarId}/envelopes` reads a Private calendar's sealed
+  envelopes in bulk — the whole calendar, a `uid` list, or a delta over
+  E05-R08's token — and both a Private `POST …/events` and
+  `PUT /calendars/{calendarId}/envelopes/{uid}` commit one with the skeleton in
+  D-06's order. The API checks the envelope's header, its 64 KiB ceiling and the
+  hash the skeleton carries, and never opens one (INV-07).
 - **Occurrence window (E05-R05):** see [Occurrences](#occurrences).
   `GET /calendars/{calendarId}/occurrences?from&to&tz` returns the expanded
   instances of a half-open window, computed with `ical.js` from the masters and
@@ -76,18 +83,25 @@ and hit CalDAV directly (CLAUDE.md).
   shipping with E13-R06 must run
   `ALTER TABLE public.calendars DROP CONSTRAINT calendars_mode_private_only_check`
   to lift that gate, leaving `calendars_meta_envelope_check` intact.
-- **Sidecar envelopes (E04-R04):** `public.event_envelopes` stores opaque envelope
-  bytes, keyed by `(calendar_id, uid, recurrence_id, envelope_sha256)` with
-  `NULLS NOT DISTINCT` for master rows. The SHA-256 digest is 32-byte `bytea`
-  (64 lowercase hex digits in `X-CALFLEX-ENVELOPE-SHA256`).
-  [`src/recurrence-key.mjs`](src/recurrence-key.mjs) canonicalizes override
-  `RECURRENCE-ID` properties with `ical.js`: `recurrence_id` is canonical text,
-  not the original spelling (`YYYYMMDDTHHMMSSZ` for instants, `YYYYMMDD` for
-  dates, NULL for masters). TZIDs must resolve through a supplied `VTIMEZONE`
-  or the caller's `ICAL.TimezoneService`; floating or unresolved times are
-  rejected rather than assigned an incorrect envelope key.
-  The typecheck skips library declarations because `ical.js` 2.2.1's declarations
-  do not satisfy NodeNext; our own code remains checked.
+- **Sidecar envelopes (E04-R04, E13-R02):** `public.event_envelopes` stores opaque
+  envelope bytes, keyed by `(calendar_id, uid, recurrence_id, envelope_sha256)`
+  with `NULLS NOT DISTINCT` for master rows. The SHA-256 digest is 32-byte
+  `bytea` (64 lowercase hex digits in `X-CALFLEX-ENVELOPE-SHA256`).
+  [`src/recurrence-key.mjs`](src/recurrence-key.mjs) canonicalizes an override's
+  recurrence identity through [`src/zones.mjs`](src/zones.mjs) — Node's own zone
+  database, never `ical.js`, which answers the other way on the one local time a
+  spring-forward skips and the one an autumn overlap repeats (`spec/crypto.md`
+  §3.4, `spec/crypto-vectors/canonical-timing-v1.json`). `recurrence_id` is
+  canonical text, not the original spelling (`YYYYMMDDTHHMMSSZ` for instants,
+  `YYYYMMDD` for dates, NULL for masters); a floating time and a `TZID` ICU
+  cannot resolve are rejected rather than assigned an incorrect envelope key,
+  and no client's `VTIMEZONE` is ever registered in the library's global
+  `TimezoneService` (one client could then redefine `Europe/Berlin` for every
+  request in the process).
+  [`src/envelopes.mjs`](src/envelopes.mjs) is the E13-R02 sidecar API: see
+  [Envelopes](#envelopes). The typecheck skips library declarations because
+  `ical.js` 2.2.1's declarations do not satisfy NodeNext; our own code remains
+  checked.
 - **Member keys (E04-R05):** `public.user_keys` stores one 32-byte X25519 and
   Ed25519 public-key pair per user; `public.user_key_wraps` stores one opaque,
   non-empty wrapped private-key bundle per user and kind. Only `recovery_code`
@@ -312,14 +326,20 @@ own body naming the path.
 
 The body is a field set, never iCalendar: `start` (required on create), `end`,
 `rrule` (create only), `alarm: {trigger}`, `envelopeSha256`, and the Phase-4
-content fields `summary`, `description`, `location` and `attendees`.
+content fields `summary`, `description`, `location` and `attendees`. On a Private
+calendar a create also carries `uid`, `envelope` and `epoch` — see
+[Envelopes](#envelopes).
 `src/ical-rmw.mjs` turns those into the object with `ical.js` — the API's single
 iCalendar engine (D-01, ADR 0002) — and back:
 
-- **`UID`, `DTSTAMP`, `PRODID` are ours.** The `UID` is `crypto.randomUUID()`
-  (INV-03), the `DTSTAMP` is the moment of the write in UTC, and a client can
-  never send a `UID`, an `EXDATE` or a `RECURRENCE-ID` at all (INV-05): an edit
-  to a recurring event is an intent (E05-R06/R07), not a rule.
+- **`DTSTAMP` and `PRODID` are ours, and so is the `UID` on a Shared calendar.**
+  A Shared create's `UID` is `crypto.randomUUID()` (INV-03), the `DTSTAMP` is the
+  moment of the write in UTC, and a client can never send a `UID`, an `EXDATE` or
+  a `RECURRENCE-ID` at all (INV-05): an edit to a recurring event is an intent
+  (E05-R06/R07), not a rule. A Private create is the one exception: the client
+  **names** the `UID` (a lowercase UUIDv4 the API validates) because it seals the
+  envelope over it first — the envelope's AAD binds the `UID` (D-14) — and the
+  create commits that envelope in D-06's order (E13-R02).
 - **A time is one of three forms** (E05-R09, INV-04): `{date}`, `{utc}`, or
   `{local, tzid}` — an IANA zone in its exact spelling beside the wall clock that
   zone reads. An impossible date (`2026-02-30`) is refused rather than rolled
@@ -395,11 +415,14 @@ iCalendar engine (D-01, ADR 0002) — and back:
   (INV-02), which `test/ical-rmw.test.mjs` holds against the whole
   `spec/ical-fixtures/` corpus (E15-R01).
 - **A Private calendar stores skeletons** (ADR 0003, E03-R09): the content fields
-  are a `422` — the content is sealed in the sidecar under the CCK (D-18) — and
-  `envelopeSha256` is required, because a Private `VEVENT` carries exactly one
-  `X-CALFLEX-ENVELOPE-SHA256`. The write guard behind the API would refuse such a
-  write anyway, and E05-R02's suite shows it doing so; a value it refuses is
-  named by property only, never echoed.
+  are a `422` — the content is sealed in the sidecar under the CCK (D-18) — and a
+  create requires `uid`, `envelope`, `epoch` and `envelopeSha256`, because a
+  Private `VEVENT` carries exactly one `X-CALFLEX-ENVELOPE-SHA256` and the
+  envelope is committed beside it. The API checks the envelope's header (version,
+  the epoch the request carries), its 65,536-byte ceiling and that the bytes hash
+  to `envelopeSha256`, and never opens one (INV-07). The write guard behind the
+  API would refuse a content write anyway, and E05-R02's suite shows it doing so;
+  a value it refuses is named by property only, never echoed.
 - **Who may do what.** `owner` and `editor` write, `viewer` reads (`403` on a
   write), and a caller who is not a member gets the `404` an unknown calendar
   gets.
@@ -613,6 +636,66 @@ outbox is never queried.
 Who reads: every member — `owner`, `editor` and `viewer`. A caller who is not a
 member, an id outside the canonical shape and an unknown calendar are all the
 same `404`, exactly as in E05-R03 and E05-R04.
+
+## Envelopes
+
+Two operations of their own (`src/envelopes.mjs`), behind the bearer hook,
+declared in `spec/openapi.yaml` first, plus the one a Private **create** commits
+(`src/events.mjs`): the event content a Private calendar keeps out of the
+`VEVENT`. One sealed envelope per `VEVENT`, stored opaquely in
+`public.event_envelopes` and keyed `(uid, recurrenceId, envelopeSha256)`. The API
+never opens one (INV-07); what it checks is `src/calendar-envelope.mjs`'s header,
+size and encoding rules.
+
+A Private create is **one request that commits skeleton and envelope in D-06's
+order** (E13-R02): the body carries `uid`, `envelope`, `epoch` and
+`envelopeSha256`, the API inserts the sidecar row first and then writes the
+skeleton with `If-None-Match: *`. A failed `PUT` therefore leaves an orphan row
+no skeleton names — never a skeleton whose envelope never existed — and the
+envelope's header, size and hash are checked exactly as below.
+
+| Operation | Answer |
+|---|---|
+| `POST /calendars/{calendarId}/events` (Private) | `201`; inserts the envelope row, then the skeleton, in D-06's order; `422` without `uid`, `envelope`, `epoch` or a matching `envelopeSha256` |
+| `GET /calendars/{calendarId}/envelopes[?uid=…][?since=<token>]` | `200` with the envelopes a skeleton names and the token for them; `404` for a calendar the caller is not a member of; `410` for a `since` this calendar cannot be read from; `422` for a request naming both `uid` and `since` |
+| `PUT /calendars/{calendarId}/envelopes/{uid}` | `200` with the committed key; `404` for an unknown calendar or object; `412` for a stale `If-Match`, `428` without one; `422` for anything the checks above refuse |
+
+```json
+{
+  "token": "NmYxYzBhMmUtNmEwZS00YTJmLThhNGItMWQzYTVjN2U5ZjAxOjQ",
+  "envelopes": [
+    {
+      "uid": "6f1c0a2e-6a0e-4a2f-8a4b-1d3a5c7e9f01",
+      "deleted": false,
+      "recurrenceId": null,
+      "epoch": 1,
+      "envelopeSha256": "…64 lowercase hex…",
+      "envelope": "…standard base64…"
+    },
+    { "uid": "0b7d1e4f-2c3a-4d5e-8f90-1234567890ab", "deleted": true }
+  ]
+}
+```
+
+- **The skeleton is the gate.** For every `VEVENT` the object holds, its
+  `X-CALFLEX-ENVELOPE-SHA256` and its canonical `recurrenceId` select the one row
+  that may be answered; a row no skeleton names is left out. That is D-06's read
+  gate, and it is why a crash between the two write steps is harmless.
+- **The write is D-06's order.** The row is inserted, then the stored skeleton is
+  re-written with the new hash and the caller's `If-Match` (a create writes the
+  new skeleton with `If-None-Match: *` instead), then the superseded row is
+  garbage-collected. Only the hash property moves: the envelope was sealed over
+  the times the skeleton already spells, so those cannot change here.
+- **A `uid` and a `since` name different sets**, so asking for both is a `422`.
+  The token is E05-R08's, so a client fetches the pointers and the envelopes from
+  one cursor.
+- **Orphans are swept after 24 hours** (`src/envelope-gc.mjs`): a successful write
+  looks at the calendar's rows older than a day and removes the ones no skeleton
+  names. A row that cannot be told apart from a live one — the object could not be
+  read — is left alone.
+- **Roles:** `owner` and `editor` write, every member reads, a non-member gets the
+  `404` an unknown calendar gets, and a `uid` that is not the lowercase UUIDv4
+  this API writes is one too (E03-R11).
 
 ## Errors
 
