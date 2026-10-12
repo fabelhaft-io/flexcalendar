@@ -26,6 +26,12 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // `flutter_appauth` receives the OIDC redirect in the activity its own
+        // manifest declares, which matches this scheme (E10-R02). The scheme is
+        // the whole application ID: the redirect URI E02-R09 registers is
+        // `de.flexcalendar.app:/oauth2redirect`. All three flavors share it,
+        // because they share one application ID.
+        manifestPlaceholders["appAuthRedirectScheme"] = "de.flexcalendar.app"
     }
 
     // E10-R01 flavors. All three keep the **one** application ID

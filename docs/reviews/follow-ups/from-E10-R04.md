@@ -1,0 +1,5 @@
+- **From the E10-R04 review, for later requirements:**
+  - **The owner (a device check):** on a phone or the emulator, `flutter run --flavor dev` with the OIDC `--dart-define`s, and check that the home screen names the device's zone; change the device zone and relaunch; set an unknown zone if the device allows it and check the UTC fallback notice;
+  - **E10-R05 (the calendar grid), E10-R06 and every screen that shows a time:** render through `EventTimeText` and `lib/src/domain/time/` (`instantOf`, the API time shapes), never `DateTime` arithmetic in `lib/src/domain/` (the guard in `test/support/domain_time_guard.dart` fails the build; an exception goes into its allow-list with a reason); watch `localZoneProvider` rather than reading `tz.local`;
+  - **E10-R06, E10-R07 (writes):** the `RecurrenceId` adapter for the generated client is still to do; send back exactly the `recurrenceId` the API gave (from-E05-R05);
+  - **E15 (zone data):** the app bundles tzdata 2026e and the API Node's ICU 2026b; the app takes `utc` from the API where it has one, so only a zone whose rules changed between the two versions can disagree.

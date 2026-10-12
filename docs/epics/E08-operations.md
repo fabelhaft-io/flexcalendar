@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1, then continuous. R06 (mail) in Phase 4; the KMS part of R01 and R09 in Phase 7; error reporting in Phase 8 (`04`) |
-| Status | R01 in progress (`human`). R02 waits for E02-R03, E02-R06 and E02-R09, and for R10, the accepted evaluation (R11 implements it); R03 for R02; R04 for R02 and R01's buckets; R05 for R02; R07 for R02–R05 |
+| Status | R01 in progress (`human`). R10 ([PR #95](https://github.com/fabelhaft-io/flexcalendar/pull/95)) Done, 2026-10-12: ADR 0005 is accepted, option B2. R11 implements it; R02 waits for E02-R03, E02-R06 and E02-R09, and for R11; R03 for R02; R04 for R02 and R01's buckets; R05 for R02; R07 for R02–R05 |
 | Executor | `human` (accounts, DNS, money) + `agent` (config as code) |
 | Depends on | E02-R03, E02-R06, E02-R09; D-10, D-11, D-19, D-20 |
 | Spec | `02` § Hosting (sizing, runtime layout, backups), `05` risks 7, 8 and 11, CLAUDE.md risk 8 ("events lost = product dead") |
