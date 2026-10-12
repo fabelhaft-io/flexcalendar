@@ -11,7 +11,7 @@
   - Flutter is the version in `apps/mobile/.fvmrc`, checked against the SHA-256 in Google's `releases_linux.json`, kept in `~/.cache/flexcalendar-host-tools/`. Dart is the one inside it. The two shims run with a private `HOME` and pub cache, because corepack and pnpm need the real `HOME` and Flutter's own state doesn't belong in it; Gradle's home and the Android SDK stay the real ones.
   - Container PHP is no substitute: `php:8.4-cli` and `composer:2` have no `pdo_pgsql` (checked 2026-10-07), so Composer's platform check fails on a `vendor/` built with it unless you pass `--ignore-platform-req=ext-pdo_pgsql`.
 - `make verify-tooling` runs `php` and binds host ports 8080 and 3000: keep them free and `php` on `PATH`.
-- Since E02-R07 `make verify` and `make gen` need the pinned Flutter on `PATH`. `flutter pub get` and `flutter analyze` in `apps/mobile` leave an untracked `apps/mobile/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`. Remove it and the empty directories before you re-run the coordinator, which refuses a dirty worktree.
+- Since E02-R07 `make verify` and `make gen` need the pinned Flutter on `PATH`. `flutter pub get` and `flutter analyze` in `apps/mobile` write `apps/mobile/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`; it is in `.gitignore`, so the coordinator's dirty-worktree check doesn't see it. `make gen` fails, and puts the old `apps/mobile/lib/api` back, when swagger_parser generates nothing or the spec has a path-level `parameters:` list (`infra/scripts/gen-dart.mjs`).
 - The implementer sandbox has its own pinned static PHP and Composer (`agent-team/src/lib/toolchains.ts`), no Podman, and no stack access.
 
 ## The local stack (`make dev`, project `flexcalendar-dev`)

@@ -6,16 +6,17 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { snapshot, differences, main } from './gen-check.mjs';
 
-test('make gen removes the previous Dart output before swagger_parser', () => {
+test('make gen runs the Dart generator through its guard, never a bare wipe', () => {
   const result = spawnSync('make', ['-n', 'gen'], {
     cwd: resolve(import.meta.dirname, '../..'),
     encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
-  const removal = result.stdout.indexOf('rm -rf apps/mobile/lib/api');
-  const generation = result.stdout.indexOf('dart run swagger_parser');
-  assert.ok(removal >= 0, 'make gen must wipe the generated Dart directory');
-  assert.ok(generation > removal, 'removal must precede swagger_parser');
+  // gen-dart.mjs replaces the old output only when the new one exists
+  // (gen-dart.test.mjs); a recipe that deletes it first undoes that.
+  assert.match(result.stdout, /node infra\/scripts\/gen-dart\.mjs/);
+  assert.doesNotMatch(result.stdout, /rm -rf apps\/mobile\/lib\/api/);
+  assert.doesNotMatch(result.stdout, /dart run swagger_parser/);
 });
 
 test('snapshots name edited, deleted and newly generated files', () => {
