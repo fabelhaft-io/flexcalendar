@@ -1,0 +1,45 @@
++ podman --version
+podman version 6.1.3
++ podman compose version
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+Docker Compose version 5.6.0
+start 1/10: /debug/ready -> HTTP 200 after 5s
+start  1/10: rc=0 time_to_ready=5s wall=5s
+start 2/10: /debug/ready -> HTTP 200 after 5s
+start  2/10: rc=0 time_to_ready=5s wall=5s
+start 3/10: /debug/ready -> HTTP 200 after 5s
+start  3/10: rc=0 time_to_ready=5s wall=5s
+start 4/10: /debug/ready -> HTTP 200 after 5s
+start  4/10: rc=0 time_to_ready=5s wall=5s
+start 5/10: /debug/ready -> HTTP 200 after 4s
+start  5/10: rc=0 time_to_ready=4s wall=4s
+start 6/10: /debug/ready -> HTTP 200 after 5s
+start  6/10: rc=0 time_to_ready=5s wall=5s
+start 7/10: /debug/ready -> HTTP 200 after 5s
+start  7/10: rc=0 time_to_ready=5s wall=5s
+start 8/10: /debug/ready -> HTTP 200 after 5s
+start  8/10: rc=0 time_to_ready=5s wall=5s
+start 9/10: /debug/ready -> HTTP 200 after 5s
+start  9/10: rc=0 time_to_ready=5s wall=5s
+start 10/10: /debug/ready -> HTTP 200 after 5s
+start 10/10: rc=0 time_to_ready=5s wall=5s
+
+### calflex-zre-b2: 10/10 first starts from an empty volume reached /debug/ready (wall 193s)
+
+### removing this harness's own project (never flexcalendar-dev)
++ podman compose -p calflex-zre-b2 down -v --remove-orphans
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-b2-zitadel-1 Stopping 
+ Container calflex-zre-b2-zitadel-1 Stopped 
+ Container calflex-zre-b2-zitadel-1 Removing 
+ Container calflex-zre-b2-zitadel-1 Removed 
+ Container calflex-zre-b2-postgres-1 Stopping 
+ Container calflex-zre-b2-postgres-1 Stopped 
+ Container calflex-zre-b2-postgres-1 Removing 
+ Container calflex-zre-b2-postgres-1 Removed 
+ Volume calflex-zre-b2_pgdata Removing 
+ Network calflex-zre-b2_stack Removing 
+ Network calflex-zre-b2_stack Removed 
+ Volume calflex-zre-b2_pgdata Removed 

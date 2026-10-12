@@ -1,0 +1,114 @@
++ podman --version
+podman version 6.1.3
++ podman compose version
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+Docker Compose version 5.6.0
+image tag for this run: v4.16.0
+
+### empty volume: podman compose -p calflex-zre-c down -v
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
++ podman compose -p calflex-zre-c up -d postgres
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Network calflex-zre-c_stack Creating 
+ Network calflex-zre-c_stack Creating 
+ Volume calflex-zre-c_pgdata Creating 
+ Volume calflex-zre-c_pgdata Creating 
+ Network calflex-zre-c_stack Created 
+ Network calflex-zre-c_stack Created 
+ Volume calflex-zre-c_pgdata Created 
+ Volume calflex-zre-c_pgdata Created 
+ Container calflex-zre-c-postgres-1 Creating 
+ Container calflex-zre-c-postgres-1 Created 
+ Container calflex-zre-c-postgres-1 Starting 
+ Container calflex-zre-c-postgres-1 Started 
+postgres is ready (after 5s)
++ podman compose -p calflex-zre-c exec -T postgres sh -c '<write the throwaway passwords into $PGPASSFILE, inside the container>'
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+
+### status quo: no separate bootstrap, the superuser does everything
++ podman compose -p calflex-zre-c exec -T -e PGPASSFILE=/tmp/zre.pgpass postgres psql -h 127.0.0.1 -U zre_root -d postgres -c "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = 'zre_root'"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+rolname | rolsuper | rolcreatedb | rolcreaterole
+zre_root | t | t | t
+(1 row)
++ podman compose -p calflex-zre-c up -d zitadel
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-c-postgres-1 Running 
+ Container calflex-zre-c-zitadel-1 Creating 
+ Container calflex-zre-c-zitadel-1 Created 
+ Container calflex-zre-c-postgres-1 Waiting 
+ Container calflex-zre-c-postgres-1 Healthy 
+ Container calflex-zre-c-zitadel-1 Starting 
+ Container calflex-zre-c-zitadel-1 Started 
+pinned v4.16.0: /debug/ready -> HTTP 200 after 5s
+
+### upgrade rehearsal: same role, database created by v4.16.0, image v4.19.4
+image tag for this run: v4.19.4
++ podman compose -p calflex-zre-c up -d --force-recreate zitadel   # ZRE_IMAGE_TAG=v4.19.4
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-c-postgres-1 Running 
+ Container calflex-zre-c-zitadel-1 Recreate 
+ Container calflex-zre-c-zitadel-1 Recreated 
+ Container calflex-zre-c-postgres-1 Waiting 
+ Container calflex-zre-c-postgres-1 Healthy 
+ Container calflex-zre-c-zitadel-1 Starting 
+ Container calflex-zre-c-zitadel-1 Started 
+upgrade v4.19.4: /debug/ready -> HTTP 200 after 2s
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+
+### environment of the 'zitadel' container (names only, values masked)
++ podman exec fc8d553941d6a37b04c86f8f310b642bb1b9963db4859bf86af36b037879e941 env
+Error: runc: exec failed: unable to start container process: exec: "env": executable file not found in $PATH: OCI runtime attempted to invoke a command that was not found
++ podman inspect --format '{{range .Config.Env}}{{println .}}{{end}}' fc8d553941d6a37b04c86f8f310b642bb1b9963db4859bf86af36b037879e941
+
+container=***
+HOME=***
+HOSTNAME=***
+PATH=***
+ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=***
+ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=***
+ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=***
+ZITADEL_DATABASE_POSTGRES_DATABASE=***
+ZITADEL_DATABASE_POSTGRES_HOST=***
+ZITADEL_DATABASE_POSTGRES_PORT=***
+ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=***
+ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=***
+ZITADEL_DATABASE_POSTGRES_USER_USERNAME=***
+ZITADEL_EXTERNALDOMAIN=***
+ZITADEL_EXTERNALSECURE=***
+ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD=***
+ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=***
+ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME=***
+ZITADEL_FIRSTINSTANCE_ORG_NAME=***
+ZITADEL_PORT=***
+ZITADEL_TLS_ENABLED=***
+-> 3 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the container
++ podman inspect --format '{{.Config.Cmd}} {{.Args}} {{.ImageName}}' fc8d553941d6a37b04c86f8f310b642bb1b9963db4859bf86af36b037879e941
+[start-from-init --masterkey ***] [start-from-init --masterkey ***] ghcr.io/zitadel/zitadel:v4.19.4
++ podman exec fc8d553941d6a37b04c86f8f310b642bb1b9963db4859bf86af36b037879e941 ls -la / 2>&1  # no shell in this image; expected to fail
+Error: runc: exec failed: unable to start container process: exec: "ls": executable file not found in $PATH: OCI runtime attempted to invoke a command that was not found
+
+### removing this harness's own project (never flexcalendar-dev)
++ podman compose -p calflex-zre-c down -v --remove-orphans
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-c-zitadel-1 Stopping 
+ Container calflex-zre-c-zitadel-1 Stopped 
+ Container calflex-zre-c-zitadel-1 Removing 
+ Container calflex-zre-c-zitadel-1 Removed 
+ Container calflex-zre-c-postgres-1 Stopping 
+ Container calflex-zre-c-postgres-1 Stopped 
+ Container calflex-zre-c-postgres-1 Removing 
+ Container calflex-zre-c-postgres-1 Removed 
+ Volume calflex-zre-c_pgdata Removing 
+ Network calflex-zre-c_stack Removing 
+ Network calflex-zre-c_stack Removed 
+ Volume calflex-zre-c_pgdata Removed 
