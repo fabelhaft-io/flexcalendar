@@ -1,0 +1,87 @@
+# --- E08-R10 · option B: a pre-provisioned role and no admin at all ----------
+#
+# Project `calflex-zre-b`, its own volume and network. Run through
+# `option-b.sh`; it never touches the `flexcalendar-dev` project.
+#
+# The shape the epic asks to measure: the *cluster bootstrap* (the SQL in
+# `initdb/20-zitadel-role.sql`, written like `infra/dev/postgres/initdb/`) creates
+# the `zitadel` database and the role that owns it, and Zitadel runs as that role
+# only. There is no admin login anywhere, and the long running service runs
+# `start-from-setup` — the variant that skips `init`.
+#
+# Measured on 2026-10-12 with this shape (see the ADR): this does **not** start.
+# `setup` fails on `40_init_push_func_v4` with
+# `relation "eventstore.events" does not exist`, because the tables `zitadel
+# init` creates are missing. The working variant is `option-b2.sh`.
+#
+# The passwords are throwaway values for this throwaway cluster only.
+name: calflex-zre-b
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zre_root
+      POSTGRES_PASSWORD: zre-throwaway-root
+      POSTGRES_DB: caldav
+      ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
+      # The bootstrap creates `calflex_zitadel` and the `zitadel` database.
+      ZRE_PREPROVISION: "true"
+      ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --host 127.0.0.1 --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - stack
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:${ZRE_IMAGE_TAG:-v4.16.0}
+    restart: unless-stopped
+    command:
+      - start-from-setup
+      - --masterkey
+      - ${ZRE_MASTERKEY:-MasterkeyNeedsToHave32Characters}
+    environment:
+      ZITADEL_PORT: "8080"
+      ZITADEL_EXTERNALDOMAIN: auth.localhost
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      # Nothing else: no ADMIN_*, and the role is the one the bootstrap made.
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: calflex_zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zre-throwaway-zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: flexcalendar
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: calflex-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ZreThrowaway1!
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+    ports:
+      - "127.0.0.1:18081:8080"
+    healthcheck:
+      test: [CMD, /app/zitadel, ready]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stack
+
+volumes:
+  pgdata:
+
+networks:
+  stack:
