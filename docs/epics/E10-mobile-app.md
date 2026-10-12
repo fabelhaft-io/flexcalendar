@@ -25,6 +25,7 @@ OIDC PKCE through `flutter_appauth`, with tokens in `flutter_secure_storage` and
 ### E10-R03 · Offline cache   `agent`
 Drift tables store per event the raw iCalendar (for Private calendars the skeleton, with the decrypted payload alongside per E13-R04), ETag, calendar, `uid`, `recurrence_id`, and indexed `start_utc`/`end_utc`. Expanded occurrences are cached per window. The sync token is kept per calendar.
 - Accept: the app opens and renders the last 3 months and next 12 months in airplane mode; a schema migration test runs from version N-1.
+- Accept: a `window-too-large` answer from the occurrences endpoint (E05-R05) is retried as smaller windows until each is answered, and an object in `unsupported` is shown to the user by its reason, never silently dropped.
 
 ### E10-R04 · Timezone discipline   `agent`
 All zoned maths uses `TZDateTime` (INV-04). The tz database is initialised at startup, and the device zone is read through a native call (for example `flutter_timezone`).

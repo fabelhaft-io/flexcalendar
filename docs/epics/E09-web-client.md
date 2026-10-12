@@ -21,6 +21,7 @@ React + TypeScript + Vite in `apps/web`, TanStack Query for server state, the ge
 ### E09-R02 · Calendar grid   `agent`
 FullCalendar with month, week, day and list views, fed **only** from the occurrences endpoint (E05-R05). The FullCalendar rrule plugin MUST NOT be used as the authority (INV-05).
 - Accept: Playwright tests render the E15 fixtures correctly, including all-day, multi-day, cross-DST and override instances.
+- Accept: a `window-too-large` answer is retried as smaller windows until each is answered, and an object in `unsupported` is shown to the user by its reason, never silently dropped.
 
 ### E09-R03 · Event editor   `agent`
 Create, edit and delete events with title, time, all-day toggle, timezone picker (IANA), location, description, alarms and recurrence builder. The builder previews with client-side `rrule` and submits an RRULE string.
