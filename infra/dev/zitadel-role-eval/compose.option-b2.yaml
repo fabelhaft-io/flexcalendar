@@ -1,0 +1,114 @@
+# --- E08-R10 · option B2: pre-provisioned role, one-off internals init -------
+#
+# Project `calflex-zre-b2`, its own volume and network. Run through
+# `option-b2.sh`; it never touches the `flexcalendar-dev` project.
+#
+# Option B plus the one step that is missing there: a one-off
+# `zitadel init zitadel` ("initialize ZITADEL internals") job that runs as the
+# **app role**, with no admin credentials at all, before `start-from-setup`.
+# The cluster bootstrap still creates the database and the role; the job only
+# creates the internals (`eventstore`, `projections`, `system`, the events
+# tables) inside the database the role owns.
+#
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-b2.txt): this
+# shape starts (ready after 5 s), the runtime role is a plain login with no
+# CREATEDB, no CREATEROLE and no superuser, and the running container holds 0
+# `ZITADEL_DATABASE_POSTGRES_ADMIN_*` variables (see the ADR).
+#
+# The passwords are throwaway values for this throwaway cluster only.
+name: calflex-zre-b2
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zre_root
+      POSTGRES_PASSWORD: zre-throwaway-root
+      POSTGRES_DB: caldav
+      ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
+      ZRE_PREPROVISION: "true"
+      ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --host 127.0.0.1 --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - stack
+
+  # `podman compose -p calflex-zre-b2 --profile init run --rm zitadel-init`.
+  # No ADMIN_*: the job connects as the role the bootstrap created.
+  zitadel-init:
+    image: ghcr.io/zitadel/zitadel:${ZRE_IMAGE_TAG:-v4.16.0}
+    profiles: [init]
+    restart: 'no'
+    command:
+      - init
+      - zitadel
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: calflex_zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zre-throwaway-zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stack
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:${ZRE_IMAGE_TAG:-v4.16.0}
+    restart: unless-stopped
+    command:
+      - start-from-setup
+      - --masterkey
+      - ${ZRE_MASTERKEY:-MasterkeyNeedsToHave32Characters}
+    environment:
+      ZITADEL_PORT: "8080"
+      ZITADEL_EXTERNALDOMAIN: auth.localhost
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: calflex_zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zre-throwaway-zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: flexcalendar
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: calflex-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ZreThrowaway1!
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+    ports:
+      - "127.0.0.1:18082:8080"
+    healthcheck:
+      test: [CMD, /app/zitadel, ready]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stack
+
+volumes:
+  pgdata:
+
+networks:
+  stack:

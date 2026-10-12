@@ -1,0 +1,25 @@
+-rw-r--r-- 1 jano jano 10568 12. Okt 16:44 lib.sh
+-rw-r--r-- 1 jano jano  1834 12. Okt 16:44 option-a.sh
+-rw-r--r-- 1 jano jano  1751 12. Okt 16:44 option-b2.sh
+-rw-r--r-- 1 jano jano  1816 12. Okt 16:44 option-b.sh
+-rw-r--r-- 1 jano jano  1529 12. Okt 16:44 option-c.sh
+=== 16:45:27 start c: bash option-c.sh
+=== 16:45:44 exit 0 c
+=== 16:45:44 start a: bash option-a.sh
+=== 16:46:02 exit 0 a
+=== 16:46:02 start b: bash option-b.sh
+=== 16:50:51 exit 1 b
+=== 16:50:51 start b2: bash option-b2.sh
+=== 16:51:13 exit 0 b2
+=== 16:51:13 start a-starts: bash option-a.sh --starts 10
+=== 16:54:46 exit 0 a-starts
+=== 16:54:46 start b2-starts: bash option-b2.sh --starts 10
+=== 16:58:16 exit 0 b2-starts
+=== 16:58:16 start a-upgrade: bash option-a.sh --upgrade
+=== 16:58:54 exit 0 a-upgrade
+=== 16:58:54 start b2-upgrade: bash option-b2.sh --upgrade
+=== 16:59:17 exit 0 b2-upgrade
+calflex-zre-b-postgres-1
+calflex-zre-b-zitadel-1
+calflex-zre-b_pgdata
+### done

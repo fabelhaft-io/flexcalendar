@@ -1,0 +1,163 @@
++ podman --version
+podman version 6.1.3
++ podman compose version
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+Docker Compose version 5.6.0
+
+### empty volume: podman compose -p calflex-zre-b2 down -v
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
++ podman compose -p calflex-zre-b2 up -d postgres
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Volume calflex-zre-b2_pgdata Creating 
+ Network calflex-zre-b2_stack Creating 
+ Volume calflex-zre-b2_pgdata Creating 
+ Network calflex-zre-b2_stack Creating 
+ Network calflex-zre-b2_stack Created 
+ Network calflex-zre-b2_stack Created 
+ Volume calflex-zre-b2_pgdata Created 
+ Volume calflex-zre-b2_pgdata Created 
+ Container calflex-zre-b2-postgres-1 Creating 
+ Container calflex-zre-b2-postgres-1 Created 
+ Container calflex-zre-b2-postgres-1 Starting 
+ Container calflex-zre-b2-postgres-1 Started 
+postgres is ready (after 7s)
+
+### one-off: zitadel init zitadel, run as 'calflex_zitadel' — no admin credentials
++ podman compose -p calflex-zre-b2 --profile init run --rm zitadel-init
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-b2-postgres-1 Running 
+ Container calflex-zre-b2-postgres-1 Waiting 
+ Container calflex-zre-b2-postgres-1 Healthy 
+ Container calflex-zre-b2-zitadel-init-run-9ac5b4fe70c4 Creating 
+ Container calflex-zre-b2-zitadel-init-run-9ac5b4fe70c4 Created 
+time=2026-10-12T14:51:03.577Z level=INFO msg="structured logger configured" config_level=INFO format=text
+time=2026-10-12T14:51:03.577Z level=INFO msg="verify zitadel" stream=runtime version=v4.16.0 database=zitadel
+time=2026-10-12T14:51:03.589Z level=INFO msg="verify system" stream=runtime version=v4.16.0
+time=2026-10-12T14:51:03.594Z level=INFO msg="verify encryption keys" stream=runtime version=v4.16.0
+time=2026-10-12T14:51:03.604Z level=INFO msg="verify projections" stream=runtime version=v4.16.0
+time=2026-10-12T14:51:03.608Z level=INFO msg="verify eventstore" stream=runtime version=v4.16.0
+time=2026-10-12T14:51:03.610Z level=INFO msg="verify events tables" stream=runtime version=v4.16.0
+time=2026-10-12T14:51:03.626Z level=INFO msg="verify unique constraints" stream=runtime version=v4.16.0
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U zre_root -d postgres -c "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = 'calflex_zitadel'"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+rolname | rolsuper | rolcreatedb | rolcreaterole
+calflex_zitadel | f | f | f
+(1 row)
++ podman compose -p calflex-zre-b2 up -d zitadel
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-b2-postgres-1 Running 
+ Container calflex-zre-b2-zitadel-1 Creating 
+ Container calflex-zre-b2-zitadel-1 Created 
+ Container calflex-zre-b2-postgres-1 Waiting 
+ Container calflex-zre-b2-postgres-1 Healthy 
+ Container calflex-zre-b2-zitadel-1 Starting 
+ Container calflex-zre-b2-zitadel-1 Started 
+pinned v4.16.0: /debug/ready -> HTTP 200 after 5s
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+
+### environment of the 'zitadel' container (names only, values masked)
++ podman exec 380741a32bfd782f4aa2128fd7a1c9368923f97f347db1ae3521b52519f708a5 env
+Error: runc: exec failed: unable to start container process: exec: "env": executable file not found in $PATH: OCI runtime attempted to invoke a command that was not found
++ podman inspect --format '{{range .Config.Env}}{{println .}}{{end}}' 380741a32bfd782f4aa2128fd7a1c9368923f97f347db1ae3521b52519f708a5
+
+container=***
+HOME=***
+HOSTNAME=***
+PATH=***
+ZITADEL_DATABASE_POSTGRES_DATABASE=***
+ZITADEL_DATABASE_POSTGRES_HOST=***
+ZITADEL_DATABASE_POSTGRES_PORT=***
+ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=***
+ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=***
+ZITADEL_DATABASE_POSTGRES_USER_USERNAME=***
+ZITADEL_EXTERNALDOMAIN=***
+ZITADEL_EXTERNALSECURE=***
+ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD=***
+ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=***
+ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME=***
+ZITADEL_FIRSTINSTANCE_ORG_NAME=***
+ZITADEL_PORT=***
+ZITADEL_TLS_ENABLED=***
+-> 0 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the container
++ podman inspect --format '{{.Config.Cmd}} {{.Args}} {{.ImageName}}' 380741a32bfd782f4aa2128fd7a1c9368923f97f347db1ae3521b52519f708a5
+[start-from-setup --masterkey ***] [start-from-setup --masterkey ***] ghcr.io/zitadel/zitadel:v4.16.0
++ podman exec 380741a32bfd782f4aa2128fd7a1c9368923f97f347db1ae3521b52519f708a5 ls -la / 2>&1  # no shell in this image; expected to fail
+Error: runc: exec failed: unable to start container process: exec: "ls": executable file not found in $PATH: OCI runtime attempted to invoke a command that was not found
+
+### privileges at runtime — role 'calflex_zitadel'
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U zre_root -d postgres -c '\du'
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+                                List of roles
+    Role name    |                         Attributes                         
+-----------------+------------------------------------------------------------
+ calflex_caldav  | 
+ calflex_zitadel | 
+ zre_root        | Superuser, Create role, Create DB, Replication, Bypass RLS
+
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d postgres -c "SELECT datname, has_database_privilege('calflex_zitadel', datname, 'CONNECT') AS connect, has_database_privilege('calflex_zitadel', datname, 'CREATE') AS create, has_database_privilege('calflex_zitadel', datname, 'TEMP') AS temp FROM pg_database WHERE NOT datistemplate ORDER BY datname"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+datname | connect | create | temp
+caldav | t | f | t
+postgres | t | f | t
+zitadel | t | t | t
+(3 rows)
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d caldav -c "SELECT session_user, current_user"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+session_user | current_user
+calflex_zitadel | calflex_zitadel
+(1 row)
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d caldav -c "SELECT count(*) FROM public.calendars"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ERROR:  permission denied for table calendars
+Error: executing /usr/lib/docker/cli-plugins/docker-compose -p calflex-zre-b2 -f ./compose.option-b2.yaml exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d caldav -X -A -F  |  -v ON_ERROR_STOP=0 -c SELECT count(*) FROM public.calendars: exit status 1
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d postgres -c "CREATE ROLE zre_probe_must_fail LOGIN"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ERROR:  permission denied to create role
+DETAIL:  Only roles with the CREATEROLE attribute may create roles.
+Error: executing /usr/lib/docker/cli-plugins/docker-compose -p calflex-zre-b2 -f ./compose.option-b2.yaml exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d postgres -X -A -F  |  -v ON_ERROR_STOP=0 -c CREATE ROLE zre_probe_must_fail LOGIN: exit status 1
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d postgres -c "CREATE DATABASE zre_probe_must_fail"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ERROR:  permission denied to create database
+Error: executing /usr/lib/docker/cli-plugins/docker-compose -p calflex-zre-b2 -f ./compose.option-b2.yaml exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d postgres -X -A -F  |  -v ON_ERROR_STOP=0 -c CREATE DATABASE zre_probe_must_fail: exit status 1
+
+### optional hardening: revoke CONNECT on the sibling database from PUBLIC
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U zre_root -d postgres -c "REVOKE ALL ON DATABASE caldav FROM PUBLIC"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+REVOKE
++ podman compose -p calflex-zre-b2 exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d caldav -c "SELECT count(*) FROM public.calendars"
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  permission denied for database "caldav"
+DETAIL:  User does not have CONNECT privilege.
+Error: executing /usr/lib/docker/cli-plugins/docker-compose -p calflex-zre-b2 -f ./compose.option-b2.yaml exec -T -e PGPASSWORD=*** postgres psql -h 127.0.0.1 -U calflex_zitadel -d caldav -X -A -F  |  -v ON_ERROR_STOP=0 -c SELECT count(*) FROM public.calendars: exit status 2
+
+### removing this harness's own project (never flexcalendar-dev)
++ podman compose -p calflex-zre-b2 down -v --remove-orphans
+>>>> Executing external compose provider "/usr/lib/docker/cli-plugins/docker-compose". Please see podman-compose(1) for how to disable this message. <<<<
+
+ Container calflex-zre-b2-zitadel-1 Stopping 
+ Container calflex-zre-b2-zitadel-1 Stopped 
+ Container calflex-zre-b2-zitadel-1 Removing 
+ Container calflex-zre-b2-zitadel-1 Removed 
+ Container calflex-zre-b2-postgres-1 Stopping 
+ Container calflex-zre-b2-postgres-1 Stopped 
+ Container calflex-zre-b2-postgres-1 Removing 
+ Container calflex-zre-b2-postgres-1 Removed 
+ Volume calflex-zre-b2_pgdata Removing 
+ Network calflex-zre-b2_stack Removing 
+ Network calflex-zre-b2_stack Removed 
+ Volume calflex-zre-b2_pgdata Removed 

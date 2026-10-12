@@ -1,0 +1,124 @@
+# --- E08-R10 · option A: a one-off `zitadel init` with admin credentials -----
+#
+# Project `calflex-zre-a`, its own volume and network. Run through
+# `option-a.sh`; it never touches the `flexcalendar-dev` project.
+#
+# The shape: a one-off `zitadel init` job (profile `init`) runs as an admin
+# login that may create databases and roles but is not a superuser. It creates
+# the `zitadel` database, the `calflex_zitadel` role and its grants. The long
+# running `zitadel` service then runs `start-from-setup` as `calflex_zitadel`
+# and never sees the admin credentials.
+#
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-a.txt): the
+# service is ready 4 s after a cold start, and the running container holds 0
+# `ZITADEL_DATABASE_POSTGRES_ADMIN_*` variables.
+#
+# The passwords are throwaway values for this throwaway cluster only.
+name: calflex-zre-a
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zre_root
+      POSTGRES_PASSWORD: zre-throwaway-root
+      POSTGRES_DB: caldav
+      ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
+      ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
+      # Option A lets `zitadel init` create the database, so the bootstrap
+      # scripts must not pre-provision anything.
+      ZRE_PREPROVISION: "false"
+    volumes:
+      # Read by /docker-entrypoint-initdb.d only when the data volume is empty.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # A TCP probe, not a socket probe: the entrypoint's temporary server
+      # listens on the Unix socket only and would go green before the real
+      # server accepts TCP clients (the race `--starts` exists to catch).
+      test:
+        - CMD-SHELL
+        - pg_isready --host 127.0.0.1 --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - stack
+
+  # `podman compose -p calflex-zre-a --profile init run --rm zitadel-init`.
+  # CREATEDB + CREATEROLE, not superuser: the harness creates the role before
+  # running this job.
+  zitadel-init:
+    image: ghcr.io/zitadel/zitadel:${ZRE_IMAGE_TAG:-v4.16.0}
+    profiles: [init]
+    restart: 'no'
+    command:
+      - init
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: zre_admin
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: zre-throwaway-admin
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: calflex_zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zre-throwaway-zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stack
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:${ZRE_IMAGE_TAG:-v4.16.0}
+    restart: unless-stopped
+    command:
+      - start-from-setup
+      - --masterkey
+      - ${ZRE_MASTERKEY:-MasterkeyNeedsToHave32Characters}
+    environment:
+      ZITADEL_PORT: "8080"
+      ZITADEL_EXTERNALDOMAIN: auth.localhost
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      # No ADMIN_* here: `start-from-setup` needs only the runtime role.
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: calflex_zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zre-throwaway-zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: flexcalendar
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: calflex-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ZreThrowaway1!
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+    # Only Zitadel's HTTP port, and only on loopback: /debug/ready is how the
+    # script measures "ready", and 8443/5432/8080/3000 stay free.
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: [CMD, /app/zitadel, ready]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stack
+
+volumes:
+  pgdata:
+
+networks:
+  stack:
