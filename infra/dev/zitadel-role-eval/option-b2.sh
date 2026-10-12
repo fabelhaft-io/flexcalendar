@@ -6,18 +6,24 @@
 # internals inside the database the role owns. The long running service then
 # runs `start-from-setup` as the same role.
 #
-#   ./option-b2.sh                # one cold start, the privilege checks, teardown
-#   ./option-b2.sh --starts 10    # ten first starts from an empty volume
-#   ./option-b2.sh --upgrade      # then setup of the newest v4 against that database
-#   ./option-b2.sh --keep         # leave the project running for inspection
+#   bash option-b2.sh                # one cold start, the privilege checks, teardown
+#   bash option-b2.sh --starts 10    # ten first starts from an empty volume
+#   bash option-b2.sh --upgrade      # then setup of the newest v4 against that database
+#   bash option-b2.sh --keep         # leave the project running for inspection
 #
-# Measured on 2026-10-12: this starts, the runtime role is a plain login
-# without CREATEDB, CREATEROLE or superuser, and the container holds no admin
-# credential. This is the shape the ADR recommends.
+# Measured on 2026-10-12 in this harness's own project (results/2026-10-12/
+# option-b2.txt, option-b2-starts.txt, option-b2-upgrade.txt): ready after 5 s,
+# the one-off `zitadel init zitadel` job ran as `calflex_zitadel` alone, the
+# runtime role is a plain login with no attributes that is refused the sibling
+# database, `CREATE ROLE` and `CREATE DATABASE`, the container holds no
+# `ADMIN_*` variable, 10/10 cold starts reached `/debug/ready` (wall 208 s) and
+# v4.19.4's `setup` ran on that database as the same role (ready after 2 s).
+# This is the shape the ADR recommends.
 #
 # Needs rootless `podman` with `podman compose` and `curl`; publishes Zitadel's
 # HTTP port on 127.0.0.1:18082 only, and removes its own project
-# (`calflex-zre-b2`) with `down -v` at the end.
+# (`calflex-zre-b2`) with `down -v` at the end, on failure too unless `--keep`
+# was given.
 set -euo pipefail
 
 readonly PROJECT=calflex-zre-b2
@@ -32,8 +38,8 @@ init_hook() {
   say "one-off: zitadel init zitadel, run as '$ZRE_ROLE' — no admin credentials"
   show "podman compose -p $PROJECT --profile init run --rm zitadel-init"
   compose --profile init run --rm -T zitadel-init
-  pg_sql "$ZRE_SUPERUSER" postgres "$ZRE_PW_SUPERUSER" \
+  pg_sql "$ZRE_SUPERUSER" postgres \
     "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = '$ZRE_ROLE'"
 }
 
-run_option init_hook "$ZRE_ROLE" "$ZRE_PW_ROLE" "$@"
+run_option init_hook "$ZRE_ROLE" "$@"

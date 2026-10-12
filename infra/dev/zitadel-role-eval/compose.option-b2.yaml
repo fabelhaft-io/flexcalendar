@@ -10,8 +10,10 @@
 # creates the internals (`eventstore`, `projections`, `system`, the events
 # tables) inside the database the role owns.
 #
-# Measured on 2026-10-12: this shape starts, and the runtime role is a plain
-# login with no CREATEDB, no CREATEROLE and no superuser (see the ADR).
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-b2.txt): this
+# shape starts (ready after 5 s), the runtime role is a plain login with no
+# CREATEDB, no CREATEROLE and no superuser, and the running container holds 0
+# `ZITADEL_DATABASE_POSTGRES_ADMIN_*` variables (see the ADR).
 #
 # The passwords are throwaway values for this throwaway cluster only.
 name: calflex-zre-b2
@@ -27,6 +29,12 @@ services:
       ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
       ZRE_PREPROVISION: "true"
       ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
     volumes:
       - ./initdb:/docker-entrypoint-initdb.d:ro
       - pgdata:/var/lib/postgresql

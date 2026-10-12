@@ -9,10 +9,11 @@
 # only. There is no admin login anywhere, and the long running service runs
 # `start-from-setup` — the variant that skips `init`.
 #
-# Measured on 2026-10-12 with this shape (see the ADR): this does **not** start.
-# `setup` fails on `40_init_push_func_v4` with
-# `relation "eventstore.events" does not exist`, because the tables `zitadel
-# init` creates are missing. The working variant is `option-b2.sh`.
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-b.txt): this
+# does **not** start. `setup` fails on `40_init_push_func_v4` with
+# `relation "eventstore.events2" does not exist`, because the tables `zitadel
+# init` creates are missing, and the service restart-loops until the 240 s
+# health timeout. The working variant is `option-b2.sh`.
 #
 # The passwords are throwaway values for this throwaway cluster only.
 name: calflex-zre-b
@@ -29,6 +30,12 @@ services:
       # The bootstrap creates `calflex_zitadel` and the `zitadel` database.
       ZRE_PREPROVISION: "true"
       ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
     volumes:
       - ./initdb:/docker-entrypoint-initdb.d:ro
       - pgdata:/var/lib/postgresql

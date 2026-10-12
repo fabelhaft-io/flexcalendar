@@ -8,8 +8,10 @@
 # every start, as that login. Everything Zitadel touches is reachable, and so is
 # every other database in the cluster.
 #
-# Measured on 2026-10-12: this starts, and the runtime role is a superuser that
-# can read the sibling `caldav` database, `CREATE ROLE` and `CREATE DATABASE`.
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-c.txt): this
+# starts (ready after 5 s), the runtime role is a superuser that can read the
+# sibling `caldav` database, `CREATE ROLE` and `CREATE DATABASE`, and the
+# running container holds 3 `ZITADEL_DATABASE_POSTGRES_ADMIN_*` variables.
 #
 # The passwords are throwaway values for this throwaway cluster only.
 name: calflex-zre-c
@@ -24,6 +26,12 @@ services:
       POSTGRES_DB: caldav
       ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
       ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
       ZRE_PREPROVISION: "false"
     volumes:
       - ./initdb:/docker-entrypoint-initdb.d:ro

@@ -9,6 +9,10 @@
 # running `zitadel` service then runs `start-from-setup` as `calflex_zitadel`
 # and never sees the admin credentials.
 #
+# Measured on 2026-10-12 in this project (results/2026-10-12/option-a.txt): the
+# service is ready 4 s after a cold start, and the running container holds 0
+# `ZITADEL_DATABASE_POSTGRES_ADMIN_*` variables.
+#
 # The passwords are throwaway values for this throwaway cluster only.
 name: calflex-zre-a
 
@@ -22,6 +26,12 @@ services:
       POSTGRES_DB: caldav
       ZRE_CALDAV_PASSWORD: zre-throwaway-caldav
       ZRE_ZITADEL_PASSWORD: zre-throwaway-zitadel
+      # Read by the harness's `pgpass_init`: it writes these into a `.pgpass`
+      # inside this container (`PGPASSFILE`), so no password ever becomes an
+      # argument of a command `podman compose` echoes back on failure.
+      ZRE_CALDAV_ROLE: calflex_caldav
+      ZRE_ROLE: calflex_zitadel
+      PGPASSFILE: /tmp/zre.pgpass
       # Option A lets `zitadel init` create the database, so the bootstrap
       # scripts must not pre-provision anything.
       ZRE_PREPROVISION: "false"

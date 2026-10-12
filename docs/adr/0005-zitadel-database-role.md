@@ -97,7 +97,8 @@ empty cluster up), **option A is the fallback**: it is measured to work, needs `
 Two harnesses, both under `infra/dev/zitadel-role-eval/` (see its
 [README](../../infra/dev/zitadel-role-eval/README.md)):
 
-- **`local-binary-probe.sh`** — the numbers quoted below. The agent sandbox cannot run rootless Podman
+- **`local-binary-probe.sh`** — the first pass, and still the source of § 5's `init` privilege matrix.
+  The agent sandbox cannot run rootless Podman
   under bwrap, so the probe unpacks the `zitadel` binary **out of the pinned image** through the GHCR
   registry API and runs it against a throwaway PostgreSQL 18 cluster (`scram-sha-256`, so a role
   cannot borrow another role's identity) whose binaries come from
@@ -105,9 +106,32 @@ Two harnesses, both under `infra/dev/zitadel-role-eval/` (see its
   `008ee189eaa7ca2b58bd01dd950291e638b998392cf982297acd4779ec898ac1`). The image's own contents are
   used, not the release notes.
 - **`option-a.sh` / `option-b.sh` / `option-b2.sh` / `option-c.sh`** — the same measurements inside
-  rootless `podman compose` projects (`calflex-zre-*`), for the reviewer's machine. **They have not
-  been executed**, because the sandbox has no container runtime; every cell that depends on the
-  container itself is marked `pending — reviewer runs <script>` and claims nothing.
+  rootless `podman compose` projects (`calflex-zre-*`). The reviewer ran all of them on 2026-10-12
+  (host Podman `6.1.3`, `docker-compose` v5.6.0 provider, `bash <script>`), and every output is
+  committed under
+  [`infra/dev/zitadel-role-eval/results/2026-10-12/`](../../infra/dev/zitadel-role-eval/results/2026-10-12/)
+  with the throwaway passwords filtered out. Every criterion that belongs to the container is
+  therefore measured, not pending. Run 1's harness **did not run at all**: `lib.sh` re-assigned the
+  `readonly` variables its caller had set (`PROJECT: readonly variable`) and a `printf` format began
+  with `-`; the reviewer patched a scratch copy to get these numbers, and this branch now carries the
+  fix, so the committed scripts reproduce them. The few things that still have not run are named in
+  [Open questions](#open-questions).
+
+| Run | Log |
+|---|---|
+| `bash option-c.sh` | `results/2026-10-12/option-c.txt` |
+| `bash option-a.sh` | `results/2026-10-12/option-a.txt` |
+| `bash option-b.sh` (expected to fail) | `results/2026-10-12/option-b.txt` |
+| `bash option-b2.sh` | `results/2026-10-12/option-b2.txt` |
+| `bash option-a.sh --starts 10` | `results/2026-10-12/option-a-starts.txt` |
+| `bash option-b2.sh --starts 10` | `results/2026-10-12/option-b2-starts.txt` |
+| `bash option-a.sh --upgrade` | `results/2026-10-12/option-a-upgrade.txt` |
+| `bash option-b2.sh --upgrade` | `results/2026-10-12/option-b2-upgrade.txt` |
+| the eight runs in order | `results/2026-10-12/run.txt` |
+
+The harness removes its own `podman compose` project on every exit, failure included (an `EXIT`
+trap), and prints no password: the SQL client reads a `.pgpass` written inside the Postgres
+container, and all output — stderr included — passes through a masker.
 
 What was pinned and verified before anything ran:
 
@@ -146,9 +170,14 @@ initialize ZITADEL internals
 
 ## The measured results
 
-Every block below is the real output of the command above it, trimmed with `…`. The probe's throwaway
-cluster is named `postgres` where the container harness names it `zre_root`; the roles and the results
-are otherwise the same.
+Every block below is the real output of the command above it, trimmed with `…`, and each block says
+which log file it comes from. There are two sources: the **local-binary probe** (the `zitadel` binary
+unpacked from the pinned image, run against a throwaway PostgreSQL cluster — no container runtime
+needed) and the **container harness** (`bash option-*.sh`, rootless `podman compose`). The probe's
+cluster is named `postgres` and prints booleans as `1`/blank where the container prints `zre_root` and
+`t`/`f`; the roles and the results are otherwise the same. The container runs supersede the probe
+wherever the entrypoint, the container's environment or the Postgres bootstrap matters, and the probe
+is kept where it answers something the container does not (§ 5's `init` privilege matrix).
 
 ### 1. The privileges at runtime
 
@@ -208,9 +237,79 @@ DETAIL:  User does not have CONNECT privilege.
 
 `connect` and `temp` on `caldav` are `1` only because PostgreSQL grants `CONNECT` and `TEMP` to
 `PUBLIC` on every new database: the role reaches the database and is still refused at the first
-table. `CREATE` on `zitadel` is `1` because the role owns it (option B2/B) or because `zitadel init`
-grants `ALL` on it (option A). The `REVOKE` line shows the optional extra step that closes even the
-connection; E08-R11 may take it, and nothing depends on it.
+table (the container prints the same two columns as `t`/`f`). `CREATE` on `zitadel` is `1` because the
+role owns it (option B2/B) or because `zitadel init` grants `ALL` on it (option A). The `REVOKE` line
+shows the optional extra step that closes even the connection; E08-R11 may take it, and nothing
+depends on it.
+
+**In the container** (`option-c.txt`, `option-a.txt`, `option-b2.txt`). The same checks, run by the
+reviewer inside the `podman compose` projects, on the images the pods really run. Option C:
+
+```
+$ bash option-c.sh                      # results/2026-10-12/option-c.txt
++ psql … -c '\du'
+                                List of roles
+   Role name    |                         Attributes
+----------------+------------------------------------------------------------
+ calflex_caldav |
+ zre_root       | Superuser, Create role, Create DB, Replication, Bypass RLS
++ psql … -c "SELECT datname, has_database_privilege('zre_root', datname, 'CONNECT') AS connect, …"
+datname | connect | create | temp
+caldav | t | t | t
+postgres | t | t | t
+zitadel | t | t | t
++ psql … -U zre_root -d caldav -c "SELECT count(*) FROM public.calendars"
+count
+1
++ psql … -U zre_root -d postgres -c "CREATE ROLE zre_probe_must_fail LOGIN"
+CREATE ROLE
++ psql … -U zre_root -d postgres -c "CREATE DATABASE zre_probe_must_fail"
+CREATE DATABASE
+### optional hardening: revoke CONNECT on the sibling database from PUBLIC
++ psql … -c "REVOKE ALL ON DATABASE caldav FROM PUBLIC"
+REVOKE
++ psql … -U zre_root -d caldav -c "SELECT count(*) FROM public.calendars"
+count
+1
+```
+
+ready after **5 s** (`pinned v4.16.0: /debug/ready -> HTTP 200 after 5s`).
+
+Options A and B2 are `calflex_zitadel` (`session_user | current_user` →
+`calflex_zitadel | calflex_zitadel`) and are refused the same three ways:
+
+```
+$ bash option-a.sh                      # results/2026-10-12/option-a.txt
++ psql … -c '\du'
+ calflex_caldav  |
+ calflex_zitadel |
+ zre_admin       | Create role, Create DB
+ zre_root        | Superuser, Create role, Create DB, Replication, Bypass RLS
++ psql … -c "SELECT datname, has_database_privilege('calflex_zitadel', datname, 'CONNECT') AS connect, …"
+datname | connect | create | temp
+caldav | t | f | t
+postgres | t | f | t
+zitadel | t | t | t
++ psql … -U calflex_zitadel -d caldav -c "SELECT count(*) FROM public.calendars"
+ERROR:  permission denied for table calendars
++ psql … -U calflex_zitadel -d postgres -c "CREATE ROLE zre_probe_must_fail LOGIN"
+ERROR:  permission denied to create role
+DETAIL:  Only roles with the CREATEROLE attribute may create roles.
++ psql … -U calflex_zitadel -d postgres -c "CREATE DATABASE zre_probe_must_fail"
+ERROR:  permission denied to create database
+### optional hardening: revoke CONNECT on the sibling database from PUBLIC
++ psql … -c "REVOKE ALL ON DATABASE caldav FROM PUBLIC"
+REVOKE
++ psql … -U calflex_zitadel -d caldav -c "SELECT count(*) FROM public.calendars"
+psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  permission denied for database "caldav"
+DETAIL:  User does not have CONNECT privilege.
+```
+
+ready after **4 s**. `option-b2.txt` is the same shape, with a shorter `\du` (`calflex_zitadel`,
+`calflex_caldav` and the superuser, no `zre_admin`), ready after **5 s**. `option-b.txt` never gets
+that far (§ 4). The boundaries are identical to the probe's, in the image the pods run; option A
+leaves a `zre_admin` role behind in the cluster (`Create role, Create DB`) even though the running
+container holds no credential for it.
 
 **Option B (the failing variant).** Its runtime role never exists, because the service never starts —
 see below.
@@ -230,10 +329,32 @@ sees an `ADMIN_*` variable. Option C: the runtime container *is* the admin.
   -> 2 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the runtime environment      (C)
 ```
 
-`pending — reviewer runs ./option-a.sh, ./option-b2.sh, ./option-c.sh`: the same check against the
-running **container**, which is the criterion as written. The image has no shell (`env`, `ls` and `sh`
-do not exist in it), so the scripts print the (failing) `podman exec … env`, then
-`podman inspect --format '{{range .Config.Env}}…'`, and report the number of `ADMIN_*` names.
+**In the container** (`option-a.txt`, `option-b2.txt`, `option-c.txt`) — the criterion as written.
+`podman exec <cid> env` cannot answer it: the image has no `env`, no `ls` and no `sh` at all, so the
+script shows that failure and then reads the environment Podman gave the container:
+
+```
++ podman exec 8441f7ab8f41… env
+Error: runc: exec failed: unable to start container process: exec: "env": executable file not found in $PATH: …
++ podman inspect --format '{{range .Config.Env}}{{println .}}{{end}}' 8441f7ab8f41…
+container=***
+PATH=***
+ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=***          (option C only)
+ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=***          (option C only)
+ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=***          (option C only)
+ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=***
+ZITADEL_DATABASE_POSTGRES_USER_USERNAME=***
+…
+-> 3 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the container     (C, option-c.txt)
+-> 0 ZITADEL_DATABASE_POSTGRES_ADMIN_* variables in the container     (A, option-a.txt; B2, option-b2.txt)
++ podman inspect --format '{{.Config.Cmd}} {{.Args}} {{.ImageName}}' 8441f7ab8f41…
+[start-from-init --masterkey ***] [start-from-init --masterkey ***] ghcr.io/zitadel/zitadel:v4.16.0
+```
+
+For options A and B2 the running container's command is
+`[start-from-setup --masterkey ***] … ghcr.io/zitadel/zitadel:v4.16.0`, and its environment has only
+the `…_USER_*` pair. Option A's admin credential lives in the one-off `zitadel-init` job, whose
+container exits before the service starts — and whose role it created stays in the cluster (§ 1).
 
 ### 3. First-start reliability
 
@@ -250,11 +371,31 @@ start  1/10: rc=0 time_to_ready=4s          …   start 10/10: rc=0 time_to_read
 
 Options A and B2: **10/10**, 4–5 s each. Option C: one start measured, 5 s (`… c`).
 
-`pending — reviewer runs ./option-a.sh --starts 10` (and `./option-b2.sh --starts 10`,
-`./option-c.sh --starts 10`): the same loop in `podman compose`, where `postgres:18-alpine`'s
-entrypoint race — a temporary server that listens on the Unix socket only, so a socket probe goes
-green before TCP clients are accepted — is part of what is being measured. The probe's cluster has no
-entrypoint, so it cannot see that race.
+**In the container** (`option-a-starts.txt`, `option-b2-starts.txt`) — the same loop in
+`podman compose`, where `postgres:18-alpine`'s entrypoint race — a temporary server that listens on
+the Unix socket only, so a socket probe goes green before TCP clients are accepted — is part of what
+is being measured:
+
+```
+$ bash option-a.sh --starts 10          # results/2026-10-12/option-a-starts.txt
+start 1/10: /debug/ready -> HTTP 200 after 5s
+start  1/10: rc=0 time_to_ready=5s wall=5s
+start 2/10: /debug/ready -> HTTP 200 after 6s
+start  2/10: rc=0 time_to_ready=6s wall=6s
+…                                                                 (3./4./5./6./7./8./9./10. all rc=0)
+start 10/10: /debug/ready -> HTTP 200 after 5s
+start 10/10: rc=0 time_to_ready=5s wall=5s
+
+### calflex-zre-a: 10/10 first starts from an empty volume reached /debug/ready (wall 210s)
+$ bash option-b2.sh --starts 10         # results/2026-10-12/option-b2-starts.txt
+
+### calflex-zre-b2: 10/10 first starts from an empty volume reached /debug/ready (wall 208s)
+```
+
+**20/20 cold starts reached `/debug/ready`** (10 for A, 10 for B2), 4–6 s each, and the entrypoint
+race did not appear in any of them. The healthcheck that gates `depends_on: service_healthy` probes
+TCP (`pg_isready --host 127.0.0.1`), so it does not go green on the bootstrap's temporary
+socket-only server. Option C was started once (5 s, § 1); `--starts 10` was not run for it.
 
 ### 4. Does the shape start at all?
 
@@ -273,6 +414,32 @@ $ local-binary-probe.sh b
 … level=ERROR msg="migration failed" name=40_init_push_func_v4 …
 … level=ERROR+6 msg="setup failed, skipping cleanup" … parent="ERROR: relation \"eventstore.events\" does not exist (SQLSTATE 42P01)"
 ```
+
+**In the container** (`option-b.txt`): the same failure, in the images the pods run, this time with a
+restart loop until the harness's 240 s timeout. The bootstrap did its job — the role and the
+database exist, and Zitadel's `setup` still fails:
+
+```
+$ bash option-b.sh                      # results/2026-10-12/option-b.txt
++ psql … -c "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = 'calflex_zitadel'"
+rolname | rolsuper | rolcreatedb | rolcreaterole
+calflex_zitadel | f | f | f
++ psql … -c "SELECT datname, pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname = 'zitadel'"
+datname | owner
+zitadel | calflex_zitadel
++ podman compose -p calflex-zre-b up -d zitadel
+pinned v4.16.0: /debug/ready -> HTTP 000 after 277s
+--- last 25 log lines of the 'zitadel' service ---
+zitadel-1 | … level=INFO msg="verify migration" stream=runtime version=v4.16.0 name=40_init_push_func_v4
+zitadel-1 | … error="ERROR: relation \"eventstore.events2\" does not exist (SQLSTATE 42P01)"
+zitadel-1 | … level=ERROR msg="migration failed" … name=40_init_push_func_v4 severity=ERROR code=42P01 message="relation \"eventstore.events\" does not exist"
+zitadel-1 | … level=ERROR+6 msg="setup failed, skipping cleanup" …
+option calflex-zre-b did not start; removing this harness's own project
+```
+
+Run 1's harness left that project (and its volume) running; the committed script removes it — the
+`EXIT` trap tears the project down on failure too, and `--keep` is the only way to hold it for
+inspection.
 
 `start-from-setup` demands a database that "is initialized" (its own help text), and a database the
 bootstrap created is not: the tables `zitadel init` writes are missing. This is the epic's
@@ -337,6 +504,28 @@ ERROR … parent="initialize database failed: ERROR: permission denied to create
 -- 03_grant_user.sql GRANT ALL ON DATABASE "%[1]s" TO "%[2]s";
 ```
 
+**In the container, the other half of the same question** (`option-b2.txt`): `zitadel init zitadel`
+— "initialize ZITADEL internals" — ran **as `calflex_zitadel`**, with no admin credentials anywhere,
+and exited 0 after creating everything `setup` needs:
+
+```
+### one-off: zitadel init zitadel, run as 'calflex_zitadel' — no admin credentials
++ podman compose -p calflex-zre-b2 --profile init run --rm zitadel-init
+time=… level=INFO msg="verify zitadel" stream=runtime version=v4.16.0 database=zitadel
+time=… level=INFO msg="verify system" …
+time=… level=INFO msg="verify encryption keys" …
+time=… level=INFO msg="verify projections" …
+time=… level=INFO msg="verify eventstore" …
+time=… level=INFO msg="verify events tables" …
+time=… level=INFO msg="verify unique constraints" …
++ psql … -c "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = 'calflex_zitadel'"
+rolname | rolsuper | rolcreatedb | rolcreaterole
+calflex_zitadel | f | f | f
+```
+
+So the **internals** step needs no admin privilege at all — only the database/user/grant step of the
+default `init` does, and in B2 the bootstrap performs that instead.
+
 <a id="why-start-from-init-cannot-stay"></a>
 Those three statements are also why **`start-from-init` cannot stay** once the bootstrap owns the
 database and the role: `CREATE DATABASE` fails against a database that exists
@@ -368,8 +557,28 @@ The `v4.19.4` index digest was verified before the pull
 migrations actually running (`79_backfill_unique_constraint_owners` among them). So `setup` runs as
 the app role across a minor upgrade, with no admin rights — of either shape.
 
-`pending — reviewer runs ./option-a.sh --upgrade` (and `./option-b2.sh --upgrade`): the same
-rehearsal with the images pulled from GHCR by Podman, which is what E08-R08 will do on staging.
+**In the container** (`option-a-upgrade.txt`, `option-b2-upgrade.txt`): the same rehearsal with the
+images pulled from GHCR by Podman, which is what E08-R08 will do on staging.
+
+```
+$ bash option-a.sh --upgrade            # results/2026-10-12/option-a-upgrade.txt
+image tag for this run: v4.16.0
+pinned v4.16.0: /debug/ready -> HTTP 200 after 5s
+### upgrade rehearsal: same role, database created by v4.16.0, image v4.19.4
+image tag for this run: v4.19.4
++ podman compose -p calflex-zre-a up -d --force-recreate zitadel   # ZRE_IMAGE_TAG=v4.19.4
+ Image ghcr.io/zitadel/zitadel:v4.19.4 Pulling
+ … Image ghcr.io/zitadel/zitadel:v4.19.4 Pulled
+upgrade v4.19.4: /debug/ready -> HTTP 200 after 1s
+$ bash option-b2.sh --upgrade           # results/2026-10-12/option-b2-upgrade.txt
+pinned v4.16.0: /debug/ready -> HTTP 200 after 5s
+image tag for this run: v4.19.4
+upgrade v4.19.4: /debug/ready -> HTTP 200 after 2s
+```
+
+Both shapes upgraded from the pinned `v4.16.0` to the newest v4 release (`v4.19.4`) as the runtime
+role, and the container still held 0 `ADMIN_*` variables afterwards. Option C's `--upgrade` was not
+run.
 
 ## The criteria that are not measurements
 
@@ -467,12 +676,16 @@ default changes.
 
 ## Open questions
 
-1. **The container-level rows of this ADR are measured on the host process, not in the container.**
-   The reviewer runs `./option-a.sh`, `./option-b.sh`, `./option-b2.sh`, `./option-c.sh`,
-   `./option-a.sh --starts 10`, `./option-b2.sh --starts 10` and `./option-a.sh --upgrade` (and the
-   same `--upgrade` for B2) before the owner accepts. Everything that depends on the image's
-   entrypoint, on the container's environment, or on the `postgres:18-alpine` entrypoint race is
-   unverified until then.
+1. **The container runs were made with a scratch-patched copy of the harness.** The eight runs in
+   `results/2026-10-12/` were produced with a copy patched to get the scripts past run 1's three bugs
+   (`lib.sh` re-assigning a `readonly` variable, a `printf` format starting with `-`, the missing
+   execute bit). This branch carries the fix, so before the owner accepts, the reviewer should
+   re-run the committed scripts and see the same numbers: `bash option-c.sh`, `bash option-a.sh`,
+   `bash option-b.sh`, `bash option-b2.sh`, `bash option-a.sh --starts 10`,
+   `bash option-b2.sh --starts 10`, `bash option-a.sh --upgrade`, `bash option-b2.sh --upgrade`.
+   The two modes never run for the baseline are worth adding: `bash option-c.sh --starts 10` and
+   `bash option-c.sh --upgrade`. No *shape* is unverified any more; what is unverified is that the
+   committed scripts reproduce those outputs.
 2. **`calflex_tofu`'s exact privileges are not measured.** The OpenTofu private-backend requirements
    (whether it insists on creating the schema itself) have to be confirmed in E08-R11 by running
    `make zitadel-plan` with the new `PG_CONN_STR` against the local stack; the sandbox has no OpenTofu
@@ -481,9 +694,9 @@ default changes.
    account** (option A leaves it with the admin, B2 with the app role). B2's ownership is what makes
    `init zitadel` work without a grant; if the owner is untouchable in production, `GRANT CREATE ON
    DATABASE zitadel TO calflex_zitadel` has to be added by the deploy step instead.
-4. **The first-start race is only partly covered.** The probe repeats the cold start ten times, but
-   the `postgres:18-alpine` entrypoint race and Compose's `depends_on: service_healthy` behaviour are
-   container-level; question 1's runs cover them.
+4. **The first-start race is measured in the container now**: 20/20 across A and B2 (§ 3), with
+   `depends_on: service_healthy` in play. Still unmeasured: the baseline's `--starts 10`, and a start
+   under load or with a cold image cache.
 5. **`docs/00-overview.md` needs the ADR's one-line entry** under "Decision Records", and this
    repository's convention wants the decision reflected in `02` § Runtime layout. Both files are
    outside E08-R10's writable paths, so neither is touched here.
