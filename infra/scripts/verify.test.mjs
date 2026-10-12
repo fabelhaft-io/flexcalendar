@@ -122,7 +122,7 @@ test('missing tools identify the component phase and provide setup guidance', ()
     assert.equal(result.status, 1);
     assert.match(
       result.stderr,
-      /server-caldav: format:check: composer not found on PATH/,
+      /server-caldav: dependency resolution: composer not found on PATH/,
     );
     assert.match(
       result.stderr,
@@ -144,6 +144,33 @@ test('missing tools identify the component phase and provide setup guidance', ()
         return true;
       },
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a Composer component installs from the lock before its phases', () => {
+  const dir = mkdtempSync(resolve(root, 'infra/scripts/verify/composer-'));
+  try {
+    const log = resolve(dir, 'calls');
+    writeFileSync(
+      resolve(dir, 'composer'),
+      `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n`,
+      { mode: 0o755 },
+    );
+    const result = spawnSync(
+      process.execPath,
+      [resolve(root, 'infra/scripts/verify.mjs'), 'server-caldav'],
+      { env: { ...process.env, PATH: dir }, encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), [
+      'install --no-interaction --no-progress',
+      'run-script format:check',
+      'run-script lint',
+      'run-script typecheck',
+      'run-script test',
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

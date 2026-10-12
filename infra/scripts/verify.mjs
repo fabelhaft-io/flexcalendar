@@ -79,6 +79,13 @@ export function component(name) {
       );
     }
   } else if (existsSync(resolve(directory, 'composer.json'))) {
+    // From the lock, like `pub get` below: a fresh worktree has no vendor/.
+    run(
+      ['composer', 'install', '--no-interaction', '--no-progress'],
+      directory,
+      540_000,
+      `${name}: dependency resolution`,
+    );
     for (const phase of phases)
       run(
         ['composer', 'run-script', phase],
