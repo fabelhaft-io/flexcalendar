@@ -173,8 +173,9 @@ final class ServiceTest extends TestCase
         self::assertTrue($absent['body'] === $denied['body'], 'Calendar creation must not disclose another home');
         $calendarPath = $this->home() . $this->calendar . '/';
         self::assertSame(201, $this->request('MKCALENDAR', $calendarPath)['status']);
-        $object = $calendarPath . self::uuid() . '.ics';
-        $event = $this->event();
+        $uid = self::uuid();
+        $object = $calendarPath . $uid . '.ics';
+        $event = $this->event($uid);
         self::assertSame(201, $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar'])['status']);
         $absentObject = '/calendars/' . $missing . '/' . $this->calendar . '/' . basename($object);
         foreach (['GET', 'PUT', 'DELETE', 'PROPFIND'] as $method) {
@@ -229,9 +230,10 @@ final class ServiceTest extends TestCase
         self::assertSame(200, $this->request('GET', '/healthz', '', [], '', true)['status']);
     }
 
-    private function event(): string
+    /** E03-R11: a Private object is named after the `UID` its body carries. */
+    private function event(?string $uid = null): string
     {
-        return \Calflex\Tests\EventFixture::create(self::uuid());
+        return \Calflex\Tests\EventFixture::create($uid ?? self::uuid());
     }
 
     private function token(string $xml): string
@@ -260,8 +262,9 @@ final class ServiceTest extends TestCase
         $initial = $this->sync($path, '');
         self::assertSame(207, $initial['status']);
         $oldToken = $this->token($initial['body']);
-        $object = $path . self::uuid() . '.ics';
-        $event = $this->event();
+        $uid = self::uuid();
+        $object = $path . $uid . '.ics';
+        $event = $this->event($uid);
         self::assertSame(201, $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar', 'If-None-Match' => '*'])['status']);
         $precondition = $this->request('PUT', $object, $event, ['Content-Type' => 'text/calendar', 'If-None-Match' => '*']);
         self::assertSame(412, $precondition['status']);

@@ -441,7 +441,7 @@ final class OutboxTest extends TestCase
     {
         $path = $this->collection();
         $uid = self::uuid();
-        $object = $path . self::uuid() . '.ics';
+        $object = $path . $uid . '.ics';
         $token = $this->tokenNumber($this->sync($path, '')['body']);
         self::assertGreaterThan(0, $token);
 
@@ -476,7 +476,7 @@ final class OutboxTest extends TestCase
         $ids = $this->ids();
         $token = $this->synctoken();
         $uid = self::uuid();
-        $uri = self::uuid() . '.ics';
+        $uri = $uid . '.ics';
         $payload = self::payload($uid);
 
         // A create killed in the seam: the writer's transaction already holds the
@@ -531,8 +531,8 @@ final class OutboxTest extends TestCase
     {
         $this->collection();
         $token = $this->synctoken();
-        $uri = self::uuid() . '.ics';
-        $payload = self::payload(self::uuid());
+        $uri = ($uid = self::uuid()) . '.ics';
+        $payload = self::payload($uid);
         $backend = new GuardedCalendars($this->dav, WriteGuard::fromPdo($this->dav), $this->a);
 
         $this->dav->beginTransaction();
@@ -559,8 +559,8 @@ final class OutboxTest extends TestCase
         $this->collection();
         $ids = $this->ids();
         $token = $this->synctoken();
-        $uri = self::uuid() . '.ics';
-        $payload = self::payload(self::uuid());
+        $uri = ($uid = self::uuid()) . '.ics';
+        $payload = self::payload($uid);
         $calendarId = [$this->sabreCalendar, $this->sabreInstance];
         $backend = new ThrowingCalendars($this->dav, WriteGuard::fromPdo($this->dav), $this->a);
 
@@ -598,7 +598,7 @@ final class OutboxTest extends TestCase
         $children = [];
         for ($i = 0; $i < 4; ++$i) {
             $uid = self::uuid();
-            $children[] = $this->start($this->config($ids, 'create', false, self::uuid() . '.ics', self::payload($uid), ['dir' => $dir, 'index' => $i, 'count' => 4]));
+            $children[] = $this->start($this->config($ids, 'create', false, $uid . '.ics', self::payload($uid), ['dir' => $dir, 'index' => $i, 'count' => 4]));
         }
         foreach ($children as $child) {
             $this->assertCompleted($this->wait($child));

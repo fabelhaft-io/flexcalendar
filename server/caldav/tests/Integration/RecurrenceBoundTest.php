@@ -120,22 +120,26 @@ final class RecurrenceBoundTest extends TestCase
     }
 
     /**
-     * A Private skeleton: the guard's allow-list, and exactly one envelope hash
-     * per VEVENT, is what a write into a Private collection needs (E03-R09).
+     * A Private skeleton: the guard's allow-list, exactly one envelope hash per
+     * VEVENT (E03-R09), and a `UID` the object name is built from (E03-R11).
      */
-    private function series(string $rrule, string $start = '20260101T090000Z', string $end = '20260101T100000Z'): string
+    private function series(string $uid, string $rrule, string $start = '20260101T090000Z', string $end = '20260101T100000Z'): string
     {
         return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Calflex//EN\r\n"
-            . "BEGIN:VEVENT\r\nUID:" . self::uuid() . "\r\n"
+            . "BEGIN:VEVENT\r\nUID:" . $uid . "\r\n"
             . "DTSTAMP:20260101T000000Z\r\nDTSTART:" . $start . "\r\nDTEND:" . $end . "\r\n"
             . 'RRULE:' . $rrule . "\r\nX-CALFLEX-ENVELOPE-SHA256:" . str_repeat('a', 64)
             . "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     }
 
-    /** @return array{status: int, contentType: string, body: string} */
-    private function put(string $object, string $rrule, string $start = '20260101T090000Z', string $end = '20260101T100000Z'): array
+    /**
+     * Writes `<uid>.ics`, the name E03-R11 requires of a Private create.
+     *
+     * @return array{status: int, contentType: string, body: string}
+     */
+    private function put(string $uid, string $rrule, string $start = '20260101T090000Z', string $end = '20260101T100000Z'): array
     {
-        return $this->request('PUT', $this->path() . $object, $this->series($rrule, $start, $end), ['Content-Type' => 'text/calendar', 'If-None-Match' => '*']);
+        return $this->request('PUT', $this->path() . $uid . '.ics', $this->series($uid, $rrule, $start, $end), ['Content-Type' => 'text/calendar', 'If-None-Match' => '*']);
     }
 
     /** @return array{0: mixed, 1: mixed} the SabreDAV calendar id pair */
@@ -178,7 +182,7 @@ final class RecurrenceBoundTest extends TestCase
             'hourly year' => 'FREQ=HOURLY;COUNT=8760',
         ];
         foreach ($series as $name => $rrule) {
-            $response = $this->put(self::uuid() . '.ics', $rrule);
+            $response = $this->put(self::uuid(), $rrule);
             self::assertSame(201, $response['status'], $name . ' must be stored, not refused: ' . $response['body']);
             self::assertStringNotContainsString('max-instances', $response['body'], $name);
         }
@@ -191,8 +195,9 @@ final class RecurrenceBoundTest extends TestCase
         // 60,000 minutes is over 50,000 instances and well before 2038, so the
         // walk SabreDAV makes on write is the one that throws.
         $before = $this->counts();
-        $object = self::uuid() . '.ics';
-        $response = $this->put($object, 'FREQ=MINUTELY;COUNT=60000');
+        $uid = self::uuid();
+        $object = $uid . '.ics';
+        $response = $this->put($uid, 'FREQ=MINUTELY;COUNT=60000');
         self::assertSame(403, $response['status']);
         self::assertSame('application/xml; charset=utf-8', $response['contentType']);
         $xml = new \DOMDocument();
@@ -210,9 +215,10 @@ final class RecurrenceBoundTest extends TestCase
     public function testAQueryOverALongUnboundedSeriesAnswersTheInstanceInTheWindow(): void
     {
         $this->collect();
-        $object = self::uuid() . '.ics';
+        $uid = self::uuid();
+        $object = $uid . '.ics';
         // An unbounded daily series beginning twenty years before the window.
-        self::assertSame(201, $this->put($object, 'FREQ=DAILY', '20060101T090000Z', '20060101T100000Z')['status']);
+        self::assertSame(201, $this->put($uid, 'FREQ=DAILY', '20060101T090000Z', '20060101T100000Z')['status']);
         $query = '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
             . '<d:prop><d:getetag/></d:prop><c:filter><c:comp-filter name="VCALENDAR">'
             . '<c:comp-filter name="VEVENT"><c:time-range start="20260602T090000Z" end="20260602T100000Z"/>'
