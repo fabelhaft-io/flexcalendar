@@ -97,7 +97,10 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
     {
         $collection = $this->collection($calendarId);
         $this->requireObjectWrite($calendarId);
-        $this->guard->calendar($this->uri($calendarId), $calendarData);
+        // A `PUT` to a name the collection does not hold, a `COPY` in, and the
+        // copy half of a cross-collection `MOVE`: all three arrive here, and
+        // E03-R11 needs the name SabreDAV is about to store under.
+        $this->guard->createObject($this->uri($calendarId), $objectUri, $calendarData);
         $this->begin($calendarId);
         try {
             $result = parent::createCalendarObject($calendarId, $objectUri, $calendarData);
@@ -120,7 +123,11 @@ class GuardedCalendars extends \Sabre\CalDAV\Backend\PDO
     {
         $collection = $this->collection($calendarId);
         $this->requireObjectWrite($calendarId);
-        $this->guard->calendar($this->uri($calendarId), $calendarData);
+        // E03-R11: the stored `UID` is what an update must keep, read before the
+        // guard so a rewrite that changes it is refused before anything is
+        // staged. Read in every mode, exactly as `deleteCalendarObject` and the
+        // outbox already do.
+        $this->guard->updateObject($this->uri($calendarId), $calendarData, $this->objectUid($calendarId, $objectUri));
         $this->begin($calendarId);
         try {
             $result = parent::updateCalendarObject($calendarId, $objectUri, $calendarData);

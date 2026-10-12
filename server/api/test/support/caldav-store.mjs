@@ -14,15 +14,21 @@
 //     looked at — and a `412` for a conditional one, which is what RFC 9110
 //     § 13.1.1 makes of `If-Match` on a resource that is not there;
 //   * **the write guard runs**: every PUT is checked against the Private
-//     skeleton allow-list of `server/caldav/src/PrivateSkeleton.php` (E03-R09),
-//     and a violation throws the `403` the service throws, with the
-//     `cf:private-skeleton-only` precondition and the offending property name.
-//     That is what makes "the object this API writes is a skeleton the guard
-//     accepts" an assertion about behaviour rather than about reading the code.
+//     skeleton allow-list of `server/caldav/src/PrivateSkeleton.php` (E03-R09)
+//     **and the E03-R11 value backstop beside it** — a create needs a lowercase
+//     UUIDv4 `UID`, one `UID` across the `VEVENT`s and the object name
+//     `<uid>.ics`; an update keeps the stored `UID`, whatever its shape; neither
+//     takes an `X-` `RRULE` part. A violation throws the `403` the service
+//     throws, with the `cf:private-skeleton-only` precondition and the
+//     offending name (`UID`, `OBJECT-NAME` or `RRULE`), never the value. That is
+//     what makes "the object this API writes is a skeleton the guard accepts"
+//     an assertion about behaviour rather than about reading the code — the
+//     live service is what `make test-api-caldav` runs the same shapes against.
 //
 // The guard here is a **double, not the authority**: the authority is the PHP
-// class and its own suite. It is deliberately the same allow-list, so a field
-// this API starts writing that the guard would refuse fails here first.
+// class and its own suite. It is deliberately the same allow-list and the same
+// value rules, so a field this API starts writing that the guard would refuse
+// fails here first.
 //
 // **Sync is E05-R08's half of this file.** Every write records a change and
 // bumps the collection's own number, and `syncChanges` answers what SabreDAV
@@ -100,6 +106,15 @@ const PARAMETERS = ['TZID', 'VALUE'];
 /** The only `X-CALFLEX-ENVELOPE-SHA256` value the guard accepts (E03-R09). */
 const ENVELOPE_HASH = /^[0-9a-f]{64}$/;
 
+/**
+ * The lowercase UUIDv4 a `UID` must be when an object is **created** in a
+ * Private collection (E03-R11), verbatim from the epic. Anchored, and without
+ * `i`: SabreDAV's repair value `sabre-vobject-<uuid>` and an uppercase
+ * stock-app `UID` both fail it.
+ */
+export const UID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 /** `VCALENDAR/VEVENT[0]` -> `VEVENT`; `VCALENDAR` -> `VCALENDAR`. @param {string} path */
 const componentOf = (path) => {
   const segment = path.slice(path.lastIndexOf('/') + 1);
@@ -152,6 +167,85 @@ export function guardViolation(text) {
     if (count !== 1) return 'X-CALFLEX-ENVELOPE-SHA256';
   }
   return undefined;
+}
+
+/**
+ * The one `UID` an object's `VEVENT`s carry, or `undefined` when there is none
+ * or they differ. A `VALARM` that carries a `UID` of another shape is
+ * `undefined` too. Mirrors `PrivateSkeleton::uid()`: presence, sameness, and
+ * the alarm's shape; the lowercase-UUIDv4 rule is the create rule's, below.
+ * @param {string} text
+ * @returns {string | undefined}
+ */
+export function objectUid(text) {
+  /** @type {string | undefined} */
+  let uid;
+  for (const line of rawLines(text)) {
+    if (line.kind !== 'property' || line.name !== 'UID') continue;
+    const component = componentOf(line.path);
+    if (component === 'VEVENT') {
+      if (uid === undefined) uid = line.value;
+      else if (uid !== line.value) return undefined;
+    } else if (component === 'VALARM' && !UID_V4.test(line.value)) {
+      return undefined;
+    }
+  }
+  return uid;
+}
+
+/**
+ * The `RRULE` part the guard refuses: any rule part named `X-…`, at any depth
+ * (`PrivateSkeleton::ruleParts`). RFC 5545 § 3.3.10 allows an `x-name`; a
+ * Private skeleton does not.
+ * @param {string} text
+ * @returns {'RRULE' | undefined}
+ */
+export function rulePartViolation(text) {
+  for (const line of rawLines(text)) {
+    if (line.kind !== 'property' || line.name !== 'RRULE') continue;
+    for (const part of line.value.split(';')) {
+      if ((part.split('=')[0] ?? '').toUpperCase().startsWith('X-')) {
+        return 'RRULE';
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The name E03-R11 refuses a **create** in a Private collection for, or
+ * `undefined` when the shape is accepted. `PrivateSkeleton::createObject` in
+ * order: the E03-R09 allow-list, the one `UID` (with its alarm shape check),
+ * the lowercase-UUIDv4 rule, the object name `<uid>.ics`, then the rule parts.
+ * @param {string} name
+ * @param {string} text
+ * @returns {string | undefined}
+ */
+export function objectCreateViolation(name, text) {
+  const skeleton = guardViolation(text);
+  if (skeleton !== undefined) return skeleton;
+  const uid = objectUid(text);
+  if (uid === undefined || !UID_V4.test(uid)) return 'UID';
+  if (name !== `${uid}.ics`) return 'OBJECT-NAME';
+  return rulePartViolation(text);
+}
+
+/**
+ * The name E03-R11 refuses an **update** in a Private collection for, or
+ * `undefined` when it is accepted. `PrivateSkeleton::updateObject`: the body
+ * must carry the `UID` the store already holds — whatever shape that is, so a
+ * Shared calendar switched to Private keeps its stock-app `UID`s (INV-03) — and
+ * an `X-` rule part is refused as on a create. The object name is not checked.
+ * @param {string | undefined} storedUid
+ * @param {string} text
+ * @returns {string | undefined}
+ */
+export function objectUpdateViolation(storedUid, text) {
+  const skeleton = guardViolation(text);
+  if (skeleton !== undefined) return skeleton;
+  const uid = objectUid(text);
+  if (storedUid === undefined || uid !== storedUid) return 'UID';
+  return rulePartViolation(text);
 }
 
 /**
@@ -376,7 +470,10 @@ export function createMemoryCalDavStore(seed = {}) {
           ) {
             throw new CalDavError('precondition-failed', 412);
           }
-          const violation = guardViolation(ics);
+          const violation =
+            existing === undefined
+              ? objectCreateViolation(name, ics)
+              : objectUpdateViolation(objectUid(existing.ics), ics);
           if (violation !== undefined) {
             refusals.push(violation);
             throw new CalDavError('forbidden', 403, [

@@ -193,9 +193,13 @@ final class MembershipTest extends TestCase
         return $path;
     }
 
-    private function event(): string
+    /**
+     * An event body. E03-R11 names a Private collection's object after the `UID`
+     * it carries, so the name a case stores under comes from the same `UID`.
+     */
+    private function event(?string $uid = null): string
     {
-        return EventFixture::create(self::uuid());
+        return EventFixture::create($uid ?? self::uuid());
     }
 
     private function calendarQuery(): string
@@ -246,8 +250,9 @@ final class MembershipTest extends TestCase
     {
         $this->collect($this->calendar);
         $viewerPath = $this->memberPath($this->calendar, $this->viewer);
-        $stored = self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event())['status']);
+        $uid = self::uuid();
+        $stored = $uid . '.ics';
+        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event($uid))['status']);
         $object = $viewerPath . $stored;
 
         self::assertSame(207, $this->request('PROPFIND', $viewerPath, '', ['Depth' => '0'], $this->viewer)['status']);
@@ -263,10 +268,11 @@ final class MembershipTest extends TestCase
 
         // Writing is refused with 403 -- the collection exists for them -- and
         // nothing is stored or removed.
-        $fresh = $viewerPath . self::uuid() . '.ics';
-        self::assertSame(403, $this->request('PUT', $fresh, $this->event(), [], $this->viewer)['status']);
+        $freshUid = self::uuid();
+        $fresh = $viewerPath . $freshUid . '.ics';
+        self::assertSame(403, $this->request('PUT', $fresh, $this->event($freshUid), [], $this->viewer)['status']);
         self::assertSame(404, $this->request('GET', $fresh, '', [], $this->viewer)['status']);
-        self::assertSame(403, $this->request('PUT', $object, $this->event(), [], $this->viewer)['status']);
+        self::assertSame(403, $this->request('PUT', $object, $this->event($uid), [], $this->viewer)['status']);
         self::assertSame(403, $this->request('DELETE', $object, '', [], $this->viewer)['status']);
         self::assertSame(200, $this->request('GET', $object, '', [], $this->viewer)['status'], 'A refused write must not have deleted the object');
         self::assertSame(403, $this->request('PROPPATCH', $viewerPath, $this->propertyBody('<d:displayname>Private calendar</d:displayname>'), [], $this->viewer)['status']);
@@ -282,8 +288,9 @@ final class MembershipTest extends TestCase
     {
         $this->collect($this->calendar);
         $path = $this->memberPath($this->calendar, $this->editor);
-        $object = $path . self::uuid() . '.ics';
-        $event = $this->event();
+        $uid = self::uuid();
+        $object = $path . $uid . '.ics';
+        $event = $this->event($uid);
 
         // The membership table is the API's; changing it changes the next request.
         $this->role($this->calendar, $this->editor, 'viewer');
@@ -320,8 +327,9 @@ final class MembershipTest extends TestCase
     public function testAnObjectAdvertisesExactlyTheRolePrivileges(): void
     {
         $this->collect($this->calendar);
-        $stored = self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event())['status']);
+        $uid = self::uuid();
+        $stored = $uid . '.ics';
+        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event($uid))['status']);
 
         $read = ['{DAV:}read', '{DAV:}read-acl', '{DAV:}read-current-user-privilege-set'];
         $write = ['{DAV:}write-content', '{DAV:}write-properties'];
@@ -371,8 +379,9 @@ final class MembershipTest extends TestCase
     public function testARemovedMemberIsNotFoundEverywhere(): void
     {
         $this->collect($this->calendar);
-        $object = $this->memberPath($this->calendar) . self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $object, $this->event())['status']);
+        $uid = self::uuid();
+        $object = $this->memberPath($this->calendar) . $uid . '.ics';
+        self::assertSame(201, $this->request('PUT', $object, $this->event($uid))['status']);
         $viewerPath = $this->memberPath($this->calendar, $this->viewer);
         self::assertContains($viewerPath, $this->listing($this->viewer));
 
@@ -410,8 +419,9 @@ final class MembershipTest extends TestCase
     public function testAMemberSeesTheCalendarInTheirOwnHome(): void
     {
         $this->collect($this->calendar);
-        $stored = self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event())['status']);
+        $uid = self::uuid();
+        $stored = $uid . '.ics';
+        self::assertSame(201, $this->request('PUT', $this->memberPath($this->calendar) . $stored, $this->event($uid))['status']);
         $editorPath = $this->memberPath($this->calendar, $this->editor);
 
         $hrefs = $this->listing($this->editor);
@@ -526,24 +536,31 @@ final class MembershipTest extends TestCase
         $this->collect($this->other);
         $origin = getenv('CALFLEX_CALDAV_TEST_ORIGIN') ?: '';
 
-        // An editor writes on both sides: read on the source, write on the target.
-        $object = $this->memberPath($this->calendar, $this->editor) . self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $object, $this->event(), [], $this->editor)['status']);
-        $copied = $this->memberPath($this->other, $this->editor) . self::uuid() . '.ics';
+        // An editor writes on both sides: read on the source, write on the
+        // target. E03-R11 names the copy after the `UID` the bytes carry, so the
+        // destination of each object is `<uid>.ics` of its own body.
+        $uid = self::uuid();
+        $object = $this->memberPath($this->calendar, $this->editor) . $uid . '.ics';
+        self::assertSame(201, $this->request('PUT', $object, $this->event($uid), [], $this->editor)['status']);
+        $copied = $this->memberPath($this->other, $this->editor) . $uid . '.ics';
         self::assertSame(201, $this->request('COPY', $object, '', ['Destination' => $origin . $copied, 'Overwrite' => 'F'], $this->editor)['status']);
         self::assertSame(200, $this->request('GET', $copied, '', [], $this->editor)['status']);
-        $moved = $this->memberPath($this->other, $this->editor) . self::uuid() . '.ics';
-        self::assertSame(201, $this->request('MOVE', $object, '', ['Destination' => $origin . $moved, 'Overwrite' => 'F'], $this->editor)['status']);
-        self::assertSame(404, $this->request('GET', $object, '', [], $this->editor)['status']);
+        $movedUid = self::uuid();
+        $moving = $this->memberPath($this->calendar, $this->editor) . $movedUid . '.ics';
+        self::assertSame(201, $this->request('PUT', $moving, $this->event($movedUid), [], $this->editor)['status']);
+        $moved = $this->memberPath($this->other, $this->editor) . $movedUid . '.ics';
+        self::assertSame(201, $this->request('MOVE', $moving, '', ['Destination' => $origin . $moved, 'Overwrite' => 'F'], $this->editor)['status']);
+        self::assertSame(404, $this->request('GET', $moving, '', [], $this->editor)['status']);
         self::assertSame(200, $this->request('GET', $moved, '', [], $this->editor)['status']);
 
         // A viewer reads the source but may not write the destination, and the
         // refused write leaves both sides alone.
-        $stored = self::uuid() . '.ics';
+        $plainUid = self::uuid();
+        $stored = $plainUid . '.ics';
         $plain = $this->memberPath($this->calendar) . $stored;
-        self::assertSame(201, $this->request('PUT', $plain, $this->event())['status']);
+        self::assertSame(201, $this->request('PUT', $plain, $this->event($plainUid))['status']);
         $viewerObject = $this->memberPath($this->calendar, $this->viewer) . $stored;
-        $denied = $this->memberPath($this->other, $this->viewer) . self::uuid() . '.ics';
+        $denied = $this->memberPath($this->other, $this->viewer) . $plainUid . '.ics';
         self::assertSame(403, $this->request('COPY', $viewerObject, '', ['Destination' => $origin . $denied, 'Overwrite' => 'F'], $this->viewer)['status']);
         self::assertSame(404, $this->request('GET', $denied, '', [], $this->viewer)['status']);
         self::assertSame(403, $this->request('MOVE', $viewerObject, '', ['Destination' => $origin . $denied, 'Overwrite' => 'F'], $this->viewer)['status']);

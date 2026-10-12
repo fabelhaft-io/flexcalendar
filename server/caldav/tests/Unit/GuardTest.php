@@ -47,6 +47,78 @@ final class GuardTest extends TestCase
         }
     }
 
+    /**
+     * E03-R11 — the value backstop's own tables, beside the E03-R09 ones. A
+     * lowercase UUIDv4 on `<uid>.ics` is accepted, an alarm without a `UID` and
+     * the `PRODID`/`TZID`/`TZNAME`/`TZURL`/`X-LIC-LOCATION` values the API
+     * writes are not touched, and an update keeps a store `UID` of any shape.
+     */
+    public function testObjectAllowedTables(): void
+    {
+        $creates = GuardCases::objectCreatesAllowed();
+        $updates = GuardCases::objectUpdatesAllowed();
+        self::assertNotEmpty($creates);
+        self::assertNotEmpty($updates);
+        foreach ($creates as $case => $row) {
+            try {
+                PrivateSkeleton::createObject($row['uri'], $row['text']);
+            } catch (SkeletonViolation $exception) {
+                self::fail($case . ' must be accepted, refused for ' . $exception->name);
+            }
+        }
+        foreach ($updates as $case => $row) {
+            try {
+                PrivateSkeleton::updateObject($row['stored'], $row['text']);
+            } catch (SkeletonViolation $exception) {
+                self::fail($case . ' must be accepted, refused for ' . $exception->name);
+            }
+        }
+    }
+
+    public function testObjectRejectedTables(): void
+    {
+        foreach (GuardCases::objectCreatesRejected() as $case => $row) {
+            $this->refuses(
+                $case,
+                $row['name'],
+                static fn () => PrivateSkeleton::createObject($row['uri'], $row['text']),
+            );
+        }
+        foreach (GuardCases::objectUpdatesRejected() as $case => $row) {
+            $this->refuses(
+                $case,
+                $row['name'],
+                static fn () => PrivateSkeleton::updateObject($row['stored'], $row['text']),
+            );
+        }
+    }
+
+    /**
+     * The refusal a Private write gets: the E03-R09 precondition, the offending
+     * name only, and never a marker the refused value carried.
+     *
+     * @param \Closure(): void $write
+     */
+    private function refuses(string $case, string $name, \Closure $write): void
+    {
+        try {
+            $write();
+            self::fail('Rejected row passed: ' . $case);
+        } catch (SkeletonViolation $exception) {
+            self::assertSame($name, $exception->name, $case);
+            self::assertSame('Private skeleton only', $exception->getMessage(), $case);
+            $server = new \Sabre\DAV\Server();
+            Service::errorResponse($server, new PrivateSkeletonOnly($exception->name));
+            self::assertSame(403, $server->httpResponse->getStatus(), $case);
+            $body = $server->httpResponse->getBodyAsString();
+            self::assertStringNotContainsString('CALFLEX_GUARD_MARKER', $body, $case);
+            $xml = new \DOMDocument();
+            self::assertTrue($xml->loadXML($body), $case);
+            self::assertSame(1, $xml->getElementsByTagNameNS('https://flexcalendar.de/ns/caldav', 'private-skeleton-only')->length, $case);
+            self::assertSame($name, $xml->getElementsByTagNameNS('https://flexcalendar.de/ns/caldav', 'name')->item(0)?->textContent, $case);
+        }
+    }
+
     public function testCollectionPropertiesAndSafeNames(): void
     {
         foreach (['{http://apple.com/ns/ical/}calendar-color', '{urn:ietf:params:xml:ns:caldav}calendar-description', '{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set', '{urn:ietf:params:xml:ns:caldav}calendar-timezone', '{DAV:}displayname', '{DAV:}unknown'] as $name) {
@@ -109,16 +181,30 @@ final class GuardTest extends TestCase
         }
     }
 
+    /**
+     * E03-R11 — the value checks answer the same `403` and run on a Private
+     * calendar only: a Shared collection takes a `UID` that names an event, a
+     * name that is not `<uid>.ics` and an `X-` rule part, because the E03-R09
+     * allow-list is what still applies there (INV-01 keeps that content
+     * server-side and the guard does not add a rule of its own).
+     */
     public function testModeAwareWrites(): void
     {
-        $id = 'adf46a78-3c92-4c1e-ab04-7f791296e61e';
+        $id = GuardCases::UID;
         foreach (['private', null, 'shared'] as $mode) {
             $guard = new WriteGuard(static fn (string $lookupId): ?string => $mode);
-            // Accepted writes exercise both entry points on the happy path too.
-            $guard->calendar($id, GuardCases::skeleton());
+            // Accepted writes exercise every entry point on the happy path too:
+            // a create under `<uid>.ics`, an update that keeps the stored `UID`
+            // of any shape, and the collection's one writable property.
+            $guard->createObject($id, GuardCases::uri(), GuardCases::skeleton());
+            $guard->updateObject($id, GuardCases::skeleton(), GuardCases::UID);
+            $guard->updateObject($id, GuardCases::skeleton('1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D'), '1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D');
             $guard->properties($id, ['{DAV:}displayname' => 'Private calendar']);
             $writes = [
-                'SUMMARY' => static fn () => $guard->calendar($id, GuardCases::eventLine('SUMMARY:CALFLEX_GUARD_MARKER_write')),
+                'SUMMARY' => static fn () => $guard->createObject($id, GuardCases::uri(), GuardCases::eventLine('SUMMARY:CALFLEX_GUARD_MARKER_write')),
+                'UID' => static fn () => $guard->createObject($id, GuardCases::uri(), GuardCases::skeleton('CALFLEX_GUARD_MARKER_uid')),
+                'OBJECT-NAME' => static fn () => $guard->createObject($id, 'CALFLEX_GUARD_MARKER_object_name.ics', GuardCases::skeleton()),
+                'RRULE' => static fn () => $guard->createObject($id, GuardCases::uri(), GuardCases::eventLine('RRULE:FREQ=DAILY;X-NOTE=CALFLEX_GUARD_MARKER_rrule')),
                 'CALENDAR-COLOR' => static fn () => $guard->properties($id, ['{http://apple.com/ns/ical/}calendar-color' => 'Private calendar']),
             ];
             $accepted = 0;
@@ -136,8 +222,40 @@ final class GuardTest extends TestCase
                     self::assertSame('Private skeleton only', $exception->getMessage());
                 }
             }
-            self::assertSame($mode === 'shared' ? 2 : 0, $accepted);
+            self::assertSame($mode === 'shared' ? 5 : 0, $accepted);
         }
+    }
+
+    /**
+     * E03-R11 — an update keeps the `UID` the store holds whatever its shape, so
+     * a Shared calendar switched to Private keeps its stock-app `UID`s (INV-03),
+     * and a rewrite that changes it, or drops it, is refused.
+     */
+    public function testUpdateKeepsTheStoredUid(): void
+    {
+        $id = GuardCases::UID;
+        foreach ([null, 'private', 'unexpected'] as $mode) {
+            $guard = new WriteGuard(static fn (string $lookupId): ?string => $mode);
+            foreach (['1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D', '{9f2c4d31-6e08-7a55-b3c2-0d1e2f3a4b5c}', 'legacy-object-1'] as $stored) {
+                $guard->updateObject($id, GuardCases::skeleton($stored), $stored);
+            }
+            try {
+                $guard->updateObject($id, GuardCases::skeleton(), '1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D');
+                self::fail('An update that changes the stored UID passed the guard');
+            } catch (PrivateSkeletonOnly $exception) {
+                self::assertSame('UID', $exception->name);
+            }
+            try {
+                $guard->updateObject($id, GuardCases::skeleton(), null);
+                self::fail('An update without a stored UID passed the guard');
+            } catch (PrivateSkeletonOnly $exception) {
+                self::assertSame('UID', $exception->name);
+            }
+        }
+        // A Shared collection is not checked at all, stored UID or name.
+        $shared = new WriteGuard(static fn (string $lookupId): string => 'shared');
+        $shared->updateObject($id, GuardCases::eventLine('SUMMARY:CALFLEX_GUARD_MARKER_shared'), null);
+        $shared->createObject($id, 'not-a-uid.ics', GuardCases::skeleton('CALFLEX_GUARD_MARKER_shared'));
     }
 
     public function testModesAndNoCache(): void
@@ -154,13 +272,13 @@ final class GuardTest extends TestCase
         foreach ([null, 'private', 'shared', 'published', 'unexpected'] as $mode) {
             self::assertSame(!in_array($mode, ['shared', 'published'], true), $guard->private($id));
             if (in_array($mode, ['shared', 'published'], true)) {
-                $guard->calendar($id, 'not iCalendar');
+                $guard->createObject($id, GuardCases::uri(), 'not iCalendar');
                 $guard->properties($id, ['{DAV:}displayname' => 'Unencrypted name']);
             }
         }
         self::assertSame(9, $calls);
         $guard = new WriteGuard(static fn () => throw new \RuntimeException('DB unavailable'));
         $this->expectException(\RuntimeException::class);
-        $guard->calendar($id, GuardCases::skeleton());
+        $guard->createObject($id, GuardCases::uri(), GuardCases::skeleton());
     }
 }
