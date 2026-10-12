@@ -12,9 +12,7 @@ As of 2026-10-12: the owner's planning toward M1 (ADR 0003: the Android app with
 
 **Not queued (the owner's planning of 2026-10-12):** everything of Phase 4 and later. That is E03's stock-app work, E05's Shared intents, E06's Phase 4 requirements, E07, E10's iOS and DAVx⁵ onboarding, E12's Shamir split, E13's mode switching, and the E15 fixture capture tool and device protocol, which `make next-ready` would otherwise start because it cannot read a phase. Their IDs stay out of the numbered items below on purpose.
 
-The two server fixes in item 1 have no requirement ID: the orchestrator runs each as a follow-up PR (`from-E15-R02.md`, `from-E05-R05.md`), and `make next-ready` does not list them.
-
-1. **Server fixes, ready now:** E03-R12 (the recurrence bound; Private writes of a long daily series fail today), the DST table's § 3.3.10 data change (`follow-ups/from-E15-R02.md`), a `fix(E05-R05)` PR that drops `unsupported[].href` (`follow-ups/from-E05-R05.md`), and E03-R11 (`agent+review`, the `UID` backstop; before E13-R02).
+1. **Server fixes, ready now:** E03-R12 (the recurrence bound; Private writes of a long daily series fail today) and E03-R11 (`agent+review`, the `UID` backstop; before E13-R02). The two fixes without a requirement ID are Done, 2026-10-12: the DST table follows the § 3.3.10 ruling (PR #88, no `daily-skipped` case is `todo` any more) and `unsupported[].href` is gone (PR #87).
 2. **E12**, the start of the critical path: R02 (library check) → R01 (the wire spec, `agent+review`; its review is the longest wait, so start R02 first) → R03 and R04 → R05. R06 follows with E10 (item 5).
 3. **E08**: R10 (Zitadel's database role: the evaluation, an ADR the owner accepts, which R02 depends on) → R11 (its implementation) → R02 → R03 → R04 and R05 → R07 and R08. Staging checks by the coordinator (D-20). The owner's own part of the path is E08-R01: the staging Primary IP and its DNS records, and the two backup buckets.
 4. **E10** (Android only; iOS waits for Phase 5): R01 → R02 → R04 and R03 → R05 and R07.
