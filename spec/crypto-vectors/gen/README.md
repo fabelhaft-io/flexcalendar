@@ -55,7 +55,9 @@ Before it writes anything, `generate.py` asserts:
    `tzdata` says, which is why the *vectors* pin the RFC 5545 answers and not a tz version.
 4. **The fixed-ephemeral sealed box** opens with libsodium's own `crypto_box_seal_open`, and is the
    same length as a freshly sealed one — so a vector that pins a sealed box is still a box a
-   library can open.
+   library can open. Its layout is checked against libsodium's own `crypto_box_detached` (reached
+   with `ctypes`): **tag first**, ciphertext after, and the seal nonce is BLAKE2b at a **24-byte**
+   output length, not a BLAKE2b-256 digest.
 5. **The hand-written JCS serialiser** agrees with `rfc8785` 0.1.4 on every JSON object a vector
    carries (29 of them at the time of writing).
 6. **`VECTOR_INDEX`** claims every generated vector id exactly once, and every id it claims exists:
@@ -72,9 +74,13 @@ by construction in the real system, and both are handled explicitly rather than 
   draws it from the CSPRNG; the spec's test seam takes it as an argument (§1.2).
 - **Sealed boxes.** `crypto_box_seal` draws a fresh ephemeral key, so a *sealing* vector could never
   be stable. The vectors pin a box built with a fixed ephemeral key —
-  `epk ‖ crypto_box_easy(m, nonce = BLAKE2b-256(epk ‖ recipient_pk), recipient_pk, esk)`, which is
-  byte-for-byte what libsodium computes — and depend on a library's `crypto_box_seal_open` to open
-  it. Two consecutive `--check` runs over the committed vectors exit 0.
+  `epk ‖ crypto_box_easy(m, nonce, recipient_pk, esk)` with
+  `nonce = BLAKE2b(epk ‖ recipient_pk, outlen = 24)`, i.e. libsodium's `crypto_generichash` at
+  `outlen = crypto_box_NONCEBYTES` (a **24-byte** BLAKE2b output, *not* BLAKE2b-256), byte-for-byte
+  what libsodium computes — and depend on a library's `crypto_box_seal_open` to open it; the
+  `cck-record-seal-basic` vector also carries the derived nonce and its ephemeral key so the
+  derivation can be checked without libsodium. Two consecutive `--check` runs over the committed
+  vectors exit 0.
 
 ## Files
 

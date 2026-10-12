@@ -187,7 +187,7 @@ aad = label ‖ lp32(field_1) ‖ lp32(field_2) ‖ … ‖ lp32(field_k)
   UTF-8 text; a field that could contain a `NUL` (a `UID`, a `SUMMARY`) still carries its raw
   UTF-8 bytes, because the length prefix — not a terminator — delimits it.
 - Field **count** is fixed by the label. A reader **MUST NOT** accept a message with a different
-  number of fields: 12 bytes of `"calflex-v1"` plus the 7 fields is the whole thing.
+  number of fields: the 10 bytes of `"calflex-v1"` plus the 7 fields is the whole thing.
 - Length prefixes exist so that concatenation is unambiguous. `("ab","c")` and `("a","bc")` must
   not produce the same AAD, and with `lp32` they do not.
 
@@ -229,10 +229,16 @@ distinct from the two above and from each other:
 | `calflex-cck-record-v1` | Signed message of a sealed CCK record | §6.6 |
 | `calflex-link-bundle-v1` | Signed message of a device-link key bundle | §6.7 |
 
-Two more labels are **not** framed messages: `calflex-id-v1` starts the fingerprint hash and
+Three more labels are **not** framed messages: `calflex-id-v1` starts the fingerprint hash and
 `calflex-safety-v1` the safety number (§6.8), and `calflex-link-code-v1` the verification code
-(§6.7). All of them are ASCII and end in `v1`; none of them is ever used as an AEAD AAD except the
-three in the table's first two rows and `calflex-keywrap-v1`.
+(§6.7). All eight labels in this section are ASCII and end in `v1`.
+
+Exactly **three** labels are ever used as an AEAD's associated data — `calflex-v1` (§2.2),
+`calflex-meta-v1` (§2.3) and `calflex-keywrap-v1` (§6.3) — and each of those three is an AAD and
+nothing else. None of the other five is ever an AAD: `calflex-cck-record-v1` and
+`calflex-link-bundle-v1` are the first bytes of an Ed25519 signature's message (§6.6, §6.7), and
+`calflex-id-v1`, `calflex-safety-v1` and `calflex-link-code-v1` are hash and code prefixes (§6.8,
+§6.7).
 
 ### 2.5 What the AAD buys, and what it does not
 
@@ -801,10 +807,15 @@ offset  size  field
      1     1  suite: 0x01 = X25519 seal + Ed25519 signature
      2    16  signer user id, raw UUIDv4 bytes
     18    32  crypto_box_seal ephemeral public key
-    50    48  crypto_box_seal ciphertext: the 32-byte CCK followed by its 16-byte tag
+    50    16  crypto_box_easy Poly1305 tag — **first**, as libsodium writes it
+    66    32  crypto_box_easy ciphertext: the sealed CCK
     98    64  Ed25519 signature by the signer's identity key
                total 162 bytes
 ```
+
+The 80 bytes of `crypto_box_seal` output at 18…97 are therefore `epk(32) ‖ tag(16) ‖ c(32)`: the
+tag comes **before** the ciphertext, which is what `crypto_box_easy` and `crypto_box_detached` do
+in libsodium (the `detached` MAC equals the first 16 bytes of the `easy` output, not the last 16).
 
 Sealing:
 
@@ -813,11 +824,23 @@ Sealing:
 3. `signature = crypto_sign_detached(sig_msg, signer_ed25519_sk)` — at 98…161.
 
 A sealed box draws a fresh ephemeral key on every seal, so a *sealing* vector cannot be
-deterministic. The vectors therefore pin the bytes of a box whose ephemeral key was fixed (`epk ‖
-crypto_box_easy(cck, nonce = BLAKE2b-256(epk ‖ recipient_pk), recipient_pk, esk)`, which is exactly
-what libsodium computes) and expect a library's own `crypto_box_seal_open` to open it; the vector
-names the ephemeral key it used, so a library with a test seam can reproduce the record byte for
-byte. The same holds for §6.7's bundle.
+deterministic. The vectors therefore pin the bytes of a box whose ephemeral key was fixed, where
+the 80-byte `sealed` laid out at 18…97 is exactly what libsodium computes:
+
+```
+sealed = epk(32) ‖ crypto_box_easy(cck, nonce, recipient_pk, esk)
+epk    = crypto_scalarmult_base(esk)
+nonce  = BLAKE2b(epk ‖ recipient_pk) with a **24-byte output length**
+       = libsodium's `crypto_generichash(epk ‖ recipient_pk, outlen = crypto_box_NONCEBYTES)`
+```
+
+The nonce is **not** `BLAKE2b-256`: libsodium asks BLAKE2b for 24 bytes, and a 24-byte BLAKE2b
+output is a different function from the first 24 bytes of a 32-byte one, so a reader implementing
+the seal must derive it from the 24-byte output. `cck-record-seal-basic` carries the derived nonce
+(`seal_nonce_hex`) and the ephemeral public key it belongs to (`seal_ephemeral_pk_hex`), so the
+derivation can be checked without libsodium. The vector otherwise expects a library's own
+`crypto_box_seal_open` to open it; it names the ephemeral key it used, so a library with a test seam
+can reproduce the record byte for byte. The same holds for §6.7's bundle.
 
 Opening (a recipient):
 
@@ -885,10 +908,14 @@ offset  size  field
      2    16  signer user id, raw UUIDv4 bytes (the linking device's owner)
     18    32  recipient ephemeral X25519 public key (the new device's, raw)
     50    32  crypto_box_seal ephemeral public key
-    82   121  crypto_box_seal ciphertext: the 105-byte KeyBundle (§6.2) + 16-byte tag
+    82    16  crypto_box_easy Poly1305 tag — **first**, as in §6.6
+    98   105  crypto_box_easy ciphertext: the sealed KeyBundle (§6.2)
    203    64  Ed25519 signature by the signing device's identity key
                total 267 bytes
 ```
+
+The seal at 50…202 is `epk(32) ‖ tag(16) ‖ c(105)`, the same libsodium layout §6.6 pins, with a
+121-byte `crypto_box_easy` output.
 
 ```
 sig_msg = "calflex-link-bundle-v1" ‖ lp32(user_id) ‖ lp32(link_id)

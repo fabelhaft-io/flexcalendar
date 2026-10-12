@@ -91,7 +91,9 @@
 
 Field names in `expected` are the spec's: `aad_hex` (the exact AAD bytes), `envelope_hex`,
 `envelope_bytes`, `envelope_sha256_hex`, `payload_jcs`, `signature_message_hex` (the byte string a
-signature covers), `fingerprint_hex`, `safety_number`, `uri`, and `error` for a refusal.
+signature covers), `seal_ephemeral_pk_hex` and `seal_nonce_hex` (the fixed ephemeral key of a
+pinned sealed box and the 24-byte BLAKE2b nonce it derives, pinning §6.6's seal nonce),
+`fingerprint_hex`, `safety_number`, `uri`, and `error` for a refusal.
 
 ## What a reader must refuse
 

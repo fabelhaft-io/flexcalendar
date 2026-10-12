@@ -652,20 +652,88 @@ def verify_detached(signature: bytes, message: bytes, ed25519_pk: bytes) -> None
         raise Refused("E_SIGNATURE") from None
 
 
-def seal_box(message: bytes, recipient_pk: bytes, ephemeral_sk: bytes) -> bytes:
-    """`crypto_box_seal` with the ephemeral key fixed, so a vector can pin the bytes.
+def seal_box_nonce(ephemeral_pk: bytes, recipient_pk: bytes) -> bytes:
+    """libsodium's sealed-box nonce: BLAKE2b over `epk ‖ pk` at a **24-byte** output length.
 
-    libsodium's sealed box is `epk \u2016 crypto_box_easy(m, nonce = BLAKE2b(epk \u2016 pk), pk, esk)`
-    with a fresh random `esk`. A *sealing* path is random by construction, so the vectors pin one
-    that a library's own `crypto_box_seal_open` must accept (see `self_checks`), and the vectors
-    that seal name the ephemeral key they used.
+    Not BLAKE2b-256. `crypto_box_seal` calls `crypto_generichash` with
+    `outlen = crypto_box_NONCEBYTES` (24), and a 24-byte BLAKE2b output is a different function
+    from the first 24 bytes of a 32-byte one — so a reader implementing the seal must ask for 24
+    bytes. `cck-record-seal-basic` carries this value so the derivation is checkable without
+    libsodium.
     """
     import hashlib
 
+    return hashlib.blake2b(ephemeral_pk + recipient_pk, digest_size=24).digest()
+
+
+def seal_box(message: bytes, recipient_pk: bytes, ephemeral_sk: bytes) -> bytes:
+    """`crypto_box_seal` with the ephemeral key fixed, so a vector can pin the bytes.
+
+    libsodium's sealed box is `epk \u2016 crypto_box_easy(m, nonce, pk, esk)` with
+    `nonce = BLAKE2b(epk \u2016 pk, outlen = 24)` and a fresh random `esk`. A *sealing* path is
+    random by construction, so the vectors pin one that a library's own `crypto_box_seal_open`
+    must accept (see `self_checks`), and the vectors that seal name the ephemeral key they used.
+    """
     ephemeral_pk = bindings.crypto_scalarmult_base(ephemeral_sk)
-    nonce = hashlib.blake2b(ephemeral_pk + recipient_pk, digest_size=24).digest()
+    nonce = seal_box_nonce(ephemeral_pk, recipient_pk)
     key = bindings.crypto_box_beforenm(recipient_pk, ephemeral_sk)
     return ephemeral_pk + bindings.crypto_secretbox_easy(message, nonce, key)
+
+
+def check_sealed_box_layout(
+    sample: bytes, message: bytes, nonce: bytes, ephemeral_sk: bytes, recipient_sk: bytes
+) -> str:
+    """Prove the sealed box's Poly1305 tag comes **first**, against libsodium itself.
+
+    PyNaCl declares `crypto_box_easy` but not `crypto_box_detached`, the function that separates
+    the tag from the ciphertext. The detached call therefore goes through `ctypes` straight to the
+    libsodium PyNaCl ships (statically linked into `nacl/_sodium*.so`), which makes this a check
+    against the library rather than against this file's own assumptions. Where that symbol is not
+    reachable — a differently built wheel — the check is skipped **loudly**; it never passes
+    silently.
+    """
+    import ctypes
+    import glob
+    import os
+
+    import nacl as _nacl
+
+    recipient_pk = bindings.crypto_scalarmult_base(recipient_sk)
+    easy = bindings.crypto_box_easy(message, nonce, recipient_pk, ephemeral_sk)
+    if len(sample) != 32 + len(easy):
+        raise AssertionError((len(sample), 32 + len(easy)))
+    for path in glob.glob(os.path.join(os.path.dirname(_nacl.__file__), "_sodium*")):
+        try:
+            lib = ctypes.CDLL(path)
+            detached = lib.crypto_box_detached
+        except (OSError, AttributeError):
+            continue
+        detached.restype = ctypes.c_int
+        detached.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_ulonglong,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        ciphertext = ctypes.create_string_buffer(len(message))
+        mac = ctypes.create_string_buffer(16)
+        rc = detached(ciphertext, mac, message, len(message), nonce, recipient_pk, ephemeral_sk)
+        assert rc == 0, rc
+        assert easy[:16] == mac.raw, "crypto_box_easy is not tag-first"
+        assert easy[16:] == ciphertext.raw, "the ciphertext does not follow the tag"
+        assert sample[32:48] == mac.raw, "the sealed box is not tag-first"
+        assert sample[48:] == ciphertext.raw, "the sealed box ciphertext does not follow the tag"
+        return (
+            "self-checks: the sealed box is epk(32) ‖ tag(16) ‖ ciphertext, and its nonce is"
+            " BLAKE2b(epk ‖ pk, outlen = 24) (libsodium crypto_box_detached)"
+        )
+    return (
+        "self-checks: crypto_box_detached is not reachable in this build; the tag-order check was"
+        " skipped (the spec text and the vectors are unaffected)"
+    )
 
 
 def key_bundle(x25519_sk: bytes, ed25519_sk: bytes) -> bytes:
@@ -2511,6 +2579,13 @@ def cck_vectors() -> list[dict]:
     record = seal_cck_record(
         TEST_CCK, CALENDAR_ID, 1, USER_B, b_x25519_pk, USER_A, a_ed_sk
     )
+    # The sealing ephemeral key and the 24-byte BLAKE2b nonce it derives, so a reader without
+    # libsodium can check the derivation (review finding 2). The tag-first layout the same
+    # paragraph pins is checked against libsodium in `self_checks`.
+    seal_ephemeral_pk = bindings.crypto_scalarmult_base(SEAL_EPHEMERAL_SEED)
+    seal_nonce = seal_box_nonce(seal_ephemeral_pk, b_x25519_pk)
+    assert seal_ephemeral_pk == record[18:50], "the pinned record is not this ephemeral key's box"
+    assert len(seal_nonce) == 24, len(seal_nonce)
     head = record[:98]
     message = cck_record_message(CALENDAR_ID, USER_B, 1, head)
     open_inputs = {
@@ -2551,6 +2626,8 @@ def cck_vectors() -> list[dict]:
                 "record_bytes": CCK_RECORD_LENGTH,
                 "signature_message_hex": message.hex(),
                 "signer_user_id": USER_A,
+                "seal_ephemeral_pk_hex": seal_ephemeral_pk.hex(),
+                "seal_nonce_hex": seal_nonce.hex(),
             },
         ),
         positive(
@@ -3191,6 +3268,13 @@ def self_checks() -> None:
     recipient_pk = bindings.crypto_scalarmult_base(recipient_sk)
     pinned = seal_box(b"sealed box check", recipient_pk, SEAL_EPHEMERAL_SEED)
     assert bindings.crypto_box_seal_open(pinned, recipient_pk, recipient_sk) == b"sealed box check"
+    seal_nonce = seal_box_nonce(bindings.crypto_scalarmult_base(SEAL_EPHEMERAL_SEED), recipient_pk)
+    assert len(seal_nonce) == 24, len(seal_nonce)
+    print(
+        check_sealed_box_layout(
+            pinned, b"sealed box check", seal_nonce, SEAL_EPHEMERAL_SEED, recipient_sk
+        )
+    )
     fresh = bindings.crypto_box_seal(b"sealed box check", recipient_pk)
     assert bindings.crypto_box_seal_open(fresh, recipient_pk, recipient_sk) == b"sealed box check"
     assert len(fresh) == len(pinned), (len(fresh), len(pinned))
