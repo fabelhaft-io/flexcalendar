@@ -506,8 +506,9 @@ one place a `RRULE` becomes instances for the API.
   expands wrongly (`BYWEEKNO`, a yearly rule anchored on 29 February:
   `spec/ical-fixtures/RULINGS.md`), one that names a `TZID` no zone database can
   read (a Windows name a stock app wrote), and one whose expansion would not
-  stop inside the API's own bound are reported with a `reason` and contribute no
-  occurrences. The rest of the window is answered as usual; a wrong expansion is
+  stop inside the API's own bound are reported by their `uid` with a `reason`
+  and contribute no occurrences. The entry carries no CalDAV path: that names
+  the owner's principal, and a client needs the `uid` only. The rest of the window is answered as usual; a wrong expansion is
   never invented.
 - **The CalDAV read is the whole collection.** The `calendar-query` carries the
   `VCALENDAR`/`VEVENT` filters alone: a `time-range` makes the service's own

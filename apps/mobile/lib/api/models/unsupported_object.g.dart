@@ -8,14 +8,12 @@ part of 'unsupported_object.dart';
 
 UnsupportedObject _$UnsupportedObjectFromJson(Map<String, dynamic> json) =>
     UnsupportedObject(
-      href: json['href'] as String,
       uid: json['uid'] as String,
       reason: UnsupportedObjectReason.fromJson(json['reason'] as String),
     );
 
 Map<String, dynamic> _$UnsupportedObjectToJson(UnsupportedObject instance) =>
     <String, dynamic>{
-      'href': instance.href,
       'uid': instance.uid,
       'reason': _$UnsupportedObjectReasonEnumMap[instance.reason]!,
     };

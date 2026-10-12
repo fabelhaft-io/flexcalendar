@@ -307,7 +307,12 @@ test('an object the expansion leaves out is reported, and the rest is answered',
     assert.equal(body.unsupported.length, 1);
     assert.equal(body.unsupported[0].uid, UID);
     assert.equal(body.unsupported[0].reason, 'unknown-zone');
-    assert.match(body.unsupported[0].href, /\.ics$/);
+    // The CalDAV path names the owner's principal; a client needs the uid only.
+    assert.deepEqual(Object.keys(body.unsupported[0]).sort(), [
+      'reason',
+      'uid',
+    ]);
+    assert.ok(!response.body.includes('.ics'), response.body);
     assert.ok(!response.body.includes(CANARY), response.body);
   } finally {
     await app.close();
