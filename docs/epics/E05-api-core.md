@@ -79,7 +79,7 @@ The API MUST create, read, update and delete events. Writes carry `If-Match` (up
 Per D-07, for Private calendars the intent endpoint MUST return a **plan** (the new skeletons, with the `uid`/`recurrenceId` whose envelope must be re-sealed) without committing it. `POST /events/{uid}/intents/{planId}/commit` then takes the plan ID plus one envelope per affected skeleton and commits them atomically with `If-Match`.
 - Accept: commit with a missing or stale envelope → 409; the plan expires after 5 min; the server never sees plaintext.
 - Notes: this is the **first** recurring-edit path built (Phase 3). Build the `ical.js` plan engine so R06 in Phase 4 reuses it and only skips the re-seal step.
-- Deps: E13-R02
+- Deps: E13-R02, E12-R01 (the AAD binds the canonical timing fields, so a plan's re-serialised skeleton must not change them).
 
 ### E05-R08 · Delta endpoint   `agent`
 `GET /calendars/{id}/changes?since=<syncToken>` MUST proxy `sync-collection` and return changed and deleted `uid`s with ETags and a new token. A token that SabreDAV rejects (unknown, malformed, or from another collection) → 410, which tells the client to reload fully.
