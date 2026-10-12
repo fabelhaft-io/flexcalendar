@@ -22,10 +22,13 @@ dependencies:
   # first-party package, already in the graph as a transitive dependency of the
   # test tooling; named here because the library itself uses it.
   crypto: 3.0.7
-  # libsodium: XChaCha20-Poly1305 (`crypto_aead_xchacha20poly1305_ietf_*`) and the
-  # CSPRNG. `sodium` 4.1.1+2 builds libsodium 1.0.22 through a build hook that
+  # libsodium: XChaCha20-Poly1305 (`crypto_aead_xchacha20poly1305_ietf_*`), sealed
+  # boxes, Ed25519, HKDF-SHA-256, BLAKE2b, `crypto_scalarmult` and the CSPRNG.
+  # `sodium` 4.1.1+2 builds libsodium 1.0.22 through a build hook that
   # `dart test` and `dart run` honour (E12-R02: `sodium_libs` is discontinued and
-  # only re-exports this package).
+  # only re-exports this package). `crypto_scalarmult` is reached through the same
+  # package's `sodium_sumo.dart` entry point, which loads the *same* bundled
+  # library: the standard surface does not expose it (E12-R04, §6.2/§6.6/§6.7).
   sodium: 4.1.1+2
   # Every `TZID` in Dart goes through the `timezone` package (ADR 0002). The AAD
   # binds the `TZID` and the wall clock, never an instant a zone database computes

@@ -18,40 +18,21 @@
 /// takes a password (D-17, INV-12).
 library;
 
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:sodium/sodium.dart';
 
 import 'aad.dart';
 import 'errors.dart';
+import 'libsodium.dart';
 import 'payload.dart';
-
-Sodium? _sodium;
-
-/// The libsodium instance, created once per isolate.
-///
-/// `SodiumInit.init()` is synchronous on the VM and returns a `Future` only in a
-/// browser build, which this package does not have: ADR 0002 puts the web client
-/// on `packages/crypto-ts` (D-16).
-Sodium get _libSodium {
-  final existing = _sodium;
-  if (existing != null) return existing;
-  final FutureOr<Sodium> initialised = SodiumInit.init();
-  if (initialised is! Sodium) {
-    throw StateError(
-      'libsodium is built for the Dart VM here; the web library is crypto-ts',
-    );
-  }
-  return _sodium = initialised;
-}
 
 /// A fresh 24-byte nonce from the CSPRNG.
 ///
 /// A nonce **MUST NOT** be reused under one key (§1.2): XChaCha20-Poly1305 is
 /// broken catastrophically by a repeat, so the device's CSPRNG is the only
 /// source — never a counter, which a device that lost its state would restart.
-Uint8List freshNonce() => _libSodium.randombytes.buf(nonceBytes);
+Uint8List freshNonce() => libSodium.randombytes.buf(nonceBytes);
 
 /// Seals an event envelope: `seal(cck, epoch, skeleton, payload) → bytes` (§1.2).
 ///
@@ -203,10 +184,10 @@ Uint8List _seal({
     validatePayload(payloadBytes, PayloadKind.calendar);
   }
   // §1.2 steps 3–5. The AAD was built from the same epoch by the skeleton.
-  final key = SecureKey.fromList(_libSodium, cck);
+  final key = SecureKey.fromList(libSodium, cck);
   final Uint8List cipher;
   try {
-    cipher = _libSodium.crypto.aeadXChaCha20Poly1305IETF.encrypt(
+    cipher = libSodium.crypto.aeadXChaCha20Poly1305IETF.encrypt(
       message: payloadBytes,
       nonce: nonce,
       key: key,
@@ -260,11 +241,11 @@ Uint8List _open({
   // §1.3 step 4: the epoch comes from the header, never from a separate
   // argument, so the two can never disagree.
   final aad = aadOf(epoch);
-  final key = SecureKey.fromList(_libSodium, cck);
+  final key = SecureKey.fromList(libSodium, cck);
   final Uint8List plain;
   try {
     // §1.3 step 5.
-    plain = _libSodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
+    plain = libSodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
       cipherText: Uint8List.sublistView(envelope, 29),
       nonce: Uint8List.sublistView(envelope, 5, 29),
       key: key,
