@@ -390,8 +390,9 @@ paths:
   # The `id` path parameter is declared on each operation instead of once for the
   # whole path item: swagger_parser 1.45.0, the Dart generator E02-R07 pins,
   # casts every path-item member to a map before it skips `parameters`, so a
-  # path-level list makes it die with a type error and `make gen` leaves
-  # `apps/mobile/lib/api/` empty without failing. Keep `id` first in each
+  # path-level list makes it die with a type error, after which it reports "No
+  # schemes were generated" and exits 0. `make gen` refuses a path-level list
+  # before running it (`infra/scripts/gen-dart.mjs`). Keep `id` first in each
   # operation's list so the generated clients keep it as the leading argument.
   /calendars/{id}:
     patch:

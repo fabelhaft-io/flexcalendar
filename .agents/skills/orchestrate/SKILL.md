@@ -66,7 +66,7 @@ Then check the state: `git fetch`, `gh pr list --state all --limit 10`, `git swi
 4. **BLOCKED:** commit the doc on the branch as `doc(<ID>): review <n> (BLOCKED)`, because the coordinator refuses a dirty worktree. Re-run the same command; the coordinator feeds the doc to the implementer. At most three implementer runs: the first plus two fix cycles. After that, hand the branch and findings to the owner. A fourth run needs the owner's explicit OK (`--force`). Read the handoff's `openQuestions` before you count a BLOCKED as a blocker:
    - Only checks the sandbox can't run (Podman, the stack, a missing SDK) is a review request, not a blocker: review the branch as usual, and run those checks yourself.
    - Nothing written because such a check couldn't run: answer with a review that tells it to write the deliverable, run what the sandbox can, and list the stack checks for the reviewer. `guardrails.md` says this too, but the review should repeat it.
-   - Before every re-run, `git status` in the worktree. Review commands leave artefacts the coordinator refuses as a dirty worktree (`flutter pub get` writes an untracked `apps/mobile/android/app/…`). Remove them.
+   - Before every re-run, `git status` in the worktree. Review commands can leave artefacts the coordinator refuses as a dirty worktree; remove them. Ignored files don't count, and Flutter's `GeneratedPluginRegistrant.java` is ignored.
 
    An **owner change request** after a PASS takes the same path: add a section to the doc, commit it, re-run and review again.
 5. **PASS:**

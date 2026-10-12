@@ -247,6 +247,8 @@ packages/*/pubspec.lock
 # Gradle / Android
 apps/mobile/android/.gradle/
 apps/mobile/android/local.properties
+# Written by `flutter pub get`; Flutter's own app template ignores it as well.
+apps/mobile/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 
 # Composer
 server/caldav/vendor/
