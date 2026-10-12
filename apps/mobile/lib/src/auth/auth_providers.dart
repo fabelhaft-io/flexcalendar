@@ -25,7 +25,8 @@ final tokenStoreProvider = Provider<TokenStore>((ref) => SecureTokenStore());
 /// It throws when the client id or the project id is missing, the way
 /// `flavorProvider` throws when no entry point set a flavor: a build that
 /// forgot its `--dart-define`s fails loudly at start instead of silently
-/// signing in against the wrong client.
+/// signing in against the wrong client. [OidcConfig.forFlavor] throws the same
+/// way for a plaintext issuer outside `dev` (E10-R02).
 final oidcConfigProvider = Provider<OidcConfig>((ref) {
   if (_clientId.isEmpty || _projectId.isEmpty) {
     throw StateError(
@@ -33,8 +34,10 @@ final oidcConfigProvider = Provider<OidcConfig>((ref) {
       '--dart-define values (apps/mobile/README.md § Sign-in).',
     );
   }
-  return OidcConfig(
-    issuer: ref.watch(flavorProvider).issuer,
+  final flavor = ref.watch(flavorProvider);
+  return OidcConfig.forFlavor(
+    flavor,
+    issuer: flavor.issuer,
     clientId: _clientId,
     projectId: _projectId,
   );

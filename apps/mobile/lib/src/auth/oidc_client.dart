@@ -37,7 +37,7 @@ class AppAuthOidcClient implements OidcClient {
       OidcConfig.redirectUrl,
       issuer: config.issuer,
       scopes: config.scopes,
-      allowInsecureConnections: _allowInsecureConnections,
+      allowInsecureConnections: config.allowInsecureConnections,
     );
     return _tokensFrom(await appAuth.authorizeAndExchangeCode(request));
   }
@@ -50,7 +50,7 @@ class AppAuthOidcClient implements OidcClient {
       issuer: config.issuer,
       scopes: config.scopes,
       refreshToken: refreshToken,
-      allowInsecureConnections: _allowInsecureConnections,
+      allowInsecureConnections: config.allowInsecureConnections,
     );
     return _tokensFrom(await appAuth.token(request));
   }
@@ -61,15 +61,10 @@ class AppAuthOidcClient implements OidcClient {
       idTokenHint: idToken,
       postLogoutRedirectUrl: OidcConfig.postLogoutRedirectUrl,
       issuer: config.issuer,
-      allowInsecureConnections: _allowInsecureConnections,
+      allowInsecureConnections: config.allowInsecureConnections,
     );
     await appAuth.endSession(request);
   }
-
-  /// AppAuth refuses a plaintext endpoint unless this is set, so it is derived
-  /// from the issuer rather than hard-coded: the dev flavor may point at
-  /// `http://` on a device, staging and prod are always `https://`.
-  bool get _allowInsecureConnections => !config.issuer.startsWith('https://');
 
   AuthTokens _tokensFrom(TokenResponse response) {
     final accessToken = response.accessToken;

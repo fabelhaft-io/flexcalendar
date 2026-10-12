@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:calendar_flex/src/api/api_providers.dart';
 import 'package:calendar_flex/src/auth/auth_providers.dart';
 import 'package:calendar_flex/src/auth/auth_state.dart';
@@ -131,6 +133,163 @@ void main() {
     expect(app.oidc.signOuts, 0);
     expect(app.container.read(authControllerProvider), isA<SignedOut>());
   });
+
+  group('relaunch', () {
+    test('starts on the restore, not on the sign-in screen', () async {
+      final app = _buildApp(stored: testTokens());
+      final controller = app.container.read(authControllerProvider.notifier);
+
+      // The previous run's tokens are still in secure storage, so the first
+      // state is the check — not `SignedOut`, which would flash a sign-in
+      // button over a session that is about to come back.
+      expect(
+        app.container.read(authControllerProvider),
+        isA<RestoringSession>(),
+      );
+
+      // Let the check finish so no work outlives the test.
+      await controller.restoreSession();
+
+      expect(app.container.read(authControllerProvider), isA<SignedIn>());
+    });
+
+    test(
+      'a stored, still-good session comes back without the browser',
+      () async {
+        final app = _buildApp(stored: testTokens());
+
+        await app.container
+            .read(authControllerProvider.notifier)
+            .restoreSession();
+
+        expect(app.container.read(authControllerProvider), isA<SignedIn>());
+        expect(
+          (app.container.read(authControllerProvider) as SignedIn).user.handle,
+          'ada',
+        );
+        // No browser, no refresh: the stored token went straight out.
+        expect(app.oidc.signIns, 0);
+        expect(app.oidc.refreshes, 0);
+        expect(app.adapter.requests, hasLength(1));
+        expect(app.adapter.requests.single.path, '/me');
+        expect(
+          app.adapter.requests.single.headers['Authorization'],
+          'Bearer access-1',
+        );
+      },
+    );
+
+    test('an expired stored token refreshes once and signs back in', () async {
+      final app = _buildApp(stored: testTokens(expiresIn: Duration.zero));
+      app.oidc.onRefresh = (refreshToken) async {
+        expect(refreshToken, 'refresh-1');
+        return testTokens(access: 'rotated');
+      };
+
+      await app.container
+          .read(authControllerProvider.notifier)
+          .restoreSession();
+
+      expect(app.container.read(authControllerProvider), isA<SignedIn>());
+      // One refresh, and the request that follows carries the new token.
+      expect(app.oidc.refreshes, 1);
+      expect(app.oidc.signIns, 0);
+      expect(app.adapter.requests.single.path, '/me');
+      expect(
+        app.adapter.requests.single.headers['Authorization'],
+        'Bearer rotated',
+      );
+      expect(app.store.tokens?.accessToken, 'rotated');
+    });
+
+    test('a refresh the IdP refuses signs out and runs the hooks', () async {
+      final app = _buildApp(
+        stored: testTokens(expiresIn: Duration.zero),
+        // A live API: a request without a token is a `401`.
+        handler: (options) async => jsonResponse(problemBody(), 401),
+      );
+      app.oidc.refreshError = StateError('invalid_grant');
+      final ran = <String>[];
+      app.container.read(signOutHooksProvider)
+        ..register(() async => ran.add('cache'))
+        ..register(() async => ran.add('keys'));
+
+      await app.container
+          .read(authControllerProvider.notifier)
+          .restoreSession();
+
+      expect(app.container.read(authControllerProvider), isA<SignedOut>());
+      expect(app.store.tokens, isNull);
+      // The hooks run once, on the interceptor's exit, not twice.
+      expect(ran, <String>['cache', 'keys']);
+      expect(app.oidc.refreshes, 1);
+    });
+
+    test(
+      'a stored session the API refuses signs out and runs the hooks',
+      () async {
+        final app = _buildApp(
+          stored: testTokens(),
+          handler: (options) async => jsonResponse(problemBody(), 401),
+        );
+        // The `401` is answered by the interceptor's one refresh and one retry;
+        // the retry is refused too, so the restore's `GET /me` fails.
+        app.oidc.onRefresh = (refreshToken) async =>
+            testTokens(access: 'rotated');
+        var hooks = 0;
+        app.container.read(signOutHooksProvider).register(() async => hooks++);
+
+        await app.container
+            .read(authControllerProvider.notifier)
+            .restoreSession();
+
+        expect(app.container.read(authControllerProvider), isA<SignedOut>());
+        expect(app.store.tokens, isNull);
+        expect(hooks, 1);
+        expect(app.adapter.requests, hasLength(2));
+      },
+    );
+
+    test('a sign-in taken while the restore is running wins', () async {
+      // A store whose read waits for the test, so the user can act while the
+      // start-up check is still reading the previous run's tokens.
+      final store = _SlowTokenStore(testTokens(access: 'from-the-last-run'));
+      final app = _buildApp(tokenStore: store);
+      app.oidc.onSignIn = () => testTokens(access: 'from-the-browser');
+
+      final controller = app.container.read(authControllerProvider.notifier);
+      final restore = controller.restoreSession();
+      await controller.signIn();
+      store.release();
+      await restore;
+
+      expect(app.container.read(authControllerProvider), isA<SignedIn>());
+      // The session is the one the browser produced, and the restore did not
+      // send the stale token to `/me` afterwards: exactly one request, the
+      // sign-in's own.
+      expect(app.store.tokens?.accessToken, 'from-the-browser');
+      expect(app.oidc.signIns, 1);
+      expect(app.adapter.requests, hasLength(1));
+      expect(
+        app.adapter.requests.single.headers['Authorization'],
+        'Bearer from-the-browser',
+      );
+    });
+
+    test('nothing stored settles on the sign-in screen', () async {
+      final app = _buildApp();
+
+      await app.container
+          .read(authControllerProvider.notifier)
+          .restoreSession();
+
+      expect(app.container.read(authControllerProvider), isA<SignedOut>());
+      // No request at all: there was no token to send and nothing to confirm.
+      expect(app.adapter.requests, isEmpty);
+      expect(app.oidc.signIns, 0);
+      expect(app.oidc.refreshes, 0);
+    });
+  });
 }
 
 /// The app's providers over a stub transport: the real `dioProvider` and its
@@ -141,8 +300,12 @@ void main() {
   FakeOidcClient oidc,
   StubAdapter adapter,
 })
-_buildApp({Future<ResponseBody> Function(RequestOptions options)? handler}) {
-  final store = FakeTokenStore();
+_buildApp({
+  Future<ResponseBody> Function(RequestOptions options)? handler,
+  AuthTokens? stored,
+  FakeTokenStore? tokenStore,
+}) {
+  final store = tokenStore ?? FakeTokenStore(stored);
   final oidc = FakeOidcClient();
   final adapter = StubAdapter(
     handler ?? (options) async => jsonResponse(userBody()),
@@ -159,11 +322,37 @@ _buildApp({Future<ResponseBody> Function(RequestOptions options)? handler}) {
   return (container: container, store: store, oidc: oidc, adapter: adapter);
 }
 
-/// A valid session for the tests. The expiry is relative to the real clock,
-/// because the interceptor in `dioProvider` reads the real clock.
-AuthTokens testTokens() => AuthTokens(
-  accessToken: 'access-1',
-  refreshToken: 'refresh-1',
+/// A session for the tests, relative to the real clock because the interceptor
+/// in `dioProvider` reads the real clock. `expiresIn: Duration.zero` is an
+/// access token that has expired, which the interceptor refreshes.
+AuthTokens testTokens({
+  String access = 'access-1',
+  String? refresh = 'refresh-1',
+  Duration expiresIn = const Duration(hours: 1),
+}) => AuthTokens(
+  accessToken: access,
+  refreshToken: refresh,
   idToken: 'id-1',
-  expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+  expiresAt: DateTime.now().toUtc().add(expiresIn),
 );
+
+/// A store whose **first** read blocks until the test releases it, so a sign-in
+/// can be started while the start-up restore is still reading. Reads after it
+/// — the interceptor's, for the sign-in's own `GET /me` — go straight through.
+class _SlowTokenStore extends FakeTokenStore {
+  _SlowTokenStore(super.tokens);
+
+  final _gate = Completer<void>();
+  bool _waited = false;
+
+  void release() => _gate.complete();
+
+  @override
+  Future<AuthTokens?> read() async {
+    if (!_waited) {
+      _waited = true;
+      await _gate.future;
+    }
+    return super.read();
+  }
+}

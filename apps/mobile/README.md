@@ -104,15 +104,23 @@ since all three flavors keep that one ID.
 
 | File | What it is |
 |---|---|
-| `lib/src/auth/oidc_config.dart` | the issuer, client id, project id, scopes and redirect URIs, per flavor |
+| `lib/src/auth/oidc_config.dart` | the issuer, client id, project id, scopes and redirect URIs, per flavor, and the `dev`-only plaintext-issuer rule |
 | `lib/src/auth/oidc_client.dart` | `OidcClient` (sign-in / refresh / end-session) and its `flutter_appauth` implementation |
 | `lib/src/auth/token_store.dart` | `TokenStore` and the Keystore-backed `SecureTokenStore` |
 | `lib/src/auth/auth_tokens.dart` | the token set and its expiry rule |
 | `lib/src/auth/auth_interceptor.dart` | the `dio` interceptor |
-| `lib/src/auth/auth_controller.dart` | `signIn`, `signOut`, `handleSessionExpired` |
-| `lib/src/auth/auth_state.dart` | `SignedOut` / `SigningIn` / `SignedIn` |
+| `lib/src/auth/auth_controller.dart` | `build` (the start-up restore), `restoreSession`, `signIn`, `signOut`, `handleSessionExpired` |
+| `lib/src/auth/auth_state.dart` | `RestoringSession` / `SignedOut` / `SigningIn` / `SignedIn` |
 | `lib/src/auth/sign_out_hooks.dart` | the hook list sign-out runs |
 | `lib/src/auth/auth_providers.dart` | the providers, including `signOutHooksProvider` |
+
+**TLS outside `dev`.** `OidcConfig.forFlavor` is the only way a build gets its
+configuration, and it refuses a plaintext issuer for `staging` and `prod` with a
+`StateError`, the way a missing client id is refused — the login carries the
+user's password, and only the local stack is HTTP. A `dev` build pointed at an
+`http://` issuer is the one case where AppAuth's `allowInsecureConnections` is
+set; it is read from the configuration, never derived from the issuer at the
+call site.
 
 The one `dioProvider` carries an `AuthInterceptor` that
 
@@ -123,6 +131,14 @@ The one `dioProvider` carries an `AuthInterceptor` that
 
 and a refresh the IdP refuses (or an expired token with no refresh token) ends
 the session.
+
+**A relaunch keeps the session.** The first state of a new process is
+`RestoringSession`, not `SignedOut`: the tokens are still in secure storage, and
+`AuthController` puts them through `GET /me` (the same interceptor as every other
+request, so an expired token is refreshed once there) before it tells the UI the
+user is signed in. A refresh the IdP refuses, or a `401` the API answers, ends
+the session through the same path as a manual sign-out, hooks included. A
+sign-in or a sign-out taken while that check is running wins over it.
 
 Sign-in itself calls `GET /me` immediately, because Zitadel refuses a token at
 its own userinfo endpoint once the login session is gone (from-E05-R01). A `401`
@@ -151,8 +167,12 @@ flutter run --flavor dev \
 ```
 
 Sign in, and the home screen shows the handle `GET /me` returned; then sign out
-and confirm the app is back on the sign-in screen. `flutter build apk --flavor
-dev --debug` (what CI runs) exercises the manifest placeholder.
+and confirm the app is back on the sign-in screen. **Close and reopen the app
+while signed in** — it must come back signed in without the browser, which is
+the part the tests below cannot reach. `flutter build apk --flavor
+dev --debug` (what CI runs) exercises the manifest placeholder, and a `staging`
+or `prod` build with `--dart-define=CALFLEX_OIDC_ISSUER=http://…` must refuse to
+start.
 
 ## Checks
 
@@ -169,12 +189,17 @@ two can never drift apart. It runs, with the pinned Flutter on `PATH`:
    `ProviderScope` with the API client replaced), `test/auth_interceptor_test.dart`
    (the token interceptor: refresh on expiry, one refresh for N concurrent
    requests, one retry after a `401`, sign-out on a failed refresh),
-   `test/auth_controller_test.dart` (sign-in, sign-out and the sign-out hooks
-   over the app's real providers and a stub transport),
-   `test/auth_widget_test.dart` (the signed-out, signing-in and signed-in
-   screens), `test/database_test.dart` (the Drift round trip on an in-memory
-   database, and the UUIDv4 shape) and `test/timezones_test.dart` (a `TZDateTime`
-   in `Europe/Berlin` across the 2026-10-25 changeover)
+   `test/auth_controller_test.dart` (sign-in, sign-out, the sign-out hooks and
+   the start-up restore — a stored session, an expired one that refreshes once,
+   and one the IdP or the API refuses — over the app's real providers and a stub
+   transport), `test/oidc_config_test.dart` (the per-flavor issuer, and the
+   refusal of a plaintext issuer outside `dev`), `test/oidc_client_test.dart`
+   (what AppAuth is handed: client, redirect, scopes and
+   `allowInsecureConnections`), `test/auth_widget_test.dart` (the restoring,
+   signed-out, signing-in and signed-in screens), `test/database_test.dart` (the
+   Drift round trip on an in-memory database, and the UUIDv4 shape) and
+   `test/timezones_test.dart` (a `TZDateTime` in `Europe/Berlin` across the
+   2026-10-25 changeover)
 
 `flutter build apk --flavor dev --debug` is wired into CI
 (`.github/workflows/verify.yml`), both in the path that runs for `apps/mobile`

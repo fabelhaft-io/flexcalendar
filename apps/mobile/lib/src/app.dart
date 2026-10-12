@@ -76,6 +76,10 @@ class _AuthSection extends ConsumerWidget {
     final controller = ref.read(authControllerProvider.notifier);
 
     switch (ref.watch(authControllerProvider)) {
+      case RestoringSession():
+        // A relaunch is checking the session the last run left in secure
+        // storage. No sign-in button until that check is done (E10-R02).
+        return const CircularProgressIndicator(key: Key('auth-restoring'));
       case SigningIn():
         return const CircularProgressIndicator(key: Key('auth-signing-in'));
       case SignedIn(:final user):

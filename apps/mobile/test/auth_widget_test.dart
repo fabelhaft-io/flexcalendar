@@ -28,6 +28,24 @@ void main() {
     expect(find.byKey(const Key('auth-signed-in')), findsNothing);
   });
 
+  testWidgets('restoring: a relaunch checks the stored session first', (
+    tester,
+  ) async {
+    // A spinner never settles, so this test takes one frame rather than
+    // `pumpAndSettle`.
+    await _pump(tester, const RestoringSession(), settle: false);
+
+    expect(find.byKey(const Key('auth-restoring')), findsOneWidget);
+    // No sign-in button over a session that may still be good.
+    expect(find.byKey(const Key('auth-sign-in')), findsNothing);
+    expect(find.byKey(const Key('auth-signed-in')), findsNothing);
+
+    // Let the readiness probe's in-flight request finish, so no timer outlives
+    // the test. The spinner is still the whole auth section.
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('auth-restoring')), findsOneWidget);
+  });
+
   testWidgets('signed in: the screen names the user and offers sign-out', (
     tester,
   ) async {
@@ -93,13 +111,17 @@ void main() {
   });
 }
 
-Future<void> _pump(WidgetTester tester, AuthState state) =>
-    _pumpWith(tester, () => _FixedAuthController(state));
+Future<void> _pump(
+  WidgetTester tester,
+  AuthState state, {
+  bool settle = true,
+}) => _pumpWith(tester, () => _FixedAuthController(state), settle: settle);
 
 Future<void> _pumpWith(
   WidgetTester tester,
-  AuthController Function() create,
-) async {
+  AuthController Function() create, {
+  bool settle = true,
+}) async {
   final dio = Dio()
     ..httpClientAdapter = StubAdapter(
       (options) async =>
@@ -121,7 +143,9 @@ Future<void> _pumpWith(
       child: const FlexCalendarApp(),
     ),
   );
-  await tester.pumpAndSettle();
+  // A screen that is showing a spinner (the restore, or a sign-in in flight)
+  // never settles; a test that pumps one asks for a single frame instead.
+  if (settle) await tester.pumpAndSettle();
 }
 
 /// A controller pinned to one state, for the state tests.
