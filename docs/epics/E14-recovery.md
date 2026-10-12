@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Phase | 3 (R03, R06, R08, R09); 7 (R01, R02, R04, R05, R07), per ADR 0003 |
-| Status | Blocked on E12 (Phase 3 reqs); E13 and M2 (Phase 7 reqs) |
+| Status | The Phase 3 requirements wait for E12-R04 and E10-R02, per their own Deps (planning of 2026-10-12); the Phase 7 ones for E13 and M2 |
 | Executor | `agent+review`; `human` for the KMS setup and final drills |
-| Depends on | E12, E13; for Phase 7 also E08-R06 (mail) and E07-R04 (device notifications) |
+| Depends on | E12-R04, E10-R02; for Phase 7 also E12, E13, E08-R06 (mail) and E07-R04 (device notifications) |
 | Spec | ADR 0001 § Recovery, ADR 0003 decisions 4–5, `05` risk 4 |
 
 ## Goal
@@ -41,6 +41,7 @@ The save screen MUST state the risk in plain words, consistent with INV-11: anyo
   - regeneration invalidates the old wrapped copy and asks the user to save the new code again;
   - a fresh device, after signing in, restores the keys with the code typed in or scanned from the sheet's QR code (M1).
 - Notes: before Phase 7 this is mandatory and is the only recovery path besides device linking (ADR 0003 decision 4). A second device is prompted for, not required (R09). Flutter: the `pdf` and `printing` packages for the sheet, the print dialog and the PDF save, `share_plus` for sharing. The sensitive clipboard flag isn't exposed by Flutter's `Clipboard` and needs a small Kotlin method behind the existing Pigeon bridge.
+- Deps: E12-R04, E10-R02.
 
 ### E14-R04 · Tier 2 opt-in   `agent+review`
 Switching to Tier 2 requires an existing recovery method (a recovery code or trusted contacts). The switch deletes the escrow wrapped copy, writes an audit entry, and says that the change is **not retroactive**.
@@ -53,6 +54,7 @@ The user picks 3 contacts who have keys. The recovery secret is split (E12-R07),
 
 ### E14-R06 · No security questions   `agent`
 INV-09 is enforced in code review and by a CI grep for "security question" or "secret question" in UI strings.
+- Deps: E10-R01.
 
 ### E14-R07 · Tier 1 end-to-end drill   `human`
 Recover an account on staging from a new device. Every notification is received, the cancel works, and the release happens after the delay (M5 criterion 2).
@@ -60,12 +62,13 @@ Recover an account on staging from a new device. Every notification is received,
 ### E14-R08 · Device linking (Phase 3)   `agent+review`
 A signed-in user MUST be able to add a device by linking it from a device that already holds the keys (D-17). The new device generates an ephemeral X25519 keypair and shows it as a QR code together with a short verification code. The existing device scans it, the user confirms the code matches on both screens, and the existing device uploads the private keys sealed to the ephemeral key (E12-R04) through the `device_links` rendezvous. The server stores only the sealed blob, expires it after 5 min and deletes it on first read.
 - Accept: the server never holds an unsealed key; an expired, replayed or mismatched-code link fails; each link writes an audit entry and is shown on the user's other devices on their next sync; without a linked device the recovery code (R03) is the path.
-- Deps: E12-R04, E04-R02.
+- Deps: E12-R04, E04-R02, E10-R02.
 
 ### E14-R09 · Key-loss nudges (Phase 3)   `agent`
 After the first key creation the app MUST prompt the user to link a second device, until they do or dismiss it twice. Every 90 days it asks the user to re-enter 3 random words of the recovery code, and checks them locally by unwrapping the server copy. A failed check offers to regenerate the code (R03).
 - Accept: widget tests for the prompt schedule; a failed check never locks the user out of their data.
 - Notes: this mitigates the higher key-loss risk before escrow exists (ADR 0003, `05` risk 4).
+- Deps: E14-R03, E14-R08.
 
 ### Deferred
 - Passkey recovery with the WebAuthn `prf` extension: needs a native module (ADR 0002); check platform support first.

@@ -20,6 +20,8 @@ Radicale validates the native-app integration story in the Phase 0 spike. Produc
 
 **SabreDAV brings a second recurrence engine.** SabreDAV answers `calendar-query` time-range filters, and stores each object's first and last occurrence, with `sabre/vobject`'s own recurrence iterator. Stock apps that query by date range therefore get `vobject`'s expansion, while our apps get `ical.js`'s. If the two disagree on an `RRULE`, a stock app can see a different set of events than our app shows. E15-R03 runs `vobject` in its differential test for this reason.
 
+**`vobject` bounds every series, on write as well as on query** (owner's ruling of 2026-10-12, E03-R12). Its iterator throws after `Settings::$maxRecurrences` instances, 3,500 by default, and SabreDAV walks each finite series to 2038 on every `PUT` to store its last occurrence, so the default refused a daily series with `COUNT=4000` or an `UNTIL` in 2040 with a `500`. `server/caldav` sets the bound to 50,000, the same cap at which the API reports an object as `too-many-instances` (E05-R05), and answers a write over it with RFC 4791's `403` `CALDAV:max-instances`. Walking 50,000 instances took about 0.1 s on a developer machine (PHP 8.4); a `calendar-query` that still overflows answers `500`.
+
 ## Backend API Layer
 
 **Pinned (D-01): Node.js 24 LTS + TypeScript with Fastify; move to Node 26 once it is promoted to LTS (late October 2026).** Go is ruled out: `ical.js`, the single recurrence authority applied by the API (ADR 0002), needs a JavaScript runtime.
@@ -71,6 +73,7 @@ The Dart iCalendar ecosystem is much thinner than `ical.js` / `iCal4j`, and recu
 - The API returns expanded occurrences for a requested window (computed with `ical.js`), alongside the master `VEVENT`.
 - Edits to recurring events are sent as intents ("this occurrence", "this and following", "all"), and the API applies them to the iCalendar object. The client never hand-writes `EXDATE` / `RECURRENCE-ID` overrides.
 - The client-side `rrule` package is used only to preview a rule while the user is building it, and to render cached events while offline. Offline edits to recurring events are queued as intents and applied by the server on reconnect.
+- **A recurrence instance at a local time that does not exist is kept, counted, and placed with the UTC offset in force before the gap** (owner's ruling of 2026-10-12 on RFC 5545 § 3.3.10, whose first paragraph says to ignore such an instance and whose last says to read it as an explicit DATE-TIME per § 3.3.5). A daily 02:30 `Europe/Berlin` series therefore has an instance at `20260329T013000Z` (03:30 CEST), and `COUNT` includes it. This is the answer `sabre/vobject` gives stock apps; `ical.js` uses the offset after the gap and the API corrects it (`server/api/src/zones.mjs`). An invalid date (30 February, or 29 February in a non-leap year) is still ignored and not counted (`spec/ical-fixtures/RULINGS.md`). The DST table's `daily-skipped` cases pin this; no stock app has been checked yet, which E15-R05's device protocol does.
 
 ### iOS specifics
 
