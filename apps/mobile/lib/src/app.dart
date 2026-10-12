@@ -5,6 +5,7 @@ import 'api/api_providers.dart';
 import 'auth/auth_providers.dart';
 import 'auth/auth_state.dart';
 import 'flavor.dart';
+import 'ui/device_zone_notice.dart';
 
 /// The app behind the API client (E10-R01) and the session (E10-R02).
 class FlexCalendarApp extends StatelessWidget {
@@ -46,6 +47,9 @@ class HomeScreen extends ConsumerWidget {
             children: [
               Text('Flavor: ${flavor.name}', key: const Key('flavor')),
               Text('API: ${flavor.apiBaseUrl}', key: const Key('api')),
+              // Only visible when the device's zone could not be used: times
+              // then render in UTC (E10-R04).
+              const DeviceZoneNotice(),
               const SizedBox(height: 16),
               const _AuthSection(),
               const SizedBox(height: 16),
