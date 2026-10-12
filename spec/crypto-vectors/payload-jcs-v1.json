@@ -1,0 +1,530 @@
+{
+  "file": "payload-jcs-v1.json",
+  "format": "calflex-crypto-vectors/1",
+  "generator": "spec/crypto-vectors/gen/generate.py",
+  "note": "Invented test values only. No real key material, calendar or event content.",
+  "spec": "spec/crypto.md",
+  "vectors": [
+    {
+      "expected": {
+        "jcs": "{\"@type\":\"x\",\"A\":3,\"aaa\":2,\"zzz\":1}"
+      },
+      "id": "jcs-member-order",
+      "inputs": {
+        "object": {
+          "@type": "x",
+          "A": 3,
+          "aaa": 2,
+          "zzz": 1
+        }
+      },
+      "kind": "positive",
+      "op": "jcs_dumps",
+      "purpose": "Members are sorted by UTF-16 code unit; `@` sorts before letters.",
+      "spec": "§4.1"
+    },
+    {
+      "expected": {
+        "jcs": "{\"backslash\":\"a\\\\b\",\"controls\":\"\\b\\t\\n\\f\\r\\u0000\\u0001\\u001f\",\"emoji\":\"🙂\",\"german\":\"Grüße\",\"quote\":\"a\\\"b\",\"separators\":\"  \"}"
+      },
+      "id": "jcs-string-escapes",
+      "inputs": {
+        "object": {
+          "backslash": "a\\b",
+          "controls": "\b\t\n\f\r\u0000\u0001\u001f",
+          "emoji": "🙂",
+          "german": "Grüße",
+          "quote": "a\"b",
+          "separators": "  "
+        }
+      },
+      "kind": "positive",
+      "op": "jcs_dumps",
+      "purpose": "Escapes are RFC 8785's: short forms for \\b\\t\\n\\f\\r, \\u00xx lowercase for the rest, raw UTF-8 for everything else.",
+      "spec": "§4.1"
+    },
+    {
+      "expected": {
+        "jcs": "{\"a\":0,\"b\":-1,\"c\":9007199254740991,\"d\":-9007199254740991}"
+      },
+      "id": "jcs-integers",
+      "inputs": {
+        "object": {
+          "a": 0,
+          "b": -1,
+          "c": 9007199254740991,
+          "d": -9007199254740991
+        }
+      },
+      "kind": "positive",
+      "op": "jcs_dumps",
+      "purpose": "Integers only, as ECMAScript writes them; the safe-integer range is the whole domain.",
+      "spec": "§4.1"
+    },
+    {
+      "expected": {
+        "jcs": "{\"a\":[1,true,null,\"x\"],\"b\":{\"c\":{}}}"
+      },
+      "id": "jcs-no-whitespace",
+      "inputs": {
+        "object": {
+          "a": [
+            1,
+            true,
+            null,
+            "x"
+          ],
+          "b": {
+            "c": {}
+          }
+        }
+      },
+      "kind": "positive",
+      "op": "jcs_dumps",
+      "purpose": "No whitespace, no trailing newline, arrays and nested objects included.",
+      "spec": "§4.1"
+    },
+    {
+      "expected": {
+        "jcs": "{\"😀\":2,\"￿\":1}"
+      },
+      "id": "jcs-astral-member-order",
+      "inputs": {
+        "object": {
+          "￿": 1,
+          "😀": 2
+        }
+      },
+      "kind": "positive",
+      "op": "jcs_dumps",
+      "purpose": "Astral characters sort by their UTF-16 surrogate, above U+FFFF — not by code point.",
+      "spec": "§4.1"
+    },
+    {
+      "expected": {
+        "jcs": "{\"@type\":\"Event\",\"description\":\"Invented test content — \\\"quoted\\\" \\\\ backslash, line\\nbreak, Grüße 🙂\",\"descriptionContentType\":\"text/plain\",\"keywords\":{\"test\":true},\"locations\":{\"park\":{\"name\":\"Praxis am Park (test value)\"}},\"participants\":{\"alice@example.test\":{\"email\":\"alice@example.test\",\"name\":\"Alice (test value)\",\"roles\":{\"attendee\":true}}},\"priority\":5,\"title\":\"Physio (test value)\"}"
+      },
+      "id": "payload-event-basic",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        }
+      },
+      "kind": "positive",
+      "op": "validate_payload",
+      "purpose": "The fixed test event: non-ASCII content, an escaped quote, a backslash and a newline.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "jcs": "{\"@type\":\"Calendar\",\"color\":\"#3b82f6\",\"name\":\"Privat (test value)\"}"
+      },
+      "id": "payload-calendar-basic",
+      "inputs": {
+        "payload_kind": "calendar",
+        "payload_object": {
+          "@type": "Calendar",
+          "color": "#3b82f6",
+          "name": "Privat (test value)"
+        }
+      },
+      "kind": "positive",
+      "op": "validate_payload",
+      "purpose": "A calendar's name and colour (D-18).",
+      "spec": "§4.3"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-forbidden-uid-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)",
+          "uid": "55555555-5555-4555-8555-555555555555"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "`uid` belongs to the skeleton, not the payload.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-forbidden-start-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "start": "2026-04-01T09:00:00",
+          "title": "Physio (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "`start` is bound by the AAD, so a second copy would be a second authority.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-forbidden-alerts-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "alerts": {},
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "Alerts stay in the cleartext VALARM (D-08), so `alerts` is refused.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-unknown-member-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "notes": "not a JSCalendar member",
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "A member outside the version-1 list is refused, so adding one is a version bump.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-null-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "description": null,
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "A null member value is refused.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-float-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Event",
+          "priority": 1.5
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "Numbers are integers: a float would make JCS number formatting a compatibility surface.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-missing-type-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "title": "no type (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "`@type` is required.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-wrong-type-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": {
+          "@type": "Task",
+          "title": "wrong type (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "`@type` must be `Event`.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-top-level-array-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_object": [
+          {
+            "@type": "Event"
+          }
+        ]
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "The payload is a JSON object, not an array.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-duplicate-member-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_text": "{\"@type\":\"Event\",\"title\":\"a\",\"title\":\"b\"}"
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "Two members with one name: refused, because a JSON parser hides the difference.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-not-jcs-refused",
+      "inputs": {
+        "payload_kind": "event",
+        "payload_text": "{\"title\":\"Physio (test value)\",\"@type\":\"Event\"}"
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "Valid JSON with the members in the wrong order is not JCS.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-event-not-utf8-refused",
+      "inputs": {
+        "payload_hex": "7b224074797065223a224576656e74222c227469746c65223a22636166ff227d",
+        "payload_kind": "event"
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "A payload whose bytes are not valid UTF-8 is refused.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-calendar-no-name-refused",
+      "inputs": {
+        "payload_kind": "calendar",
+        "payload_object": {
+          "@type": "Calendar",
+          "color": "#3b82f6"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "A calendar payload without a name is refused.",
+      "spec": "§4.3"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-calendar-extra-member-refused",
+      "inputs": {
+        "payload_kind": "calendar",
+        "payload_object": {
+          "@type": "Calendar",
+          "color": "#3b82f6",
+          "description": "extra",
+          "name": "Privat (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "The metadata payload carries the name and the colour, nothing else.",
+      "spec": "§4.3"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-calendar-uppercase-color-refused",
+      "inputs": {
+        "payload_kind": "calendar",
+        "payload_object": {
+          "@type": "Calendar",
+          "color": "#3B82F6",
+          "name": "Privat (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "The colour is lowercase RFC 7986.",
+      "spec": "§4.3"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "payload-calendar-short-color-refused",
+      "inputs": {
+        "payload_kind": "calendar",
+        "payload_object": {
+          "@type": "Calendar",
+          "color": "#fff",
+          "name": "Privat (test value)"
+        }
+      },
+      "kind": "negative",
+      "op": "validate_payload",
+      "purpose": "A three-digit colour is not RFC 7986's form.",
+      "spec": "§4.3"
+    }
+  ]
+}
