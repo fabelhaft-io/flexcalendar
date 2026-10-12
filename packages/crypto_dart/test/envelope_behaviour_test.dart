@@ -228,7 +228,12 @@ void main() {
       expect(
         _refusal(
           () => verifyEnvelopeSha256(
-            propertyValue: '${digest.substring(0, 63)}0',
+            // Flip the digest's last hex digit to a *different* one. Writing a
+            // fixed '0' there would be a no-op whenever the random seal's digest
+            // already ended in 0, leaving the "tampered" value equal to the real
+            // one and the expected refusal never coming.
+            propertyValue:
+                '${digest.substring(0, 63)}${digest.endsWith('0') ? '1' : '0'}',
             envelope: envelope,
           ),
         ),
