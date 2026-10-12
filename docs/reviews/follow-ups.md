@@ -13,9 +13,9 @@ As of 2026-10-12: the owner's planning toward M1 (ADR 0003: the Android app with
 **Not queued (the owner's planning of 2026-10-12):** everything of Phase 4 and later. That is E03's stock-app work, E05's Shared intents, E06's Phase 4 requirements, E07, E10's iOS and DAVx⁵ onboarding, E12's Shamir split, E13's mode switching, and the E15 fixture capture tool and device protocol, which `make next-ready` would otherwise start because it cannot read a phase. Their IDs stay out of the numbered items below on purpose.
 
 1. **Server fixes:** E03-R12 (the recurrence bound) is Done, 2026-10-12 (PR #91). E03-R11 (`agent+review`, the `UID` backstop; before E13-R02) is in review. The two fixes without a requirement ID are Done, 2026-10-12: the DST table follows the § 3.3.10 ruling (PR #88, no `daily-skipped` case is `todo` any more) and `unsupported[].href` is gone (PR #87).
-2. **E12**, the start of the critical path: R02 (library check, Done 2026-10-12, PR #92) → R01 (the wire spec, `agent+review`; its review is the longest wait, so start R02 first) → R03 and R04 → R05. R06 follows with E10 (item 5).
-3. **E08**: R10 (Zitadel's database role: the evaluation, an ADR the owner accepts, which R02 depends on) → R11 (its implementation) → R02 → R03 → R04 and R05 → R07 and R08. Staging checks by the coordinator (D-20). The owner's own part of the path is E08-R01: the staging Primary IP and its DNS records, and the two backup buckets.
-4. **E10** (Android only; iOS waits for Phase 5): R01 → R02 → R04 and R03 → R05 and R07.
+2. **E12**, the start of the critical path: R02 (library check, PR #92) and R01 (the wire spec, PR #96) are Done, 2026-10-12 → R03, then R04 (one package, so one after the other) → R05. R06 follows with E10 (item 5).
+3. **E08**: R10 (Zitadel's database role: the evaluation) is Done, 2026-10-12 (PR #95; ADR 0005 accepted, option B2) → R11 (its implementation) → R02 → R03 → R04 and R05 → R07 and R08. Staging checks by the coordinator (D-20). The owner's own part of the path is E08-R01: the staging Primary IP and its DNS records, and the two backup buckets.
+4. **E10** (Android only; iOS waits for Phase 5): R01 (Done, 2026-10-12, PR #93) → R02 → R04 and R03 → R05 and R07.
 5. **Private mode end to end:** E13-R02 → E05-R07 → E13-R01, E13-R03, E13-R04, E06-R02, E06-R09 and E12-R06 → E13-R05 and E13-R07 → E10-R06 and E10-R10 → E14-R03, E14-R08, E14-R09 and E14-R06 → E13-R08 on staging → E10-R11 and E13-R09 (`human`, M1).
 
 ## Follow-ups waiting for their requirement
@@ -26,8 +26,6 @@ One file per source in [`follow-ups/`](follow-ups/): `from-<ID>.md` holds what t
 
 ## Open with the owner
 
-As of 2026-10-12, the owner ruled on RFC 5545 § 3.3.10 (`docs/02` § Recurrence) and on free-text values on Private calendars (ADR 0001, amended; E03-R11). Waiting for the owner since the unattended run of 2026-10-12:
+As of 2026-10-12 the owner accepted ADR 0005 (E08-R10, option B2) and the wire spec (E12-R01) with the ADR 0001 amendments it implies (PR #98), and merged E10-R01. Waiting for the owner:
 
-- **E08-R10, ADR 0005 (Proposed):** accept or amend the recommendation (B2: a pre-provisioned `calflex_zitadel` role, `zitadel init zitadel` as that role, `start-from-setup`, no admin credentials; A as the measured fallback). E08-R11 and E08-R02 wait for it. One word to fix in the ADR: its line 144 says "twelve runs", `run.txt` holds ten (`docs/reviews/E08-R10.md`, review 3).
-- **E12-R01, the wire spec:** the design choices `spec/crypto.md` makes that amend ADR 0001: the recovery-code wrap is an AEAD under the HKDF `KEK_rc`, not a sealed box (§6.3); the AAD binds `TZID` and wall clock, not the UTC instant (§3.5); ADR 0001 § Libraries still names the discontinued `sodium_libs`. The event-envelope ceiling (65,536 bytes) is client-side only (§1.1). E12-R03 and E12-R04 wait for the approval.
-- **E10-R01, the scaffold:** an `agent` requirement, but its PR changes `.github/workflows/verify.yml` and the root `Makefile` (the APK build in CI, the `verify-mobile` alias), so the merge gate holds it.
+- **E03-R11, the `UID` backstop** ([PR #99](https://github.com/fabelhaft-io/flexcalendar/pull/99), `agent+review`). E13-R02 is stacked on it.
