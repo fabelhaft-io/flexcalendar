@@ -71,6 +71,7 @@ The Dart iCalendar ecosystem is much thinner than `ical.js` / `iCal4j`, and recu
 - The API returns expanded occurrences for a requested window (computed with `ical.js`), alongside the master `VEVENT`.
 - Edits to recurring events are sent as intents ("this occurrence", "this and following", "all"), and the API applies them to the iCalendar object. The client never hand-writes `EXDATE` / `RECURRENCE-ID` overrides.
 - The client-side `rrule` package is used only to preview a rule while the user is building it, and to render cached events while offline. Offline edits to recurring events are queued as intents and applied by the server on reconnect.
+- **A recurrence instance at a local time that does not exist is kept, counted, and placed with the UTC offset in force before the gap** (owner's ruling of 2026-10-12 on RFC 5545 § 3.3.10, whose first paragraph says to ignore such an instance and whose last says to read it as an explicit DATE-TIME per § 3.3.5). A daily 02:30 `Europe/Berlin` series therefore has an instance at `20260329T013000Z` (03:30 CEST), and `COUNT` includes it. This is the answer `sabre/vobject` gives stock apps; `ical.js` uses the offset after the gap and the API corrects it (`server/api/src/zones.mjs`). An invalid date (30 February, or 29 February in a non-leap year) is still ignored and not counted (`spec/ical-fixtures/RULINGS.md`). The DST table's `daily-skipped` cases pin this; no stock app has been checked yet, which E15-R05's device protocol does.
 
 ### iOS specifics
 

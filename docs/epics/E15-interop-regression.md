@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | Cross-cutting. Phase 1: R01–R03, the corpus, the DST table and the API-side runners; each later client adds its runner; Phase 4: R04, R05 |
-| Status | In progress: R03 ([PR #65](https://github.com/fabelhaft-io/flexcalendar/pull/65)), R01 ([PR #71](https://github.com/fabelhaft-io/flexcalendar/pull/71)) and R02 ([PR #72](https://github.com/fabelhaft-io/flexcalendar/pull/72)) Done, 2026-10-11; R04 and R05 wait for Phase 4 (Shared calendars on staging). The `daily-skipped` DST cases wait for the owner's ruling on RFC 5545 § 3.3.10 (`docs/reviews/follow-ups.md`) |
+| Status | In progress: R03 ([PR #65](https://github.com/fabelhaft-io/flexcalendar/pull/65)), R01 ([PR #71](https://github.com/fabelhaft-io/flexcalendar/pull/71)) and R02 ([PR #72](https://github.com/fabelhaft-io/flexcalendar/pull/72)) Done, 2026-10-11; R04 and R05 wait for Phase 4 (Shared calendars on staging). The owner ruled on RFC 5545 § 3.3.10 on 2026-10-12 (`docs/02` § Recurrence); the `daily-skipped` DST cases follow once their data change lands (`docs/reviews/follow-ups/from-E15-R02.md`) |
 | Executor | `agent` for harnesses; `human` for device capture and runs |
 | Depends on | E02-R04 |
 | Spec | `05` risks 2, 3 and 10, CLAUDE.md § Risks |
