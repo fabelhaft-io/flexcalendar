@@ -4,7 +4,7 @@
 |---|---|
 | Phase | 2 (Dart: R01–R05); 3 (mobile part of R06); 5 (TS library, web part of R06); 7 (R07). On the critical path to M1 (ADR 0003) |
 | Status | Ready: R02 (library check). R01 follows R02; R03 and R04 follow R01; R05 waits for R03 and E02-R04; R06 waits for E10-R01 and E10-R02 |
-| Executor | `agent+review`: every PR is approved by a human; an external review happens before M5 |
+| Executor | `agent+review` (R01, R03, R04, R06, R07: a human approves each PR), `agent` otherwise (R02, R05); an external review happens before M5 |
 | Depends on | E02-R02 (Dart pin, Done); D-08, D-14, D-15, D-16, D-17, D-18 |
 | Spec | ADR 0001 § Private calendars — cryptography, ADR 0002 § Consequences |
 
