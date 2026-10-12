@@ -44,6 +44,7 @@ import { buildApp } from '../../src/app.mjs';
 import { createCalendarStore } from '../../src/calendar-store.mjs';
 import { createCalDavAdapter } from '../../src/caldav/adapter.mjs';
 import { readConfig } from '../../src/config.mjs';
+import { createEnvelopeStore } from '../../src/envelope-store.mjs';
 import { createUserStore } from '../../src/store.mjs';
 
 const databaseUrl = process.env.CALFLEX_DATABASE_URL;
@@ -139,6 +140,7 @@ function build() {
     },
     store: createUserStore(pool),
     calendars: createCalendarStore(pool),
+    envelopes: createEnvelopeStore(pool),
     caldav: adapter,
     logger: { stream: capture.stream },
   });
