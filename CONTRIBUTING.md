@@ -202,9 +202,10 @@ changes the system, both change in the same PR (rule 6).
 
 ## Single verification entry point (E02-R04)
 
-Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`
-and the CalDAV development tools with `cd server/caldav && composer install`.
-The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
+Install the workspace dependencies with `corepack pnpm install --frozen-lockfile`.
+The `server-caldav` gate installs the CalDAV development tools from
+`composer.lock` itself (`composer install`), as the Dart gates run `pub get`, so
+a fresh worktree needs no manual step for them. The `server-caldav` component requires PHP 8.4 and Composer on `PATH`
 (the E02-R02 pins). `make verify` also requires the pinned Flutter and Dart
 on `PATH` for the mobile component and client generation, plus working rootless
 Podman on `PATH` for the API migration component tests. `make host-tools`
@@ -232,8 +233,11 @@ unit tests, then `make gen-check`, `make check-stack`, `make test-seed`,
 `make verify-invariants`, and `make verify-corpus`, in that order, even with `make -j`. Any failure stops the
 run with a nonzero exit. GNU `timeout` caps the complete run at nine minutes
 (with a five-second kill grace period), leaving headroom below the ten-minute
-CI limit. Dependency installation and stack startup are prerequisites, not timed
-verification steps. A timeout is a failure, not a successful fast run.
+CI limit. The workspace install and stack startup are prerequisites, not timed
+verification steps; Composer's install and Dart's `pub get` run inside their
+component gates and count toward the budget (under a second when nothing
+changed for Composer, whose dependencies CI installs before the run). A timeout is a failure, not a
+successful fast run.
 
 Use `make verify-tooling`, `make verify-server-api`, `make verify-server-caldav`,
 `make verify-apps-mobile`, or `make verify-packages-crypto_dart` to run just one
