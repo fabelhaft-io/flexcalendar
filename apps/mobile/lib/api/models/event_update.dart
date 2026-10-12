@@ -9,7 +9,7 @@ import 'event_time.dart';
 
 part 'event_update.g.dart';
 
-/// A patch request: the same fields as a create, minus `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. A time field takes the same three forms a create takes, and a zone the object does not define yet is embedded beside it (E05-R09). An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18).
+/// A patch request: the same fields as a create, minus `uid`, `rrule`, `envelope` and `epoch`. Every member is optional; `null` removes the property it names and an absent member is left alone. A time field takes the same three forms a create takes, and a zone the object does not define yet is embedded beside it (E05-R09). An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18), and moving `start` or `end` requires an `envelopeSha256` that differs from the stored skeleton's, because both are bound into the envelope's AAD (`spec/crypto.md` §2.2, E13-R02); a re-sealed envelope is written through `PUT /calendars/{calendarId}/envelopes/{uid}`, which commits it in D-06 order.
 @JsonSerializable()
 class EventUpdate {
   const EventUpdate({
