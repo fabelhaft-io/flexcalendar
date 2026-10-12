@@ -843,8 +843,12 @@ def open_cck_record(
         raise Refused("E_UNSUPPORTED")
     message = cck_record_message(calendar_id, recipient_user_id, epoch, blob[0:98])
     verify_detached(blob[98:162], message, signer_ed25519_pk)
+    # `crypto_box_seal_open(c, pk, sk)` — the public key first. The caller holds only the secret
+    # key, so it derives the public one; `c` is the whole 80-byte `epk ‖ tag ‖ c` span, and
+    # libsodium reads the ephemeral key from its first 32 bytes (spec/crypto.md §6.6 step 3).
+    recipient_x25519_pk = bindings.crypto_scalarmult_base(recipient_x25519_sk)
     try:
-        cck = bindings.crypto_box_seal_open(blob[18:98], recipient_x25519_sk, blob[18:50])
+        cck = bindings.crypto_box_seal_open(blob[18:98], recipient_x25519_pk, recipient_x25519_sk)
     except CryptoError:
         raise Refused("E_AUTH") from None
     if len(cck) != 32:
@@ -950,8 +954,11 @@ def open_link_bundle(
         raise Refused("E_UNSUPPORTED")
     message = link_bundle_message(user_id, link_id, blob[18:50], blob[0:203])
     verify_detached(blob[203:267], message, signer_ed25519_pk)
+    # Same rule as §6.6: `crypto_box_seal_open(c, pk, sk)`, the caller derives the public key from
+    # its ephemeral secret key, and `c` is the whole 153-byte sealed box.
+    ephemeral_pk = bindings.crypto_scalarmult_base(ephemeral_sk)
     try:
-        return bindings.crypto_box_seal_open(blob[50:203], ephemeral_sk, blob[50:82])
+        return bindings.crypto_box_seal_open(blob[50:203], ephemeral_pk, ephemeral_sk)
     except CryptoError:
         raise Refused("E_AUTH") from None
 
@@ -2717,6 +2724,9 @@ def link_vectors() -> list[dict]:
         "signer_ed25519_pk_hex": a_ed_pk.hex(),
     }
     mis_sealed = seal_link_bundle(USER_A, LINK_ID, other_ephemeral_pk, bundle, a_ed_sk)
+    # The blob the server rewrote: the recipient ephemeral key it records (bundle[18:50]) was
+    # changed after the signature was made, so the signature no longer covers the blob.
+    rewritten = flip(blob, 18)
 
     return [
         positive(
@@ -2750,11 +2760,15 @@ def link_vectors() -> list[dict]:
         negative(
             "link-qr-code-mismatch",
             "§6.7",
-            "A code that does not match the keys: the user must see the mismatch and stop.",
+            "A code computed for another identity key does not match the keys: the user must see "
+            "the mismatch and stop.",
             {
                 "uri": uri,
                 "ephemeral_pk_hex": ephemeral_pk.hex(),
-                "identity_pk_hex": a_ed_pk.hex(),
+                # The QR's `c` was computed from A's identity key, so presenting another user's
+                # key is a real mismatch. (Until review 3 this vector passed A's own key, so the
+                # code it pinned `E_VERIFY` for actually matched.)
+                "identity_pk_hex": c_ed_pk.hex(),
             },
             "E_VERIFY",
         ),
@@ -2775,8 +2789,10 @@ def link_vectors() -> list[dict]:
         negative(
             "link-qr-bad-uuid",
             "§6.7",
-            "The rendezvous id is a lowercase UUIDv4.",
-            {"uri": uri.replace(LINK_ID, LINK_ID.upper())},
+            "The rendezvous id is a lowercase UUIDv4: an uppercase hex letter is refused.",
+            # `LINK_ID` is all digits, so its uppercase spelling is itself. A UUID that carries a
+            # hex letter is needed for this case to exist at all (review 3).
+            {"uri": uri.replace(LINK_ID, "44444444-4444-4444-8444-44444444444A")},
             "E_ENCODING",
         ),
         positive(
@@ -2813,18 +2829,8 @@ def link_vectors() -> list[dict]:
         negative(
             "link-bundle-wrong-ephemeral",
             "§6.7",
-            "A blob replayed at another ephemeral key fails the signature.",
-            dict(
-                open_inputs,
-                blob_hex=seal_link_bundle(
-                    USER_A,
-                    LINK_ID,
-                    other_ephemeral_pk,
-                    bundle,
-                    a_ed_sk,
-                ).hex(),
-                ephemeral_sk_hex=EPHEMERAL_SEED.hex(),
-            ),
+            "The key the blob records was rewritten after signing, so the signature fails.",
+            dict(open_inputs, blob_hex=rewritten.hex()),
             "E_SIGNATURE",
         ),
         negative(
@@ -2971,8 +2977,10 @@ def identity_vectors() -> list[dict]:
         negative(
             "identity-verify-qr-bad-uuid",
             "§6.8",
-            "The user id is a lowercase UUIDv4.",
-            {"uri": uri.replace(USER_A, USER_A.upper())},
+            "The user id is a lowercase UUIDv4: an uppercase hex letter is refused.",
+            # `USER_A` is all digits, so its uppercase spelling is itself. A UUID that carries a
+            # hex letter is needed for this case to exist at all (review 3).
+            {"uri": uri.replace(USER_A, "22222222-2222-4222-8222-22222222222A")},
             "E_ENCODING",
         ),
     ]
@@ -3310,6 +3318,220 @@ def check_dst_against_cases() -> None:
     print(f"self-checks: {checked} DST cases match spec/ical-fixtures/dst/cases.json")
 
 
+# --------------------------------------------------------------------------------------------
+# Re-running every vector through the reference operation it is about
+# --------------------------------------------------------------------------------------------
+
+# The opening paths of the reference implementation are easy to leave unexecuted: a vector pins
+# the *bytes* a seal produces, so nothing in the generator needs the opener to build it. Review 3
+# of E12-R01 found both `crypto_box_seal_open` call sites written with the wrong arguments and
+# never reached by any vector, so here every vector whose `op` names an opener is run back through
+# that function: a positive must return the value the vector pins and a negative must raise the
+# code it pins. The two sealer wrappers are run as well, so no function in this program is dead.
+REFERENCE_RUNS = {
+    "seal_event",
+    "open_event",
+    "seal_metadata",
+    "open_metadata",
+    "key_bundle",
+    "check_key_bundle",
+    "open_wrapped_key",
+    "open_cck_record",
+    "open_link_bundle",
+    "parse_recovery_phrase",
+    "parse_link_uri",
+    "parse_verify_uri",
+    "link_code_mismatch",
+}
+
+# The run a vector's `op` names, for the few vectors whose `op` is a coarse grouping rather than
+# the call itself:
+#  - `metadata-open-as-event` opens a metadata envelope with the *event* AAD (D-18), so it must be
+#    run through the event opener;
+#  - `link-qr-code-mismatch` is about the human comparison of the short code, which happens after
+#    the URI is parsed, so it runs both.
+RUN_BY_VECTOR_ID = {
+    "metadata-open-as-event": "open_event",
+    "link-qr-code-mismatch": "link_code_mismatch",
+}
+
+OPENER_RUNS = frozenset(
+    {
+        "open_event",
+        "open_metadata",
+        "open_wrapped_key",
+        "open_cck_record",
+        "open_link_bundle",
+        "parse_recovery_phrase",
+        "parse_link_uri",
+        "parse_verify_uri",
+        "key_bundle",
+        "check_key_bundle",
+        "link_code_mismatch",
+    }
+)
+
+# The `expected` field a scalar result is compared against. The parsers return a mapping and are
+# compared key by key instead.
+RESULT_FIELDS = {
+    "seal_event": "envelope_hex",
+    "seal_metadata": "envelope_hex",
+    "open_event": "payload_object",
+    "open_metadata": "payload_object",
+    "key_bundle": "bundle_hex",
+    "check_key_bundle": "matches",
+    "open_wrapped_key": "bundle_hex",
+    "open_cck_record": "cck_hex",
+    "open_link_bundle": "bundle_hex",
+    "parse_recovery_phrase": "entropy_hex",
+}
+
+
+def run_seal(inputs: dict, kind: str, ceiling: int) -> str:
+    """`do_seal`, with the serialiser's refusal translated to the code the spec gives it.
+
+    A payload that is not JCS-serialisable (a float, §4.2) makes the reference `jcs.dumps` raise
+    `ValueError`; a library refuses it with `E_PAYLOAD`, which is what those vectors pin.
+    """
+    try:
+        return do_seal(inputs, kind, ceiling).hex()
+    except ValueError:
+        raise Refused("E_PAYLOAD") from None
+
+
+def run_reference_operation(op: str, inputs: dict):
+    """Run one vector's `inputs` through the reference function its run name stands for."""
+    if op == "seal_event":
+        return run_seal(inputs, "event", MAX_EVENT_ENVELOPE_BYTES)
+    if op == "open_event":
+        return do_open(inputs, "event", MAX_EVENT_ENVELOPE_BYTES)
+    if op == "seal_metadata":
+        return run_seal(inputs, "metadata", MAX_META_ENVELOPE_BYTES)
+    if op == "open_metadata":
+        return do_open(inputs, "metadata", MAX_META_ENVELOPE_BYTES)
+    if op == "key_bundle":
+        # The group holds a build vector (the pinned TLV from two seeds) and a parse vector (a
+        # bundle whose key length is wrong), so the run name covers both directions.
+        if "bundle_hex" in inputs:
+            x25519_sk, ed25519_sk = parse_key_bundle(bytes.fromhex(inputs["bundle_hex"]))
+        else:
+            _, ed25519_sk = bindings.crypto_sign_seed_keypair(
+                bytes.fromhex(inputs["ed25519_seed_hex"])
+            )
+            x25519_sk = bytes.fromhex(inputs["x25519_sk_hex"])
+        return key_bundle(x25519_sk, ed25519_sk).hex()
+    if op == "check_key_bundle":
+        check_key_bundle_matches(
+            bytes.fromhex(inputs["bundle_hex"]),
+            bytes.fromhex(inputs["x25519_pk_hex"]),
+            bytes.fromhex(inputs["ed25519_pk_hex"]),
+        )
+        return True
+    if op == "open_wrapped_key":
+        return open_wrapped_key(
+            bytes.fromhex(inputs["kek_hex"]),
+            inputs["user_id"],
+            inputs["kind"],
+            bytes.fromhex(inputs["wrapped_key_hex"]),
+        ).hex()
+    if op == "open_cck_record":
+        return open_cck_record(
+            bytes.fromhex(inputs["record_hex"]),
+            inputs["calendar_id"],
+            inputs["epoch"],
+            inputs["recipient_user_id"],
+            bytes.fromhex(inputs["x25519_sk_hex"]),
+            bytes.fromhex(inputs["signer_ed25519_pk_hex"]),
+        ).hex()
+    if op == "open_link_bundle":
+        return open_link_bundle(
+            bytes.fromhex(inputs["blob_hex"]),
+            inputs["user_id"],
+            inputs["link_id"],
+            bytes.fromhex(inputs["ephemeral_sk_hex"]),
+            bytes.fromhex(inputs["signer_ed25519_pk_hex"]),
+        ).hex()
+    if op == "parse_recovery_phrase":
+        return parse_recovery_phrase(inputs["phrase"]).hex()
+    if op == "parse_link_uri":
+        parts = parse_link_uri(inputs["uri"])
+        return {
+            "link_id": parts["l"],
+            "ephemeral_pk_hex": b64u_decode(parts["e"]).hex(),
+            "code": parts["c"],
+        }
+    if op == "link_code_mismatch":
+        parts = parse_link_uri(inputs["uri"])
+        computed = link_code(
+            b64u_decode(parts["e"]), bytes.fromhex(inputs["identity_pk_hex"])
+        )
+        if computed != parts["c"]:
+            raise Refused("E_VERIFY")
+        return {"code": computed}
+    if op == "parse_verify_uri":
+        parts = parse_verify_uri(inputs["uri"])
+        return {
+            "user_id": parts["user_id"],
+            "ed25519_pk_hex": parts["ed25519_pk"].hex(),
+            "x25519_pk_hex": parts["x25519_pk"].hex(),
+            "fingerprint_hex": parts["fingerprint"],
+        }
+    raise SystemExit(f"no reference operation is wired for {op!r}")
+
+
+def verify_reference_operations(documents: dict[str, dict]) -> None:
+    openers = 0
+    sealers = 0
+    for vectors in documents.values():
+        for vector in vectors:
+            run = RUN_BY_VECTOR_ID.get(vector["id"], vector["op"])
+            if run not in REFERENCE_RUNS:
+                continue
+            expected = vector.get("expected", {})
+            try:
+                result = run_reference_operation(run, vector["inputs"])
+            except Refused as refusal:
+                if vector["kind"] != "negative":
+                    raise SystemExit(
+                        f"{vector['id']}: the reference `{run}` refused a positive vector "
+                        f"({refusal.code})"
+                    ) from None
+                if refusal.code != expected.get("error"):
+                    raise SystemExit(
+                        f"{vector['id']}: the reference `{run}` raised {refusal.code}, "
+                        f"the vector pins {expected.get('error')}"
+                    )
+            else:
+                if vector["kind"] == "negative":
+                    raise SystemExit(
+                        f"{vector['id']}: the reference `{run}` accepted a vector that must be "
+                        f"refused with {expected.get('error')}"
+                    )
+                if isinstance(result, dict):
+                    for key, value in result.items():
+                        if key in expected and expected[key] != value:
+                            raise SystemExit(
+                                f"{vector['id']}: the reference `{run}` returned {key}={value!r}, "
+                                f"the vector pins {expected[key]!r}"
+                            )
+                else:
+                    field = RESULT_FIELDS[run]
+                    if expected.get(field) != result:
+                        raise SystemExit(
+                            f"{vector['id']}: the reference `{run}` returned {result!r}, "
+                            f"the vector pins {field}={expected.get(field)!r}"
+                        )
+            if run in OPENER_RUNS:
+                openers += 1
+            else:
+                sealers += 1
+    print(
+        f"self-checks: {openers} opener vectors re-run through the reference openers (positives to "
+        f"their expected output, negatives to their expected code) and {sealers} sealer vectors "
+        f"through the reference sealers"
+    )
+
+
 def build_documents() -> dict[str, dict]:
     return {
         "envelope-v1.json": envelope_vectors(),
@@ -3460,6 +3682,7 @@ def main(argv: list[str]) -> int:
     self_checks()
     documents = build_documents()
     annotate(documents)
+    verify_reference_operations(documents)
     verify_index(documents)
     verify_cross_references(documents)
     cross_check_jcs(documents)

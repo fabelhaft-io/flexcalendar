@@ -654,6 +654,13 @@ stores. Each blob's column is named, because the server stores every one of them
 - Private keys live in Keystore/Keychain-backed storage on mobile and in memory (optionally
   IndexedDB under a non-extractable WebCrypto key) on the web (E12-R06). No other copy exists
   except the wrapped ones below.
+- Where a libsodium function is written out below, the call is libsodium's own: the arguments are
+  libsodium's and appear in libsodium's documented order, with the value it produces on the left of
+  `=`. So `crypto_box_seal_open(c, pk, sk)` takes the **public** key before the secret one,
+  `crypto_box_easy(m, n, pk, sk)` is libsodium's `crypto_box_easy(c, m, mlen, n, pk, sk)`,
+  `crypto_sign_detached(m, sk)` is `crypto_sign_detached(sig, siglen, m, mlen, sk)`, and
+  `crypto_scalarmult_base(sk)` is `crypto_scalarmult_base(pk, sk)` — output buffer first, then the
+  secret key.
 
 ### 6.2 Key bundle (the plaintext of a wrap or a link)
 
@@ -851,8 +858,13 @@ Opening (a recipient):
    `ed25519_pk` from `user_keys` → else `E_SIGNATURE`. Verification comes first: a moved or
    re-addressed record fails here, and the signature is the only thing that proves D-15's "this
    record came from that user".
-3. `cck = crypto_box_seal_open(record[18:98], recipient_x25519_sk, record[18:50])` → `E_AUTH` on
-   failure. The plaintext must be exactly 32 bytes → else `E_LENGTH`.
+3. `cck = crypto_box_seal_open(record[18:98], recipient_x25519_pk, recipient_x25519_sk)` →
+   `E_AUTH` on failure. libsodium's signature is `crypto_box_seal_open(c, pk, sk)` — the **public**
+   key before the **secret** key — so a caller that holds only the secret key derives the public
+   one first: `recipient_x25519_pk = crypto_scalarmult_base(recipient_x25519_sk)`.
+   `record[18:98]` is the whole 80-byte sealed box `epk ‖ tag ‖ c`; libsodium reads the ephemeral
+   key from its first 32 bytes, so the ephemeral key is **not** an argument of this call. The
+   plaintext must be exactly 32 bytes → else `E_LENGTH`.
 
 Who signs: the client that creates the calendar (its owner) for epoch 1, and any member that
 legitimately seals an epoch to a new member (E13-R05) — the record carries the signer's id for
@@ -925,11 +937,18 @@ sig_msg = "calflex-link-bundle-v1" ‖ lp32(user_id) ‖ lp32(link_id)
 
 - `crypto_box_seal` carries no AAD, so the signature is the only binding: it pins the user, the
   rendezvous id, the recipient's ephemeral key and the whole sealed blob, so the server cannot
-  replay this blob at a different ephemeral key or a different link.
+  replay this blob at a different ephemeral key or a different link. The `recipient ephemeral pk`
+  field is `bundle[18:50]` — the key the blob records and the sealer sealed to — so a blob replayed
+  **unchanged** at another device still verifies its signature and is refused by the seal
+  (`E_AUTH`), while a blob whose recorded key was rewritten after signing fails the signature
+  (`E_SIGNATURE`).
 - The new device: check length/version/suite (`E_LENGTH`/`E_VERSION`/`E_UNSUPPORTED`), verify the
   signature with the signer's `ed25519_pk` from `user_keys` (`E_SIGNATURE`), then
-  `crypto_box_seal_open(bundle[50:203], ephemeral_sk, bundle[50:82])` (`E_AUTH`), then validate the
-  KeyBundle (`E_LENGTH`/`E_PAYLOAD`, including the check that the keys match the `user_keys` row).
+  `crypto_box_seal_open(bundle[50:203], ephemeral_pk, ephemeral_sk)` (`E_AUTH`), where
+  `ephemeral_pk = crypto_scalarmult_base(ephemeral_sk)` and `bundle[50:203]` is the whole 153-byte
+  sealed box `epk ‖ tag ‖ c` (§6.6's rule: libsodium takes the public key first and reads the
+  ephemeral key from the box itself), then validate the KeyBundle (`E_LENGTH`/`E_PAYLOAD`,
+  including the check that the keys match the `user_keys` row).
 - The bundle contains **both** private keys — the X25519 sealing key and the Ed25519 identity key —
   which is why it is the same TLV as a wrap's plaintext: one parser, one set of checks.
 

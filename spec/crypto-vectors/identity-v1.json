@@ -174,11 +174,11 @@
       },
       "id": "identity-verify-qr-bad-uuid",
       "inputs": {
-        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-22222222222A&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
       },
       "kind": "negative",
       "op": "parse_verify_uri",
-      "purpose": "The user id is a lowercase UUIDv4.",
+      "purpose": "The user id is a lowercase UUIDv4: an uppercase hex letter is refused.",
       "spec": "§6.8"
     }
   ]

@@ -71,12 +71,12 @@
       "id": "link-qr-code-mismatch",
       "inputs": {
         "ephemeral_pk_hex": "219e4d800da968d2a5fcb009c784f4746c7138edb9ee4844b739e830b05cf424",
-        "identity_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "identity_pk_hex": "b2491d9502ae28630a2bacb2e0c74510ffcdd328c334ff3e1393e75b2d31e7dc",
         "uri": "calflex://link/1?l=44444444-4444-4444-8444-444444444444&e=IZ5NgA2paNKl_LAJx4T0dGxxOO257khEtznoMLBc9CQ&c=589506"
       },
       "kind": "negative",
       "op": "parse_link_uri",
-      "purpose": "A code that does not match the keys: the user must see the mismatch and stop.",
+      "purpose": "A code computed for another identity key does not match the keys: the user must see the mismatch and stop.",
       "spec": "§6.7"
     },
     {
@@ -111,11 +111,11 @@
       },
       "id": "link-qr-bad-uuid",
       "inputs": {
-        "uri": "calflex://link/1?l=44444444-4444-4444-8444-444444444444&e=IZ5NgA2paNKl_LAJx4T0dGxxOO257khEtznoMLBc9CQ&c=589506"
+        "uri": "calflex://link/1?l=44444444-4444-4444-8444-44444444444A&e=IZ5NgA2paNKl_LAJx4T0dGxxOO257khEtznoMLBc9CQ&c=589506"
       },
       "kind": "negative",
       "op": "parse_link_uri",
-      "purpose": "The rendezvous id is a lowercase UUIDv4.",
+      "purpose": "The rendezvous id is a lowercase UUIDv4: an uppercase hex letter is refused.",
       "spec": "§6.7"
     },
     {
@@ -178,7 +178,7 @@
       },
       "id": "link-bundle-wrong-ephemeral",
       "inputs": {
-        "blob_hex": "0101222222222222422282222222222222221cf579aba45a10ba1d1ef06d91fca2aa9ed0a1150515653155405d0b18cb9a67b2599e860bbe532e4955cca4dbd20d3b7f6805d81bb505ddbe69276a170c4d747b2a2cdb798414728e4848e14103f820c12bc0821b160000cec78b004ef8e83f0279e02360f51f11cfd5816f0374c139a687e820aef37a5358b169962c6d01571f99c3121b3d297b23b056910e95fa139fef9c7e070979cad1d32bd1441e4f44bfde6323b8e6acda8593771c881373460bebe6b44143d23ca3a8a257ae220900d65333bc92741b20f81f697cc70ac25fc09a2ab8185ff9e72054f40dbd1ba1ed4bbd4ed98224d0c4bb01b6e2a52bd2f625e47078b57b4bc705",
+        "blob_hex": "010122222222222242228222222222222222209e4d800da968d2a5fcb009c784f4746c7138edb9ee4844b739e830b05cf424b2599e860bbe532e4955cca4dbd20d3b7f6805d81bb505ddbe69276a170c4d74f54267bdb30dac6a8e2fdc6f8efbea2ec96dbafe545fb32d885542ba9260855983de8062db62118e4ec3773f4e7ab9c0f61ae85ef9c2117e0f3e29fbc7cca2531f3a995c4f6ac2fe4689fd8c1b30cd40f907ac463f1586cb598edfb2b81c4851ff70c575fbaa5cf814e0f9d4ae8d6dc64cc27c1f79435edd22f2838788d465fd6ab044e8d92cd3d1c43eb48cbb52afa5ca8ddd57ccf6b9d10ceeabfff16ea99fcd7f8cc5f7cedbc5f3f8e8edbbcec286c8d0516bafa1af580d",
         "ephemeral_sk_hex": "6666666666666666666666666666666666666666666666666666666666666666",
         "link_id": "44444444-4444-4444-8444-444444444444",
         "signer_ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
@@ -186,7 +186,7 @@
       },
       "kind": "negative",
       "op": "open_link_bundle",
-      "purpose": "A blob replayed at another ephemeral key fails the signature.",
+      "purpose": "The key the blob records was rewritten after signing, so the signature fails.",
       "spec": "§6.7"
     },
     {

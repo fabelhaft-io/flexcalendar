@@ -64,6 +64,14 @@ Before it writes anything, `generate.py` asserts:
    the completeness check the review asked for (a field with no vector fails the run).
 7. **`same_as` / `differs_from`** claims hold: a vector that says its output equals (or differs
    from) another's is compared at generation time, not by a reader.
+8. **Every vector is re-run through the reference operation it is about.** Each opener —
+   `open_envelope` (through `do_open`), `open_wrapped_key`, `open_cck_record`, `open_link_bundle`,
+   `parse_recovery_phrase`, `parse_link_uri`, `parse_verify_uri`, `parse_key_bundle`,
+   `check_key_bundle_matches`, and the short-code comparison — and both sealer wrappers are run
+   against the vectors whose `op` names them: a positive must return the value the vector pins and
+   a negative must raise the code it pins (66 opener vectors and 11 sealer vectors at the time of
+   writing). Review 3 asked for this because neither `crypto_box_seal_open` call site had ever been
+   reached by a vector, so both could be handed the wrong arguments without a failure.
 
 ## Determinism
 
