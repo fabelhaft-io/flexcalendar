@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'src/api/api_providers.dart';
 import 'src/app.dart';
 import 'src/flavor.dart';
 import 'src/timezones.dart';

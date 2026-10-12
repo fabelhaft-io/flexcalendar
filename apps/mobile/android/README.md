@@ -37,6 +37,15 @@ ours by design is the **`CalendarContract` sync adapter**.
   `local.properties` and `GeneratedPluginRegistrant.java` stay untracked
   ([`../.gitignore`](../.gitignore) and the repository root).
 
+## What E10-R02 added
+
+- **The `appAuthRedirectScheme` manifest placeholder.** `defaultConfig` in
+  `app/build.gradle.kts` sets it to `de.flexcalendar.app`, which is what the
+  `RedirectUriReceiverActivity` of AppAuth's Android library matches to receive
+  the redirect URI E02-R09 registers (`de.flexcalendar.app:/oauth2redirect`).
+  It is one value for all three flavors, because they share the one application
+  ID; a build that leaves it unset fails in the manifest merger.
+
 ## Checks
 
 This module builds with `flutter build apk --flavor dev --debug`, run from
