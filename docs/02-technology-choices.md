@@ -20,6 +20,8 @@ Radicale validates the native-app integration story in the Phase 0 spike. Produc
 
 **SabreDAV brings a second recurrence engine.** SabreDAV answers `calendar-query` time-range filters, and stores each object's first and last occurrence, with `sabre/vobject`'s own recurrence iterator. Stock apps that query by date range therefore get `vobject`'s expansion, while our apps get `ical.js`'s. If the two disagree on an `RRULE`, a stock app can see a different set of events than our app shows. E15-R03 runs `vobject` in its differential test for this reason.
 
+**`vobject` bounds every series, on write as well as on query** (owner's ruling of 2026-10-12, E03-R12). Its iterator throws after `Settings::$maxRecurrences` instances, 3,500 by default, and SabreDAV walks each finite series to 2038 on every `PUT` to store its last occurrence, so the default refused a daily series with `COUNT=4000` or an `UNTIL` in 2040 with a `500`. `server/caldav` sets the bound to 50,000, the same cap at which the API reports an object as `too-many-instances` (E05-R05), and answers a write over it with RFC 4791's `403` `CALDAV:max-instances`. Walking 50,000 instances took about 0.1 s on a developer machine (PHP 8.4); a `calendar-query` that still overflows answers `500`.
+
 ## Backend API Layer
 
 **Pinned (D-01): Node.js 24 LTS + TypeScript with Fastify; move to Node 26 once it is promoted to LTS (late October 2026).** Go is ruled out: `ical.js`, the single recurrence authority applied by the API (ADR 0002), needs a JavaScript runtime.

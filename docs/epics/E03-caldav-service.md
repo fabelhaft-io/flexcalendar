@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Phase | 1 (R01, R02, R08, R09, R10, R11; R04 is merged into R01); 4 (R03, R05, R06, R07), per ADR 0003 |
-| Status | In progress: the Phase 1 requirements are Done, R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), R09 ([PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)), R10 ([PR #50](https://github.com/fabelhaft-io/flexcalendar/pull/50)), R02 ([PR #52](https://github.com/fabelhaft-io/flexcalendar/pull/52)) and R08 ([PR #54](https://github.com/fabelhaft-io/flexcalendar/pull/54)), 2026-10-10 and 2026-10-11. R11 (the owner's ruling of 2026-10-12) is open. Phase 4 reqs wait for M1 |
+| Phase | 1 (R01, R02, R08, R09, R10, R11, R12; R04 is merged into R01); 4 (R03, R05, R06, R07), per ADR 0003 |
+| Status | In progress: the Phase 1 requirements are Done, R01 ([PR #45](https://github.com/fabelhaft-io/flexcalendar/pull/45)), R09 ([PR #47](https://github.com/fabelhaft-io/flexcalendar/pull/47)), R10 ([PR #50](https://github.com/fabelhaft-io/flexcalendar/pull/50)), R02 ([PR #52](https://github.com/fabelhaft-io/flexcalendar/pull/52)) and R08 ([PR #54](https://github.com/fabelhaft-io/flexcalendar/pull/54)), 2026-10-10 and 2026-10-11. R11 and R12 (the owner's rulings of 2026-10-12) are open. Phase 4 reqs wait for M1 |
 | Executor | `agent+review` (auth and ACL work: R01, R03, R07, R08; the Private backstop R11), `agent` otherwise |
 | Depends on | E02-R03, E04-R01, E04-R02; D-02, D-05, D-18; D-04 for Phase 4 |
 | Spec | `01-architecture.md` § Storage, `02` § CalDAV Server and § Runtime layout, `03`, ADR 0001 § Private calendars — cryptography |
@@ -155,3 +155,11 @@ An update of an object whose stored `UID` is not a UUIDv4 is accepted: a Shared 
 - Accept: the API's create path still passes against the live stack (its minted `randomUUID()` and `<uid>.ics` meet the rule).
 - Deps: E03-R09.
 - Notes: before E13-R02 and E10-R06, which are where a client starts choosing the `UID` (the envelope's AAD binds it, and an offline create needs it before reconnecting).
+
+### E03-R12 · Recurrence bound   `agent`
+`server/caldav` MUST set `\Sabre\VObject\Settings::$maxRecurrences` to 50,000 (`docs/02` § CalDAV Server), once, where the service is configured, not in vendor code. A calendar-object `PUT` whose series `sabre/vobject` cannot walk within the bound (SabreDAV computes the last occurrence on every write) MUST answer `403` with the `<C:max-instances/>` precondition of RFC 4791 § 5.3.2.1 instead of `500`, on every calendar mode, and every calendar collection advertises the bound as its `CALDAV:max-instances` property (§ 5.2.8), which that precondition refers to. The API maps that precondition to its `422` for the event write, a problem kind of its own declared in `spec/openapi.yaml` first.
+- Accept: a PHP test against the service writes a daily series with `COUNT=4000`, one with `UNTIL` in 2040 and an hourly one for a year, and each is stored (all three are a `500` today); a finite series over 50,000 instances before 2038 is the `403` with the precondition, and nothing of it is stored.
+- Accept: a `calendar-query` with a `time-range` over a collection holding a daily unbounded series that started 20 years before the window answers the instance in the window, not a `500`.
+- Accept: the API's create and update of a Private event with a rule over the bound answer the new `422`, and its stack test shows the CalDAV `403` behind it.
+- Deps: E03-R09.
+- Notes: found while ruling on E05-R05's follow-up; a Private "every day until 2040" event fails today, so this is on the M1 path. A query over the bound stays a `500`.
