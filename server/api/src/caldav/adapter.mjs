@@ -25,7 +25,8 @@
 // carries a URL, a header value, a key or a response body. The only response
 // content that leaves here is the `cf:` precondition element names of a
 // `DAV:error` (and the checked text of `cf:name`, which E05-R04 maps to its
-// problem document).
+// problem document), together with RFC 4791 § 5.3.2.1's fixed `max-instances`
+// element (E03-R12).
 //
 // `node:crypto` is used for `createHmac` and `randomBytes`: authentication
 // only. This module never touches event content beyond carrying it (INV-07: the
@@ -102,6 +103,16 @@ export const REQUEST_ID_HEADER = 'X-Request-Id';
 /** The precondition namespace the CalDAV service answers with. */
 export const FLEXCALDAV_NAMESPACE = 'https://flexcalendar.de/ns/caldav';
 
+/** The namespace RFC 4791's own preconditions live in. */
+export const CALDAV_NAMESPACE = 'urn:ietf:params:xml:ns:caldav';
+
+/**
+ * The one RFC 4791 precondition `parsePreconditions` reports. § 5.3.2.1's
+ * `<C:max-instances/>` is the `403` a series over the collection's bound
+ * answers with; the `C:` prefix is the RFC's own, not a namespace binding.
+ */
+export const MAX_INSTANCES_PRECONDITION = 'C:max-instances';
+
 /** Hard response cap, so a hostile or broken listener cannot exhaust the API. */
 export const RESPONSE_LIMIT_BYTES = 4 * 1024 * 1024;
 
@@ -129,7 +140,8 @@ const PRECONDITION_NAME = /^[A-Z][A-Z0-9-]{0,63}$/;
  * Errors carry a `kind` and the HTTP `status`; never a URL, a header value, a
  * key or a response body. `preconditions` holds the `cf:` element names of a
  * `DAV:error` body, in document order, with `cf:name`'s text in place of its
- * element name when that text is a well-formed property name.
+ * element name when that text is a well-formed property name, and RFC 4791's
+ * fixed `max-instances` element as `C:max-instances` (E03-R12).
  */
 export class CalDavError extends Error {
   /** @param {string} kind @param {number | null} [status] @param {string[]} [preconditions] */
@@ -425,16 +437,19 @@ function tagsOf(xml) {
 }
 
 /**
- * Extracts the `cf:` precondition element names from a `DAV:error` body.
+ * Extracts the precondition element names from a `DAV:error` body.
  *
  * The scan is intentionally narrow: it reads at most
- * `PRECONDITION_SCAN_LIMIT_BYTES` of the body, it only reports elements in the
- * CalDAV service's namespace, only when the root element is `{DAV:}error`, and
- * it resolves namespace prefixes properly instead of trusting the `cf:` prefix.
- * Element local names and `cf:name`'s text are both held to their grammars, so
- * a body cannot smuggle free text, an attribute value or event content out
- * through the error. It is linear in the length of what it reads: a body of
- * angle brackets is hostile traffic, not a reason to burn the API's event loop.
+ * `PRECONDITION_SCAN_LIMIT_BYTES` of the body, it reports only elements of the
+ * two namespaces it knows — the CalDAV service's own `cf:` namespace and, as a
+ * single fixed name, RFC 4791's `{urn:ietf:params:xml:ns:caldav}max-instances`
+ * — only when the root element is `{DAV:}error`, and it resolves namespace
+ * prefixes properly instead of trusting a prefix. Element local names and
+ * `cf:name`'s text are both held to their grammars, and the CalDAV element's
+ * text and attributes are never read at all, so a body cannot smuggle free
+ * text, an attribute value or event content out through the error. It is linear
+ * in the length of what it reads: a body of angle brackets is hostile traffic,
+ * not a reason to burn the API's event loop.
  *
  * @param {Buffer} body
  * @returns {string[]}
@@ -490,13 +505,24 @@ export function parsePreconditions(body) {
     return [];
   const found = [];
   for (const element of elements) {
-    if (element.namespace !== FLEXCALDAV_NAMESPACE) continue;
-    if (element.local === 'name') {
-      const name = element.text.trim();
-      if (PRECONDITION_NAME.test(name)) found.push(name);
+    if (element.namespace === FLEXCALDAV_NAMESPACE) {
+      if (element.local === 'name') {
+        const name = element.text.trim();
+        if (PRECONDITION_NAME.test(name)) found.push(name);
+        continue;
+      }
+      found.push(`cf:${element.local}`);
       continue;
     }
-    found.push(`cf:${element.local}`);
+    // RFC 4791 § 5.3.2.1's `max-instances` is the one CalDAV-namespace element
+    // this reports. It is a fixed name: its text and its attributes are never
+    // read, so nothing a body writes can leave through it.
+    if (
+      element.namespace === CALDAV_NAMESPACE &&
+      element.local === 'max-instances'
+    ) {
+      found.push(MAX_INSTANCES_PRECONDITION);
+    }
   }
   return found;
 }
