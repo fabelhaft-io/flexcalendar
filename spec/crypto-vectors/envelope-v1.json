@@ -1,0 +1,878 @@
+{
+  "file": "envelope-v1.json",
+  "format": "calflex-crypto-vectors/1",
+  "generator": "spec/crypto-vectors/gen/generate.py",
+  "note": "Invented test values only. No real key material, calendar or event content.",
+  "spec": "spec/crypto.md",
+  "vectors": [
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d76310000002431313131313131312d313131312d343131312d383131312d3131313131313131313131310000002435353535353535352d353535352d343535352d383535352d353535353535353535353535000000000000000131000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313130303030000000237a6f6e65643a4575726f70652f4265726c696e40323032363034303154313230303030000000046e6f6e65",
+        "envelope_bytes": 444,
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "envelope_sha256_hex": "6a7f8efa84d2e16e1da70f0a8a01d3db506a7211147f402702e7d680a30d1ce3",
+        "payload_jcs": "{\"@type\":\"Event\",\"description\":\"Invented test content — \\\"quoted\\\" \\\\ backslash, line\\nbreak, Grüße 🙂\",\"descriptionContentType\":\"text/plain\",\"keywords\":{\"test\":true},\"locations\":{\"park\":{\"name\":\"Praxis am Park (test value)\"}},\"participants\":{\"alice@example.test\":{\"email\":\"alice@example.test\",\"name\":\"Alice (test value)\",\"roles\":{\"attendee\":true}}},\"priority\":5,\"title\":\"Physio (test value)\"}"
+      },
+      "id": "envelope-event-seal-basic",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "seal_event",
+      "purpose": "Seal the fixed test event with a fixed nonce, so the envelope is a constant.",
+      "spec": "§1.2"
+    },
+    {
+      "expected": {
+        "payload_jcs": "{\"@type\":\"Event\",\"description\":\"Invented test content — \\\"quoted\\\" \\\\ backslash, line\\nbreak, Grüße 🙂\",\"descriptionContentType\":\"text/plain\",\"keywords\":{\"test\":true},\"locations\":{\"park\":{\"name\":\"Praxis am Park (test value)\"}},\"participants\":{\"alice@example.test\":{\"email\":\"alice@example.test\",\"name\":\"Alice (test value)\",\"roles\":{\"attendee\":true}}},\"priority\":5,\"title\":\"Physio (test value)\"}",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        }
+      },
+      "id": "envelope-event-open-basic",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "open_event",
+      "purpose": "Open that envelope: the payload is exactly the object that was sealed.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "envelope_hex": "017fffffff202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d169c9edd0e774d4cb8fb2587c5ebae1554",
+        "epoch_field_hex": "7fffffff"
+      },
+      "id": "envelope-event-seal-epoch-max",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 2147483647,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "seal_event",
+      "purpose": "Epoch 2147483647 (MAX_EPOCH) is the highest a wire epoch may carry.",
+      "spec": "§1.1"
+    },
+    {
+      "expected": {
+        "envelope_hex": "0100000000202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d16a807359d7b46c54e11c270771d32b62d",
+        "epoch_field_hex": "00000000"
+      },
+      "id": "envelope-event-seal-epoch-zero",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 0,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "positive",
+      "op": "seal_event",
+      "purpose": "Epoch 0 is legal in the format though our clients start at 1 (E13-R01).",
+      "spec": "§1.1"
+    },
+    {
+      "expected": {
+        "error": "E_EPOCH"
+      },
+      "id": "envelope-seal-epoch-over-max",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 2147483648,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "seal_event",
+      "purpose": "Sealing epoch 2^31 is refused: the field is a u32 but the columns are integers.",
+      "spec": "§1.2"
+    },
+    {
+      "expected": {
+        "error": "E_EPOCH"
+      },
+      "id": "envelope-seal-epoch-negative",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": -1,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "seal_event",
+      "purpose": "A negative epoch is refused before anything is encrypted.",
+      "spec": "§1.2"
+    },
+    {
+      "expected": {
+        "error": "E_LENGTH"
+      },
+      "id": "envelope-open-empty",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "A zero-length blob is shorter than the 45 fixed bytes.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_LENGTH"
+      },
+      "id": "envelope-open-44-bytes",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "One byte short of ENVELOPE_FIXED_BYTES: the length check comes first.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_VERSION"
+      },
+      "id": "envelope-open-version-02",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0200000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "Version 0x02 is unknown, whatever else the blob holds.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_EPOCH"
+      },
+      "id": "envelope-open-epoch-over-max",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0180000000202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The header's epoch is 0x80000000: E_EPOCH, before any AEAD work.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-tag-flipped",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cd",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "One bit of the Poly1305 tag flipped: E_AUTH, and no partial plaintext.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-ciphertext-flipped",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637677b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "One bit of the ciphertext flipped: the same E_AUTH as a wrong key.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-nonce-flipped",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001212122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "One bit of the nonce flipped: E_AUTH (the nonce is an AEAD input, not a header field).",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-truncated",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The last byte dropped: still 45+ bytes, so the AEAD refuses it, not the length check.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-wrong-cck",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "7777777777777777777777777777777777777777777777777777777777777777",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The same envelope under another CCK: E_AUTH.",
+      "spec": "§1.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-aad-uid-changed",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "99999999-9999-4999-8999-999999999999"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The skeleton's UID changed: field 2 of the AAD no longer matches the tag.",
+      "spec": "§2.2"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-aad-calendar-changed",
+      "inputs": {
+        "calendar_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The calendar id changed: field 1 (D-14) makes an envelope unmovable between calendars.",
+      "spec": "§2.2"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-aad-recurrence-changed",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "20260401T090000Z",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The recurrence_id changed: an override's envelope cannot be served as the master's.",
+      "spec": "§5.2"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-aad-dtstart-changed",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T100000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "The bound DTSTART moved by an hour: the tag no longer verifies.",
+      "spec": "§3.1"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-aad-end-changed",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "dur:PT1H",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "DTEND replaced by a duration of the same length: still E_AUTH.",
+      "spec": "§3.2"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "envelope-open-aad-rrule-changed",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "rrule:FREQ=WEEKLY;COUNT=10",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "A rule added to an event that had none: E_AUTH.",
+      "spec": "§3.3"
+    },
+    {
+      "expected": {
+        "envelope_sha256_hex": "6a7f8efa84d2e16e1da70f0a8a01d3db506a7211147f402702e7d680a30d1ce3",
+        "hex_digits": 64,
+        "lowercase": true
+      },
+      "id": "envelope-event-sha256-basic",
+      "inputs": {
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc"
+      },
+      "kind": "positive",
+      "op": "skeleton_hash",
+      "purpose": "The skeleton value is the SHA-256 of the complete envelope, 64 lowercase hex digits.",
+      "spec": "§5.1"
+    },
+    {
+      "differs_from": "envelope-event-sha256-basic",
+      "expected": {
+        "envelope_sha256_hex": "8739dc3c386913870e0f206305bc8aea77b0944aff6d64ce2abf709176c694ad"
+      },
+      "id": "envelope-event-sha256-flipped-differs",
+      "inputs": {
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637677b0dbf024771a9029c15cb2d2975f31177b559acf074dc91153546611bd020782f5627af97436a72d0503dc9b1556b07a7c8a598e71f5444b02e2d0dad505d40337dd163925d53794bae87ce6f59dc5c4bceba5b973ef5fcb07634d9494355bd59ec92834a448659d1b0cd6c57fbede4f5238eead6296af9ce8d956600693fad0b0793a03f448a5ce867c9a356e60822aace3eaef552803d620e539f548627e68d90148f70d0023e2567b428795dfb186e38f77e287b5ce5d361847a16ff0e13edc89c32491076dc5cc90126bdb5f8ca42054a0e2056c0f634ded819904e8bd34f984c9e57a43f82d9e7532a4eb892bc7c53937984bf22604c3383c2ff388c9e07bf9a6cc53dd3f9fc76d8ce3e203e71067b2948502d9f16e681f2c8647ae63a5aa7d04997531a815cd511299e2f44ddedab6a91b65d630ef44778c7bf8079810f6778d9e48cb3649226558c3e82ca3c6b123d0e63d87a663d3edf715353dc2b253aa2fa9d8c7a3565583e2c6ec9ef3bdc6c8f2ac08f8de1e775ea2d678e9a1c4b9ad4379acec5c7d1aef5e01d1665857d4fba602ba1278f6dd44ccdb1cc"
+      },
+      "kind": "positive",
+      "op": "skeleton_hash",
+      "purpose": "One bit elsewhere in the envelope gives a different skeleton hash.",
+      "spec": "§5.1"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "envelope-event-sha256-uppercase-refused",
+      "inputs": {
+        "property_value": "6A7F8EFA84D2E16E1DA70F0A8A01D3DB506A7211147F402702E7D680A30D1CE3"
+      },
+      "kind": "negative",
+      "op": "skeleton_hash",
+      "purpose": "An uppercase hex skeleton value is not the pinned encoding.",
+      "spec": "§5.1"
+    },
+    {
+      "expected": {
+        "error": "E_SKELETON"
+      },
+      "id": "envelope-event-sha256-short-refused",
+      "inputs": {
+        "property_value": "6a7f8efa84d2e16e1da70f0a8a01d3db506a7211147f402702e7d680a30d1ce"
+      },
+      "kind": "negative",
+      "op": "skeleton_hash",
+      "purpose": "63 hex digits are not the pinned encoding either.",
+      "spec": "§5.1"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-seal-payload-forbidden-member",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)",
+          "uid": "55555555-5555-4555-8555-555555555555"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "seal_event",
+      "purpose": "`uid` is bound by the skeleton and forbidden in the payload.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-seal-payload-null",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": null,
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "seal_event",
+      "purpose": "A null member value is refused.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-seal-payload-missing-type",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "title": "no type (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "seal_event",
+      "purpose": "`@type` is required and must be `Event`.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-seal-payload-float",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "epoch": 1,
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "payload_object": {
+          "@type": "Event",
+          "description": "Invented test content — \"quoted\" \\ backslash, line\nbreak, Grüße 🙂",
+          "descriptionContentType": "text/plain",
+          "keywords": {
+            "test": true
+          },
+          "locations": {
+            "park": {
+              "name": "Praxis am Park (test value)"
+            }
+          },
+          "participants": {
+            "alice@example.test": {
+              "email": "alice@example.test",
+              "name": "Alice (test value)",
+              "roles": {
+                "attendee": true
+              }
+            }
+          },
+          "priority": 1.5,
+          "title": "Physio (test value)"
+        },
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "seal_event",
+      "purpose": "Numbers are integers only: a float is refused.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-open-payload-not-jcs",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b39a20f5b71a9029c00d5313468be1d7da559ace726c3800d294c261bc62071355932a4c11c2c17d25020c9b34b1ab74890a5f8790c3829d3f09a447201",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "Valid JSON with members in the wrong order is not JCS, so opening it is refused.",
+      "spec": "§4.1"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-open-payload-duplicate-member",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c15cb2d2975f31177a555abff6397db433d0b231b9e6b452d4560fbc1442c2fef5f1e89a62166c7131293a16a14cf8f",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "Two members with one name: a JSON parser would hide the difference.",
+      "spec": "§4.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "envelope-open-payload-wrong-type",
+      "inputs": {
+        "calendar_id": "11111111-1111-4111-8111-111111111111",
+        "cck_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "dtstart": "zoned:Europe/Berlin@20260401T110000",
+        "end": "zoned:Europe/Berlin@20260401T120000",
+        "envelope_hex": "0100000001202122232425262728292a2b2c2d2e2f3031323334353637667b0dbf024771a9029c13dc24226fb55c27f310fdf069d98e137e132d1ad96009734674e3cf046033c9506c87b3667600a5ccbfccef89b1a3e452791db44a4c0c755c13581d26e9a8b347eb334e6b8a012306",
+        "epoch": 1,
+        "recurrence_id": "",
+        "rrule": "none",
+        "uid": "55555555-5555-4555-8555-555555555555"
+      },
+      "kind": "negative",
+      "op": "open_event",
+      "purpose": "A Calendar payload is not an Event payload.",
+      "spec": "§4.2"
+    }
+  ]
+}

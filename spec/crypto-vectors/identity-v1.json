@@ -1,0 +1,185 @@
+{
+  "file": "identity-v1.json",
+  "format": "calflex-crypto-vectors/1",
+  "generator": "spec/crypto-vectors/gen/generate.py",
+  "note": "Invented test values only. No real key material, calendar or event content.",
+  "spec": "spec/crypto.md",
+  "vectors": [
+    {
+      "expected": {
+        "fingerprint_hex": "60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b",
+        "grouped": "60570e7d 0a492240 03cfc864 0d7286d3 bef9196f 76721e53 29decb91 22f8f71b",
+        "hex_digits": 64,
+        "label": "calflex-id-v1",
+        "message_hex": "63616c666c65782d69642d76317b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0"
+      },
+      "id": "identity-fingerprint-basic",
+      "inputs": {
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_pk_hex": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+      },
+      "kind": "positive",
+      "op": "fingerprint",
+      "purpose": "The fingerprint covers both public keys, so a substituted sealing key is visible too.",
+      "spec": "§6.8"
+    },
+    {
+      "differs_from": "identity-fingerprint-basic",
+      "expected": {
+        "fingerprint_hex": "c46d2cf910808cc5125693d0eae227381a4191b3cfb532034aa5dc64d877a5c8"
+      },
+      "id": "identity-fingerprint-differs-for-other-keys",
+      "inputs": {
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_pk_hex": "7b0d47d93427f8311160781c7c733fd89f88970aef490d8aa0ee19a4cb8a1b14"
+      },
+      "kind": "positive",
+      "op": "fingerprint",
+      "purpose": "Another sealing key gives another fingerprint.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "digits": 60,
+        "grouped": "73912 04740 16803 16503 98801 57214 66594 81821 90525 05568 21499 36185",
+        "safety_number": "739120474016803165039880157214665948182190525055682149936185"
+      },
+      "id": "identity-safety-number-basic",
+      "inputs": {
+        "first_fingerprint_hex": "60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b",
+        "second_fingerprint_hex": "17c6055be55f8ebe8f3e1daee18f019f30a791a044ee30f5aea5da392ee2a0a4"
+      },
+      "kind": "positive",
+      "op": "safety_number",
+      "purpose": "Sixty digits, twelve groups of five, computed from the two fingerprints.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "digits": 60,
+        "grouped": "73912 04740 16803 16503 98801 57214 66594 81821 90525 05568 21499 36185",
+        "safety_number": "739120474016803165039880157214665948182190525055682149936185"
+      },
+      "id": "identity-safety-number-order-independent",
+      "inputs": {
+        "first_fingerprint_hex": "17c6055be55f8ebe8f3e1daee18f019f30a791a044ee30f5aea5da392ee2a0a4",
+        "second_fingerprint_hex": "60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+      },
+      "kind": "positive",
+      "op": "safety_number",
+      "purpose": "The fingerprints are sorted before hashing, so both users read the same number.",
+      "same_as": "identity-safety-number-basic",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "ascii_bytes": 216,
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+      },
+      "id": "identity-verify-qr-basic",
+      "inputs": {
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "x25519_pk_hex": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+      },
+      "kind": "positive",
+      "op": "verify_uri",
+      "purpose": "The in-person verification payload: both public keys and the fingerprint that covers them.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "fingerprint_hex": "60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "x25519_pk_hex": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+      },
+      "id": "identity-verify-qr-parse-basic",
+      "inputs": {
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+      },
+      "kind": "positive",
+      "op": "parse_verify_uri",
+      "purpose": "A scanner recomputes the fingerprint and accepts the code.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "error": "E_VERIFY"
+      },
+      "id": "identity-verify-qr-fingerprint-mismatch",
+      "inputs": {
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=17c6055be55f8ebe8f3e1daee18f019f30a791a044ee30f5aea5da392ee2a0a4"
+      },
+      "kind": "negative",
+      "op": "parse_verify_uri",
+      "purpose": "`f` that is not the fingerprint of `k` and `x` is refused, not repaired.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "error": "E_ENCODING"
+      },
+      "id": "identity-verify-qr-uppercase-fingerprint",
+      "inputs": {
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570E7D0A49224003CFC8640D7286D3BEF9196F76721E5329DECB9122F8F71B"
+      },
+      "kind": "negative",
+      "op": "parse_verify_uri",
+      "purpose": "The fingerprint is lowercase hex.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "error": "E_ENCODING"
+      },
+      "id": "identity-verify-qr-padded-key",
+      "inputs": {
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA=&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+      },
+      "kind": "negative",
+      "op": "parse_verify_uri",
+      "purpose": "base64url without padding.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "error": "E_VERIFY"
+      },
+      "id": "identity-verify-qr-unknown-param",
+      "inputs": {
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b&z=1"
+      },
+      "kind": "negative",
+      "op": "parse_verify_uri",
+      "purpose": "A parameter outside `u`, `k`, `x`, `f` is refused.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "error": "E_VERSION"
+      },
+      "id": "identity-verify-qr-version-2",
+      "inputs": {
+        "uri": "calflex://verify/2?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+      },
+      "kind": "negative",
+      "op": "parse_verify_uri",
+      "purpose": "Path version 2 is unknown.",
+      "spec": "§6.8"
+    },
+    {
+      "expected": {
+        "error": "E_ENCODING"
+      },
+      "id": "identity-verify-qr-bad-uuid",
+      "inputs": {
+        "uri": "calflex://verify/1?u=22222222-2222-4222-8222-222222222222&k=oJql9HpnWYAv-VX43C0qFKXJnSO-l_hkEn_5ODRVpPA&x=e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM&f=60570e7d0a49224003cfc8640d7286d3bef9196f76721e5329decb9122f8f71b"
+      },
+      "kind": "negative",
+      "op": "parse_verify_uri",
+      "purpose": "The user id is a lowercase UUIDv4.",
+      "spec": "§6.8"
+    }
+  ]
+}

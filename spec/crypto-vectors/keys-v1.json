@@ -1,0 +1,348 @@
+{
+  "file": "keys-v1.json",
+  "format": "calflex-crypto-vectors/1",
+  "generator": "spec/crypto-vectors/gen/generate.py",
+  "note": "Invented test values only. No real key material, calendar or event content.",
+  "spec": "spec/crypto.md",
+  "vectors": [
+    {
+      "expected": {
+        "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        "wordlist_sha256": "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda",
+        "words": 12
+      },
+      "id": "recovery-phrase-bip39-official-1",
+      "inputs": {
+        "entropy_hex": "00000000000000000000000000000000"
+      },
+      "kind": "positive",
+      "op": "recovery_phrase",
+      "purpose": "The pinned word list and the checksum rule reproduce BIP-0039's own reference vector.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "phrase": "letter advice cage absurd amount doctor acoustic avoid letter advice cage above",
+        "words": 12
+      },
+      "id": "recovery-phrase-bip39-official-2",
+      "inputs": {
+        "entropy_hex": "80808080808080808080808080808080"
+      },
+      "kind": "positive",
+      "op": "recovery_phrase",
+      "purpose": "And a second one, so a wrong word list cannot pass by luck.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "phrase": "fog spot notable regret pizza coffee harvest ensure fog spot notable reflect",
+        "sha256_of_entropy_prefix_4_bits": "0110",
+        "words": 12
+      },
+      "id": "recovery-phrase-from-entropy",
+      "inputs": {
+        "entropy_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+      },
+      "kind": "positive",
+      "op": "recovery_phrase",
+      "purpose": "The 128-bit test entropy and the twelve words it encodes to.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "entropy_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+      },
+      "id": "recovery-phrase-to-entropy",
+      "inputs": {
+        "phrase": "fog spot notable regret pizza coffee harvest ensure fog spot notable reflect"
+      },
+      "kind": "positive",
+      "op": "parse_recovery_phrase",
+      "purpose": "Typing the phrase back returns the same entropy, after the checksum passes.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "hash": "SHA-256",
+        "info": "calflex-v1/recovery-kek",
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "length_bytes": 32,
+        "salt": "calflex-v1"
+      },
+      "id": "recovery-kek-basic",
+      "inputs": {
+        "entropy_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+      },
+      "kind": "positive",
+      "op": "recovery_kek",
+      "purpose": "The recovery-code KEK: HKDF-SHA-256 over the entropy, with ASCII salt and info.",
+      "spec": "§6.3.1"
+    },
+    {
+      "expected": {
+        "error": "E_RECOVERY"
+      },
+      "id": "recovery-phrase-bad-checksum-refused",
+      "inputs": {
+        "phrase": "fog spot notable regret pizza coffee harvest ensure fog spot notable abandon"
+      },
+      "kind": "negative",
+      "op": "parse_recovery_phrase",
+      "purpose": "The same phrase with one word substituted: the checksum fails, so nothing is derived.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "error": "E_RECOVERY"
+      },
+      "id": "recovery-phrase-unknown-word-refused",
+      "inputs": {
+        "phrase": "fog spot notable regret pizza coffee harvest ensure fog spot notable zzzz"
+      },
+      "kind": "negative",
+      "op": "parse_recovery_phrase",
+      "purpose": "A word that is not in the pinned 2048-word list.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "error": "E_RECOVERY"
+      },
+      "id": "recovery-phrase-eleven-words-refused",
+      "inputs": {
+        "phrase": "fog spot notable regret pizza coffee harvest ensure fog spot notable"
+      },
+      "kind": "negative",
+      "op": "parse_recovery_phrase",
+      "purpose": "Eleven words is not a recovery code.",
+      "spec": "§6.4"
+    },
+    {
+      "expected": {
+        "bundle_bytes": 105,
+        "bundle_hex": "01000000201111111111111111111111111111111111111111111111111111111111111111000000402222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_pk_hex": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+      },
+      "id": "key-bundle-tlv-basic",
+      "inputs": {
+        "ed25519_seed_hex": "2222222222222222222222222222222222222222222222222222222222222222",
+        "x25519_sk_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "kind": "positive",
+      "op": "key_bundle",
+      "purpose": "The 105-byte KeyBundle: a version, then the X25519 secret key and the Ed25519 secret key, each length-prefixed.",
+      "spec": "§6.2"
+    },
+    {
+      "expected": {
+        "matches": true
+      },
+      "id": "key-bundle-public-keys-match",
+      "inputs": {
+        "bundle_hex": "01000000201111111111111111111111111111111111111111111111111111111111111111000000402222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_pk_hex": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+      },
+      "kind": "positive",
+      "op": "check_key_bundle",
+      "purpose": "The unwrapped keys reproduce the public keys in `user_keys`.",
+      "spec": "§6.2"
+    },
+    {
+      "expected": {
+        "error": "E_PAYLOAD"
+      },
+      "id": "key-bundle-public-key-mismatch-refused",
+      "inputs": {
+        "bundle_hex": "01000000201111111111111111111111111111111111111111111111111111111111111111000000402222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_pk_hex": "7b0d47d93427f8311160781c7c733fd89f88970aef490d8aa0ee19a4cb8a1b14"
+      },
+      "kind": "negative",
+      "op": "check_key_bundle",
+      "purpose": "The bundle unpacks to keys that do not match the stored public keys: E_PAYLOAD.",
+      "spec": "§6.2"
+    },
+    {
+      "expected": {
+        "error": "E_LENGTH"
+      },
+      "id": "key-bundle-wrong-length-refused",
+      "inputs": {
+        "bundle_hex": "010000001f11111111111111111111111111111111111111111111111111111111111111000000402222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0"
+      },
+      "kind": "negative",
+      "op": "key_bundle",
+      "purpose": "A 31-byte X25519 secret key is not the pinned length.",
+      "spec": "§6.2"
+    },
+    {
+      "expected": {
+        "aad_hex": "63616c666c65782d6b6579777261702d76310000002432323232323232322d323232322d343232322d383232322d3232323232323232323232320000000d7265636f766572795f636f6465000000117832353531392d656432353531392d7631",
+        "phrase": "fog spot notable regret pizza coffee harvest ensure fog spot notable reflect",
+        "wrapped_key_bytes": 147,
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81181"
+      },
+      "id": "wrapped-key-seal-basic",
+      "inputs": {
+        "bundle_hex": "01000000201111111111111111111111111111111111111111111111111111111111111111000000402222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+        "user_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "kind": "positive",
+      "op": "seal_wrapped_key",
+      "purpose": "The user's private keys wrapped under the recovery-code KEK, with a fixed nonce.",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "bundle_hex": "01000000201111111111111111111111111111111111111111111111111111111111111111000000402222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "ed25519_sk_hex": "2222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_sk_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "id": "wrapped-key-open-basic",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81181"
+      },
+      "kind": "positive",
+      "op": "open_wrapped_key",
+      "purpose": "Opening it returns the same KeyBundle.",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "wrapped-key-open-wrong-user",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "33333333-3333-4333-8333-333333333333",
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81181"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "The AAD binds the owner, so a wrap moved to another user's row is E_AUTH.",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "error": "E_VERSION"
+      },
+      "id": "wrapped-key-open-caller-kind-mismatch",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "escrow",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81181"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "A caller that expects an escrow wrap is handed a recovery-code one.",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "error": "E_UNSUPPORTED"
+      },
+      "id": "wrapped-key-open-escrow-kind-reserved",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0102202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81181"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "Kind 0x02 is reserved for Phase 7 and refused rather than guessed at.",
+      "spec": "§6.3.2"
+    },
+    {
+      "expected": {
+        "error": "E_VERSION"
+      },
+      "id": "wrapped-key-open-version-02",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0201202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81181"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "Version 0x02 is unknown.",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "error": "E_LENGTH"
+      },
+      "id": "wrapped-key-open-truncated",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "41 bytes is shorter than the fixed part (1 + 1 + 24 + 16).",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "error": "E_LENGTH"
+      },
+      "id": "wrapped-key-open-over-512-refused",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f303132333435363700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "513 bytes exceeds the API's ceiling for a wrap.",
+      "spec": "§6.3.3"
+    },
+    {
+      "expected": {
+        "error": "E_AUTH"
+      },
+      "id": "wrapped-key-open-tag-flipped",
+      "inputs": {
+        "kek_hex": "68a7cc4c3d8545aecfe68f021533209540d8ad27e26cd942addf01497c1624d4",
+        "kind": "recovery_code",
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "wrapped_key_hex": "0101202122232425262728292a2b2c2d2e2f30313233343536379259c0aa2a08a4f428edf2ee66c89d77acf22f41456c77506f062a7abc88f0d8d49d521a47e04a922d4d2c07adfca3798d77cb7b9c9f48798771ea0d2ceabf1068183efbfbcb2703327a082ee011d92345c93f0dc9a9cf8328fc3ee91ad3463ff14892c1fa77e0a1743ad2588129c71fe9adb7d799d8d81180"
+      },
+      "kind": "negative",
+      "op": "open_wrapped_key",
+      "purpose": "One bit of the tag flipped.",
+      "spec": "§6.3"
+    },
+    {
+      "expected": {
+        "ed25519_pk_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "ed25519_sk_hex": "2222222222222222222222222222222222222222222222222222222222222222a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+        "x25519_pk_hex": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+      },
+      "id": "identity-keys-from-seeds",
+      "inputs": {
+        "ed25519_seed_hex": "2222222222222222222222222222222222222222222222222222222222222222",
+        "x25519_sk_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "kind": "positive",
+      "op": "identity_keys",
+      "purpose": "The invented seeds and the public keys they produce.",
+      "spec": "§6.1"
+    }
+  ]
+}
