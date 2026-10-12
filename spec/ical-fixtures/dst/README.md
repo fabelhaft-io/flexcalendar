@@ -45,21 +45,17 @@ One case is:
 - **`input.viewZone`** — present on `all-day` cases (the zone whose midnights define the
   instants) and on `view-zone` cases (the zone the event is viewed from).
 - **`expected`** — UTC instants, `YYYYMMDDTHHMMSSZ`, the format the `rrule/` goldens use. A
-  daily case lists the instances in order, the nonexistent one excluded (see below). An
+  daily case lists the instances in order, the one at a nonexistent local time included and
+  counted (see below). An
   all-day case lists exactly `[start, exclusive end]`, the two instants the `DATE` day covers
   **in its viewing zone**.
-- **`ruling` and `alternative`** — on every `daily-skipped` case, and on nothing else. `ruling`
-  is always `"pending"`: that kind's value is contested (see below), and `alternative` lists the
-  instants the other reading gives, one per `expected` instant. A runner takes `expected` **or**
-  `alternative` for such a case, reports which one it matched, and accepts nothing else; a
-  `daily-skipped` result is never called green until the project rules.
 - **`expectedLocal`** — on every `view-zone` case, and on nothing else: the wall clock
   (`YYYYMMDDTHHMMSS`) the viewer in `input.viewZone` must show for the instant. A UTC instant
   alone cannot fail a viewer that renders the event in the wrong zone; this can.
 - **`rfc`** — `section` is the RFC 5545 section the values follow, `rule` a one-line paraphrase
   of it. Both are part of the table: a client runner that disagrees with a value should be able
-  to say which rule the table claims. A `daily-skipped` case's `rule` quotes both sentences of
-  § 3.3.10, because the table's reading follows the first.
+  to say which rule the table claims. A `daily-skipped` case's `rule` cites § 3.3.5 and the
+  owner's ruling in `docs/02` § Recurrence, because § 3.3.10 says two things (see below).
 
 ### The kinds
 
@@ -68,7 +64,7 @@ One case is:
 | `skipped` | `DTSTART` at a local time that does not exist on the spring-forward day | § 3.3.5 form 3: read with the UTC offset **before** the gap |
 | `repeated` | `DTSTART` at a local time that occurs twice on the fall-back day | § 3.3.5 form 3: the **first** occurrence |
 | `daily-existing` | `FREQ=DAILY` at a time that exists every day, across a transition | § 3.8.5.3: every instance keeps the local time of `DTSTART`, so the UTC instants shift with the offset |
-| `daily-skipped` | `FREQ=DAILY` at the skipped local time, across the spring transition | § 3.3.10: the nonexistent instance is ignored and does **not** spend one of `COUNT` — **contested**, so the case carries `ruling: pending` and the other reading in `alternative` |
+| `daily-skipped` | `FREQ=DAILY` at the skipped local time, across the spring transition | § 3.3.10 as the owner ruled (`docs/02` § Recurrence): the nonexistent instance is **kept**, read with the offset before the gap (§ 3.3.5), and spends one of `COUNT` |
 | `all-day` | a `DATE` day on a transition day, in a viewing zone | § 3.8.2.2 with § 3.3.4: one calendar day, exclusive end, instants only in the viewing zone |
 | `view-zone` | a `TZID`-timed event on a day **one** of the two zones switches | § 3.3.5 form 3: the instant belongs to `zone` and does not move with the viewer — `expected` is the instant, `expectedLocal` the wall clock the viewer must show |
 | `control` | a zone that never transitions, on a date a client might wrongly shift it | § 3.3.5 form 3: one offset all year, one instant |
@@ -129,35 +125,26 @@ This is the subtle part of the table, and it is deliberate:
   before the gap), exactly as the RFC's own `America/New_York:20070311T023000` example is
   `3:30 EDT`. The table's `skipped` cases follow this, and `dst-table.mjs` reproduces both RFC
   examples in its own test suite.
-- A **recurrence instance** whose computed local time does not exist is *ignored*: RFC 5545
-  § 3.3.10 says such instances "MUST be ignored and MUST NOT be counted as part of the
-  recurrence set". A daily 02:30 series across 29 March 2026 therefore has no instance that
-  day, and `COUNT=5` reaches 1 April rather than stopping on 31 March. The `daily-skipped`
-  cases follow this, as does E15-R03's ruling for the invalid-date case (29 February in a
-  non-leap year).
+- A **recurrence instance** whose computed local time does not exist is **kept**, read the same
+  way, and counted: the owner's ruling of 2026-10-12 on RFC 5545 § 3.3.10 (`docs/02`
+  § Recurrence). A daily 02:30 series across 29 March 2026 therefore has an instance at
+  `20260329T013000Z` (03:30 CEST), and `COUNT=5` stops on 31 March. The `daily-skipped` cases
+  follow this. The invalid-date case (29 February in a non-leap year) is a different rule and
+  stays ignored (E15-R03's ruling in `RULINGS.md`).
 
-**The RFC contradicts itself here, and the table takes a side.** Four paragraphs after that
-note, § 3.3.10 also says: "If the computed local start time of a recurrence instance does not
-exist, or occurs more than once, for the specified time zone, the time of the recurrence
-instance is interpreted in the same manner as an explicit DATE-TIME value describing that date
-and time, as specified in Section 3.3.5" — which would *create* the instance instead of
-ignoring it. Both readings are in the same section, so no engine can be called wrong from the
-text alone. The table follows the note, because (a) it is the sentence this project's own
-`RULINGS.md` follows for the invalid-date sibling, which is worded identically, and (b) a
-client that invents an instant for a time that never existed shows the user an event at a time
-that never happened.
-
-**Because the prose cannot settle it, no `daily-skipped` case is silent about it.** Each one
-carries `"ruling": "pending"` and `alternative` — the instants the other reading gives (the gap
-instance kept, at the offset before the gap, and counted, so the same `COUNT` reaches one day
-less) — and its `rfc.rule` quotes both sentences. The validator re-derives both readings from
-ICU, refuses a case whose two readings agree, and refuses one that is missing either field. A
-runner reads the field, not this file: for a `daily-skipped` case it accepts `expected` **or**
-`alternative`, reports which one it matched, and accepts nothing else (the contract below). It
-is reported as an open question with this requirement, for E05-R05 (the API's runner) and
-E12-R01 (the wire spec, which must pin the Dart answer); when the project rules, one reviewed
-commit deletes the field and the losing list, and every client re-runs the same table against
-the surviving one.
+**The RFC contradicts itself here, and the owner ruled.** The note after the § 3.3.10 examples
+says such instances "MUST be ignored and MUST NOT be counted as part of the recurrence set";
+four paragraphs later the section says "If the computed local start time of a recurrence
+instance does not exist, or occurs more than once, for the specified time zone, the time of the
+recurrence instance is interpreted in the same manner as an explicit DATE-TIME value describing
+that date and time, as specified in Section 3.3.5". Until 2026-10-12 every `daily-skipped` case
+carried both readings and no runner could call it green. The ruling takes the closing paragraph:
+it is what `sabre/vobject` answers a stock app's `calendar-query` with, so a Shared calendar's
+event is not missing from our own clients on one day a year, and an alarm an hour late is better
+than a daily reminder that silently does not fire. The validator still re-derives the reading
+the ruling set aside, and refuses a case where the two agree, because such a case would test
+nothing. No stock app has been checked against the ruling yet; E15-R05's device protocol does
+that (`docs/reviews/follow-ups/from-E15-R02.md`).
 
 ## What the engines do (looked at 2026-10-11, not part of the gate)
 
@@ -171,7 +158,7 @@ not changed to match any of them.
 | Berlin 2026-03-29 `02:30`, single | `20260329T013000Z` | `20260329T003000Z` (offset *after* the gap) | `20260329T013000Z` ✔ |
 | Berlin 2026-10-25 `02:30`, single | `20261025T003000Z` (first) | `20261025T013000Z` (second) | `20261025T013000Z` (second) |
 | Berlin 2026-03-27 `09:00`, daily ×5 | local time kept ✔ | ✔ | ✔ |
-| Berlin 2026-03-27 `02:30`, daily ×5 | gap instance dropped, `COUNT` reaches 1 Apr | gap instance **counted**, at `20260329T003000Z` | gap instance **counted**, at `20260329T013000Z` |
+| Berlin 2026-03-27 `02:30`, daily ×5 | gap instance counted, at `20260329T013000Z` (the ruling) | gap instance **counted**, at `20260329T003000Z` | gap instance **counted**, at `20260329T013000Z` ✔ |
 | New York 2026-03-08 `02:30`, single | `20260308T073000Z` | `20260308T063000Z` | — |
 | New York 2026-11-01 `01:30`, single | `20261101T053000Z` (first) | `20261101T063000Z` (second) | — |
 
@@ -179,9 +166,10 @@ The `sabre/vobject` column is the Berlin probes; the New York ones were run thro
 only, and show the same two bugs. A full sweep of both engines belongs to E05-R05 and E15-R03,
 which own the runner and the rulings.
 
-So the cases an engine is **known** to miss today are the `repeated` single time and the
-`daily-skipped` recurrence (both engines), and the `skipped` single time (`ical.js`; `vobject`
-reads that one the RFC's way). The `daily-existing` and `all-day` cases are where both engines
+So the cases an engine is **known** to miss today are the `repeated` single time (both
+engines), and the `skipped` single time and the `daily-skipped` recurrence (`ical.js`, which
+reads both with the offset after the gap; `vobject` reads them the table's way). The API does
+not take its instants from `ical.js` (`server/api/src/zones.mjs`). The `daily-existing` and `all-day` cases are where both engines
 already agree, which is what makes them useful as a cross-engine regression. E04-R04's review reported the same two single-time
 `ical.js` misses; this table records them, and the wire spec E12-R01 must pin the same answers
 for Dart's `timezone` package. **A client must never "fix" the table to match its engine.**
@@ -198,16 +186,16 @@ None of it needs the local stack, Postgres, Podman or the network: the oracle is
 ICU, and the table is a file. What it does:
 
 1. **shape** — one case list, unique ids, real local times and real UTC instants, a known zone
-   and kind, the input its kind needs and nothing else, a `rfc.section` on every case, a
-   `pending` ruling and an `alternative` on every `daily-skipped` case, an `expectedLocal` on
-   every `view-zone` case, and neither field on any other kind;
+   and kind, the input its kind needs and nothing else (a leftover `ruling` or `alternative` is
+   an unknown key), a `rfc.section` on every case, a `rule` that cites the ruling on every
+   `daily-skipped` case, and an `expectedLocal` on every `view-zone` case and on no other kind;
 2. **coverage** — every zone, year, kind, transition day and cross-zone case the requirement
    names, derived from the transition facts (not from the table, so deleting a case fails);
 3. **facts** — every declared transition date and control date against ICU and against how it
    is derived;
 4. **the oracle** — every expected instant re-derived from ICU's offsets and the RFC rules,
-   with the case id and both instants in the failure; the `alternative` of every
-   `daily-skipped` case re-derived the same way (and refused when the two readings agree); the
+   with the case id and both instants in the failure; every `daily-skipped` case also
+   re-derived with the reading the ruling set aside, and refused when the two agree; the
    `expectedLocal` of every `view-zone` case re-read from the view zone; plus a per-kind check
    that the case is what its `kind` says (a "skipped" time that exists, a "control" zone that
    transitions, a cross-zone case where neither zone switches — each fails).
@@ -215,14 +203,14 @@ ICU, and the table is a file. What it does:
 The table was **authored** from the tz database (Python's `zoneinfo`) and the RFC; the oracle
 re-derives it from a different implementation (Node's ICU). The test suite carries the
 mutations that prove the gate bites: an instant an hour out in every kind, a repeated time given
-its second occurrence, a counted skipped instance, a wrong `alternative`, a viewer's wall clock
+its second occurrence, a dropped gap instance, a gap instance at the offset after the gap, a
+viewer's wall clock
 an hour out, a dropped zone, year or kind, a stripped `rfc`, and a stale transition fact.
 
 A client runner (E10-R04, E09-R02, E11-R05) reads `cases.json`, builds the object its own way,
 resolves the `zone` — never the device zone, except where `input.viewZone` says otherwise — and
 compares its instants to `expected` in order. For a `view-zone` case it also compares the wall
-clock it would show the viewer in `input.viewZone` to `expectedLocal`. On a `daily-skipped`
-case it may match `expected` or `alternative`, and must say which; matching neither, or calling
-that kind green while `ruling` is `pending`, is a failure. On a mismatch it reports the case
+clock it would show the viewer in `input.viewZone` to `expectedLocal`. A `daily-skipped` case
+is compared like any other. On a mismatch it reports the case
 `id`, both instants and the `rfc` the table cites. Like the rest of this tree, the fixtures are
 test data: no real event, no real person, nothing here is logged.

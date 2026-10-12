@@ -5,9 +5,9 @@
 //   * **`instantOf` against the DST table of E15-R02**
 //     (`spec/ical-fixtures/dst/cases.json`). The table is read from the file,
 //     never copied: every case of the kinds the requirement names is resolved
-//     and compared with the instants the table carries, and the `daily-skipped`
-//     family — `ruling: pending`, two readings, the owner's to settle — is
-//     deliberately neither passed nor failed. The table is the contract of
+//     and compared with the instants the table carries; the `daily-skipped`
+//     family is a recurrence, which `test/occurrences-dst.test.mjs` checks
+//     through the expander. The table is the contract of
 //     RFC 5545 § 3.3.5 form 3, and `ical.js` is wrong on two of its families
 //     (`spec/ical-fixtures/dst/README.md`), which is why the resolver is not
 //     built on it.
@@ -118,12 +118,8 @@ test('every instant the table pins is the one the resolver reads', () => {
   for (const entry of table.cases) {
     const { zone, kind, input, expected } = entry;
     if (kind === 'daily-skipped') {
-      // Contested: RFC 5545 § 3.3.10 says both things, so the case carries
-      // `ruling: pending` and an `alternative` answer and no client may call it
-      // green. It is neither passed nor failed here (E05-R05 owns the runner and
-      // the owner owns the ruling).
-      assert.equal(entry.ruling, 'pending');
-      assert.ok(Array.isArray(entry.alternative));
+      // A recurrence: the expander's runner checks it against the owner's
+      // ruling on RFC 5545 § 3.3.10 (`test/occurrences-dst.test.mjs`).
       skipped += 1;
       continue;
     }

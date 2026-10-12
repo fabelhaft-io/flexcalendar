@@ -424,8 +424,9 @@ client could redefine `Europe/Berlin` for every request (E04-R04's note).
   offset **before** the gap. No instant this API computes comes out of `ical.js`,
   which carries no zone database and is wrong on those two single times
   (`spec/ical-fixtures/dst/README.md`); the DST table of E15-R02
-  (`spec/ical-fixtures/dst/cases.json`) is the contract, and its `daily-skipped`
-  family is contested (`ruling: pending`) so no client passes or fails it here.
+  (`spec/ical-fixtures/dst/cases.json`) is the contract; its `daily-skipped`
+  family is a recurrence, which the occurrences runner checks against the
+  owner's ruling on RFC 5545 § 3.3.10 (`docs/02` § Recurrence).
 - **The `VTIMEZONE` is generated from ICU's real transitions.** One observance
   per distinct `(TZOFFSETFROM, TZOFFSETTO)` pair, its `DTSTART`/`RDATE` values
   local readings in that pair's **from** offset (the convention RFC 5545
@@ -772,8 +773,8 @@ write with the property named and the marker absent.
 
 The E05-R09 suite needs nothing but Node: `test/zones.test.mjs` reads the DST
 table of E15-R02 from the file — never a copy of it — and checks every case of
-every kind it may decide, with the `daily-skipped` family left alone because its
-ruling is pending and the owner's. It holds the resolver against the two families
+every kind it may decide, with the `daily-skipped` family left to the
+occurrences runner because it is a recurrence. It holds the resolver against the two families
 `ical.js` reads wrongly by requiring the library to disagree there, so a resolver
 built on the library would fail; it holds the generated `VTIMEZONE` against the
 library (every day of 2026 and 2027 at noon, plus three hours either side of
@@ -821,7 +822,7 @@ monthly and all-day rule, a `DTSTART` years before the window, a multi-day event
 that starts before it, an `EXDATE` and an `RDATE`, the E15-R01 skeleton with its
 override, an override moved into and out of the window, one whose
 `RECURRENCE-ID` names nothing, the two rule families `ical.js` expands wrongly,
-the bound that reports `too-many-instances`, the pending ruling's reading, the
+the bound that reports `too-many-instances`, the § 3.3.10 ruling's reading, the
 sort order, determinism, and a canary that reaches the answer from nowhere. It
 also holds the reading of an object that embeds its own `VTIMEZONE` to the same
 answer as one that does not: `UNTIL` equal to, one second before and one second
@@ -834,8 +835,8 @@ than UTC's, and the ICU-call count of an old daily series.
 case read from the file, built with its zone's own `VTIMEZONE` so nothing is
 resolved through the library, and compared with `expected` — with `view-zone`
 also holding the viewer's wall clock, `all-day` holding the day's exact window,
-and `daily-skipped` accepting either reading, saying which one it matched and
-staying `todo` because the ruling is pending. `test/occurrences-corpus.test.mjs`
+and `daily-skipped` holding the owner's ruling on RFC 5545 § 3.3.10 (the gap
+instance kept, counted, at the offset before the gap). `test/occurrences-corpus.test.mjs`
 is the API's runner for E15-R03's corpus: all 34 fixtures through the module,
 normalised to the golden's form and compared with E15-R03's own helpers, with the
 two families `RULINGS.md` names left out and their ruling required to name

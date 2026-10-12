@@ -1,5 +1,5 @@
 {
-  "note": "E15-R02 DST table. Engine-neutral: a runner builds the object from zone/kind/input and compares the UTC instants in expected. A daily-skipped case is contested: it carries \"ruling\": \"pending\" and, in alternative, the other § 3.3.10 reading, either of which a runner may match and must report. A view-zone case also pins expectedLocal, the wall clock its viewer in input.viewZone must show. See README.md.",
+  "note": "E15-R02 DST table. Engine-neutral: a runner builds the object from zone/kind/input and compares the UTC instants in expected. A daily-skipped case follows the owner's ruling on RFC 5545 § 3.3.10 (docs/02 § Recurrence, 2026-10-12): an instance at a local time that does not exist is kept, counted, and read with the offset before the gap. A view-zone case also pins expectedLocal, the wall clock its viewer in input.viewZone must show. See README.md.",
   "cases": [
     {
       "id": "berlin-2026-spring-daily-existing",
@@ -13,11 +13,9 @@
       "id": "berlin-2026-spring-daily-skipped",
       "zone": "Europe/Berlin",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20260327T023000", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20260327T013000Z", "20260328T013000Z", "20260330T003000Z", "20260331T003000Z", "20260401T003000Z"],
-      "alternative": ["20260327T013000Z", "20260328T013000Z", "20260329T013000Z", "20260330T003000Z", "20260331T003000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20260327T013000Z", "20260328T013000Z", "20260329T013000Z", "20260330T003000Z", "20260331T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "berlin-2026-spring-all-day",
@@ -88,11 +86,9 @@
       "id": "berlin-2027-spring-daily-skipped",
       "zone": "Europe/Berlin",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20270326T023000", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20270326T013000Z", "20270327T013000Z", "20270329T003000Z", "20270330T003000Z", "20270331T003000Z"],
-      "alternative": ["20270326T013000Z", "20270327T013000Z", "20270328T013000Z", "20270329T003000Z", "20270330T003000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20270326T013000Z", "20270327T013000Z", "20270328T013000Z", "20270329T003000Z", "20270330T003000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "berlin-2027-spring-all-day",
@@ -163,11 +159,9 @@
       "id": "new-york-2026-spring-daily-skipped",
       "zone": "America/New_York",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20260306T023000", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20260306T073000Z", "20260307T073000Z", "20260309T063000Z", "20260310T063000Z", "20260311T063000Z"],
-      "alternative": ["20260306T073000Z", "20260307T073000Z", "20260308T073000Z", "20260309T063000Z", "20260310T063000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20260306T073000Z", "20260307T073000Z", "20260308T073000Z", "20260309T063000Z", "20260310T063000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "new-york-2026-spring-all-day",
@@ -238,11 +232,9 @@
       "id": "new-york-2027-spring-daily-skipped",
       "zone": "America/New_York",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20270312T023000", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20270312T073000Z", "20270313T073000Z", "20270315T063000Z", "20270316T063000Z", "20270317T063000Z"],
-      "alternative": ["20270312T073000Z", "20270313T073000Z", "20270314T073000Z", "20270315T063000Z", "20270316T063000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20270312T073000Z", "20270313T073000Z", "20270314T073000Z", "20270315T063000Z", "20270316T063000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "new-york-2027-spring-all-day",
@@ -467,11 +459,9 @@
       "id": "sydney-2026-spring-daily-skipped",
       "zone": "Australia/Sydney",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20261002T023000", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20261001T163000Z", "20261002T163000Z", "20261004T153000Z", "20261005T153000Z", "20261006T153000Z"],
-      "alternative": ["20261001T163000Z", "20261002T163000Z", "20261003T163000Z", "20261004T153000Z", "20261005T153000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20261001T163000Z", "20261002T163000Z", "20261003T163000Z", "20261004T153000Z", "20261005T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "sydney-2026-spring-all-day",
@@ -542,11 +532,9 @@
       "id": "sydney-2027-spring-daily-skipped",
       "zone": "Australia/Sydney",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20271001T023000", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20270930T163000Z", "20271001T163000Z", "20271003T153000Z", "20271004T153000Z", "20271005T153000Z"],
-      "alternative": ["20270930T163000Z", "20271001T163000Z", "20271002T163000Z", "20271003T153000Z", "20271004T153000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20270930T163000Z", "20271001T163000Z", "20271002T163000Z", "20271003T153000Z", "20271004T153000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "sydney-2027-spring-all-day",
@@ -747,11 +735,9 @@
       "id": "chatham-2026-spring-daily-skipped",
       "zone": "Pacific/Chatham",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20260925T031500", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20260924T143000Z", "20260925T143000Z", "20260927T133000Z", "20260928T133000Z", "20260929T133000Z"],
-      "alternative": ["20260924T143000Z", "20260925T143000Z", "20260926T143000Z", "20260927T133000Z", "20260928T133000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20260924T143000Z", "20260925T143000Z", "20260926T143000Z", "20260927T133000Z", "20260928T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "chatham-2026-spring-all-day",
@@ -822,11 +808,9 @@
       "id": "chatham-2027-spring-daily-skipped",
       "zone": "Pacific/Chatham",
       "kind": "daily-skipped",
-      "ruling": "pending",
       "input": {"dtstart": "20270924T031500", "rrule": {"freq": "DAILY", "count": 5}},
-      "expected": ["20270923T143000Z", "20270924T143000Z", "20270926T133000Z", "20270927T133000Z", "20270928T133000Z"],
-      "alternative": ["20270923T143000Z", "20270924T143000Z", "20270925T143000Z", "20270926T133000Z", "20270927T133000Z"],
-      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10: an instance whose computed local time does not exist MUST be ignored and MUST NOT be counted as part of the recurrence set — the first reading, which expected follows. The closing paragraph of the same section reads the same instance in the same manner as an explicit DATE-TIME value per § 3.3.5, which is what alternative follows; both sentences are in the section, so the case is contested and its ruling stays pending."}
+      "expected": ["20270923T143000Z", "20270924T143000Z", "20270925T143000Z", "20270926T133000Z", "20270927T133000Z"],
+      "rfc": {"section": "RFC 5545 § 3.3.10", "rule": "RFC 5545 § 3.3.10, as the owner ruled on 2026-10-12 (docs/02 § Recurrence): the section's closing paragraph reads an instance whose computed local time does not exist in the same manner as an explicit DATE-TIME value per § 3.3.5, with the UTC offset before the gap, and it is counted. The section's first paragraph, which would ignore the instance and not count it, is the reading the ruling set aside."}
     },
     {
       "id": "chatham-2027-spring-all-day",

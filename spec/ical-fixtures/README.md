@@ -118,11 +118,10 @@ section it follows, and the table carries no ICS, no engine name and no event
 text. `make verify-corpus` runs `infra/scripts/dst-table.mjs` over it
 (registered as `E15-R02.json`), which checks the table's shape and coverage and
 re-derives every expected instant from ICU and the RFC rules. The
-`daily-skipped` cases are the one contested kind: § 3.3.10 says both that the
-nonexistent instance is ignored and that it is read like an explicit
-`DATE-TIME`, so each carries `"ruling": "pending"` and the other reading in
-`alternative`, and a runner accepts either, reports which it matched, and may
-not call that kind green until the project rules. Unlike `rrule/`, this
+`daily-skipped` cases follow the owner's ruling on § 3.3.10, which says both
+that the nonexistent instance is ignored and that it is read like an explicit
+`DATE-TIME`: it is kept, counted, and read with the offset before the gap
+(`docs/02` § Recurrence, 2026-10-12). Unlike `rrule/`, this
 directory is not expanded by an engine here: the API's runner is E05-R05's and
 each client runs the same table in E10-R04, E09-R02 and E11-R05, and all of
 them must agree with its expected results. `dst/README.md` documents the fields,

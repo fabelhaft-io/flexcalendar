@@ -35,7 +35,6 @@ Drift tables store per event the raw iCalendar (for Private calendars the skelet
 All zoned maths uses `TZDateTime` (INV-04). The tz database is initialised at startup, and the device zone is read through a native call (for example `flutter_timezone`).
 - Accept: a custom lint or test rejects `DateTime` arithmetic in the domain layer; DST widget tests cover the E15-R02 dates for Europe/Berlin, America/New_York, Australia/Sydney and Asia/Kolkata.
 - Deps: E10-R01.
-- Notes: the DST table's § 3.3.10 data change (`docs/reviews/follow-ups/from-E15-R02.md`) lands first, so the eight `daily-skipped` cases have one answer.
 
 ### E10-R05 · Calendar grid   `agent`
 Day, week, month and agenda views with `calendar_view` or `kalender` (pick one in the PR, with reasons), rendering cached occurrences.
