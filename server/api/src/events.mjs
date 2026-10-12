@@ -38,6 +38,17 @@
 // `412` with the current representation in the problem's `current` member, so
 // the client can re-read, reapply and retry.
 //
+// **A Private create is one request that commits skeleton and envelope in
+// D-06's order** (E13-R02). The client names the `UID` (the envelope's AAD binds
+// it, D-14) and seals the envelope, so the create body carries the envelope
+// bytes; the API checks exactly what `PUT /envelopes/{uid}` checks — the
+// header, the 65,536-byte ceiling and that the bytes hash to `envelopeSha256` —
+// and **never opens one** (INV-07). It inserts the sidecar row first, then
+// `PUT`s the skeleton with `If-None-Match: *`, then collects the superseded row
+// and runs the 24-hour orphan sweep. A crash before the `PUT` therefore leaves
+// an orphan row no skeleton names — never a skeleton whose envelope never
+// existed — and the sweep of `src/envelope-gc.mjs` removes it a day later.
+//
 // **Only objects RFC 5545 allows are written.** `src/ical-rmw.mjs` refuses a
 // rule part the RFC does not name, and any rule `ical.js` 2.2.1 expands wrongly
 // (`BYWEEKNO`, a yearly 29-February start), rather than writing a rule it would
@@ -50,9 +61,10 @@
 // every calendar is Private (ADR 0003), so a content field (`summary`,
 // `description`, `location`, `attendees`) is refused with the fixed 422 — a
 // Private calendar stores skeletons, and the guard of E03-R09 would refuse the
-// write anyway — and an `envelopeSha256` is required on create. The adapter's
-// own refusals (a guard precondition, a `401` on our delegation, a timeout) are
-// mapped by `sendCalDavProblem` and never echo a value.
+// write anyway — and a `uid`, an `envelopeSha256` and the envelope bytes are
+// required on create. The adapter's own refusals (a guard precondition, a `401`
+// on our delegation, a timeout) are mapped by `sendCalDavProblem` and never echo
+// a value.
 //
 // Roles: `owner` and `editor` write, `viewer` reads, and a caller who is not a
 // member gets the 404 an unknown calendar gets. An id or a `uid` outside the
@@ -65,9 +77,11 @@
 // `src/calendars.mjs`. They are repeated rather than shared on purpose: this
 // requirement adds a route module, and E05-R03's stays untouched.
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { identity, resolveUser } from './auth.mjs';
+import { decodeEventEnvelope } from './calendar-envelope.mjs';
 import { eventSchema } from './event-schema.mjs';
+import { createOrphanCollector } from './envelope-gc.mjs';
 import {
   IcalError,
   assertOrder,
@@ -90,6 +104,8 @@ const CREATE_MEMBERS = [
   'rrule',
   'alarm',
   'envelopeSha256',
+  'envelope',
+  'epoch',
   'summary',
   'description',
   'location',
@@ -97,14 +113,20 @@ const CREATE_MEMBERS = [
 ];
 
 /**
- * The fields a patch takes: the create list without `rrule` and without `uid`.
- * A change to a recurring event is an intent (E05-R06/R07), and the `UID` never
- * changes — it is the object's name, the sidecar key and the envelope's AAD —
- * so `exdate` and `recurrenceId` are outside the list for the same reason: no
- * request body ever carries the recurrence or the identity (INV-05).
+ * The fields a patch takes: the create list without `rrule`, without `uid` and
+ * without the create-only envelope bytes. A change to a recurring event is an
+ * intent (E05-R06/R07), the `UID` never changes — it is the object's name, the
+ * sidecar key and the envelope's AAD — so `exdate` and `recurrenceId` are
+ * outside the list for the same reason: no request body ever carries the
+ * recurrence or the identity (INV-05). A re-sealed envelope is written through
+ * the sidecar route with its own `If-Match`, so nothing but the hash moves here.
  */
 const UPDATE_MEMBERS = CREATE_MEMBERS.filter(
-  (member) => member !== 'rrule' && member !== 'uid',
+  (member) =>
+    member !== 'rrule' &&
+    member !== 'uid' &&
+    member !== 'envelope' &&
+    member !== 'epoch',
 );
 
 /** The fields that hold event content, which a Private calendar stores sealed. */
@@ -125,6 +147,9 @@ const CANONICAL_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** The text form of the SHA-256 of an envelope (`spec/crypto.md` §5.1). */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /** The object name of an event inside its collection. */
 const objectName = (/** @type {string} */ uid) => `${uid}.ics`;
@@ -282,9 +307,16 @@ function representationOf(text, etag) {
  * @param {{findBySubject: Function, createFirstSight: Function}} dependencies.store
  * @param {{userinfo: Function}} dependencies.oidc
  * @param {{findMembership: Function}} dependencies.calendars
+ * @param {{insert: Function, deleteSuperseded: Function, listStaleBefore: Function, deleteExact: Function}} dependencies.envelopes the sidecar rows a Private create commits (E13-R02)
  * @param {{forUser: (userId: string, options: {requestId?: string}) => {putObject: Function, getObject: Function, deleteObject: Function}}} dependencies.caldav
  */
-export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
+export function registerEventRoutes(
+  app,
+  { store, oidc, calendars, caldav, envelopes },
+) {
+  /** The 24-hour orphan sweep a Private create runs after its commit. */
+  const collector = createOrphanCollector({ store: envelopes });
+
   /**
    * The caller's `users.id`, through the one function `GET /me` uses (E05-R01):
    * the first-sight rules and every refusal live there, not here.
@@ -372,12 +404,12 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
   }
 
   /**
-   * The `uid` a create writes. A Private create may name it: a client seals the
+   * The `uid` a create writes. A Private create **names** it: a client seals the
    * envelope before it writes the skeleton, the envelope's AAD binds the `UID`
-   * (D-14) and an offline create needs it before it reconnects (E10-R06), so
-   * the `UID` cannot always be minted here. What a client sends is validated
-   * exactly as a path parameter is — the lowercase UUIDv4 of INV-03 — and a
-   * value outside that shape is the fixed 422 **before CalDAV is asked**
+   * (D-14) and an offline create needs it before it reconnects (E10-R06), so the
+   * `UID` cannot be minted here. What a client sends is validated exactly as a
+   * path parameter is — the lowercase UUIDv4 of INV-03 — and a value outside
+   * that shape, or an absent one, is the fixed 422 **before CalDAV is asked**
    * (E03-R11). A calendar that is not Private keeps minting: its objects are
    * the stock apps' and may name any `UID` (INV-03).
    *
@@ -388,16 +420,44 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
    * @returns {string | undefined}
    */
   function uidFor(request, reply, requested, membership) {
-    if (requested === undefined) return randomUUID();
+    if (membership.mode === 'private') {
+      if (typeof requested !== 'string' || !UUID_V4.test(requested)) {
+        invalidInput(reply, request);
+        return undefined;
+      }
+      return requested;
+    }
+    if (requested !== undefined) {
+      invalidInput(reply, request);
+      return undefined;
+    }
+    return randomUUID();
+  }
+
+  /**
+   * The sealed envelope a Private create commits beside its skeleton: the checks
+   * `PUT /envelopes/{uid}` makes and no more — the header (version and the epoch
+   * the request carries), the canonical base64, the 65,536-byte ceiling of
+   * `spec/crypto.md` §1.1 (`src/calendar-envelope.mjs`) — and that the bytes
+   * hash to the `envelopeSha256` the skeleton will carry. The API never opens
+   * one (INV-07). `undefined` is a refusal, the reply already sent.
+   * @param {import('fastify').FastifyRequest} request
+   * @param {import('fastify').FastifyReply} reply
+   * @param {Record<string, any>} body
+   * @returns {{bytes: Buffer, epoch: number} | undefined}
+   */
+  function sealedEnvelopeOf(request, reply, body) {
+    const bytes = decodeEventEnvelope(body.envelope, body.epoch);
     if (
-      membership.mode !== 'private' ||
-      typeof requested !== 'string' ||
-      !UUID_V4.test(requested)
+      bytes === undefined ||
+      typeof body.envelopeSha256 !== 'string' ||
+      !SHA256_HEX.test(body.envelopeSha256) ||
+      createHash('sha256').update(bytes).digest('hex') !== body.envelopeSha256
     ) {
       invalidInput(reply, request);
       return undefined;
     }
-    return requested;
+    return { bytes, epoch: body.epoch };
   }
 
   /**
@@ -429,6 +489,11 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
         invalidInput(reply, request);
         return false;
       }
+    } else if (body.envelope !== undefined || body.epoch !== undefined) {
+      // A sidecar envelope belongs to a Private calendar (D-06); a Shared
+      // object's content is its own `VEVENT` and has no envelope to commit.
+      invalidInput(reply, request);
+      return false;
     }
     return true;
   }
@@ -485,6 +550,18 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
       // envelope first named it, so it is validated rather than minted here.
       const uid = uidFor(request, reply, body.uid, membership);
       if (uid === undefined) return undefined;
+
+      // The sealed envelope a Private create commits beside the skeleton. The
+      // checks are the sidecar write's own (`src/calendar-envelope.mjs`): the
+      // header, the size and the transport encoding, and the bytes have to hash
+      // to the value the skeleton will carry. The API never opens one (INV-07).
+      /** @type {{bytes: Buffer, epoch: number} | undefined} */
+      let sealed;
+      if (membership.mode === 'private') {
+        sealed = sealedEnvelopeOf(request, reply, body);
+        if (sealed === undefined) return undefined;
+      }
+
       /** @type {any} */
       let calendar;
       const built = applyFields(request, reply, () => {
@@ -512,6 +589,21 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
 
       const view = caldavFor(request, reply, user.id);
       if (!view) return undefined;
+
+      // D-06 step 1: the row first, so a crash before the skeleton `PUT` leaves
+      // an orphan no skeleton names — never a skeleton whose envelope never
+      // existed. The 24-hour sweep of `src/envelope-gc.mjs` removes the orphan.
+      if (sealed !== undefined) {
+        await envelopes.insert({
+          calendarId,
+          uid,
+          recurrenceId: null,
+          envelopeSha256: body.envelopeSha256,
+          epoch: sealed.epoch,
+          envelope: sealed.bytes,
+        });
+      }
+
       /** @type {{status: number, etag?: string | null}} */
       let stored;
       try {
@@ -520,14 +612,39 @@ export function registerEventRoutes(app, { store, oidc, calendars, caldav }) {
         });
       } catch (error) {
         // `If-None-Match: *` on a name that already exists is a 412 nobody sent:
-        // two creates minted the same `UID`, which is ours, not the caller's.
+        // the `UID` names an object the collection already holds, which is the
+        // caller's conflict on a Private create and ours on a minted one.
         if (/** @type {any} */ (error)?.status === 412) {
           sendProblem(reply, 'conflict', { instance: request.id });
           return undefined;
         }
+        // The row inserted above is now the orphan a failed `PUT` leaves.
         sendCalDavProblem(reply, error, { instance: request.id });
         return undefined;
       }
+
+      if (sealed !== undefined) {
+        // D-06 step 3, then the 24-hour orphan sweep, exactly as the re-seal
+        // write of `src/envelopes.mjs` runs them. A sweep failure must not fail
+        // the create it followed.
+        await envelopes.deleteSuperseded({
+          calendarId,
+          uid,
+          recurrenceId: null,
+          keepSha256: body.envelopeSha256,
+        });
+        try {
+          // The collector reads the collection through the caller's own view;
+          // its `getObject` is the one signature it needs.
+          await collector.sweep({
+            calendarId,
+            view: /** @type {any} */ (view),
+          });
+        } catch {
+          // Nothing about a sweep failure belongs to this request's answer.
+        }
+      }
+
       reply
         .code(201)
         .header('location', `/calendars/${calendarId}/events/${uid}`);

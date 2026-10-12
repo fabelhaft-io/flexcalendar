@@ -670,12 +670,11 @@ paths:
       operationId: createEvent
       summary: Create an event
       description: >-
-        The client sends fields, never iCalendar: the API mints the `UID`
-        (`crypto.randomUUID()`, INV-03) and the `DTSTAMP`, builds the object
-        with `ical.js` and writes it with `If-None-Match: *`, so two creates
-        cannot overwrite each other and a client never writes the recurrence
-        itself — an exception or an occurrence override is an intent
-        (E05-R06/R07, INV-05). The object name is `<uid>.ics`.
+        The client sends fields, never iCalendar: the API builds the object with
+        `ical.js` and writes it with `If-None-Match: *`, so two creates cannot
+        overwrite each other and a client never writes the recurrence itself —
+        an exception or an occurrence override is an intent (E05-R06/R07,
+        INV-05). The object name is `<uid>.ics`.
 
         A time is a `date`, an `utc` instant or a `local` wall clock beside an
         IANA `tzid`: a `TZID` write is written as the wall clock it spells, with
@@ -688,9 +687,23 @@ paths:
         CalDAV `ETag` — also the `ETag` header — and a parsed convenience view of
         the master `VEVENT`. Until Phase 4 every calendar is Private (ADR 0003),
         so the object is a skeleton: `summary`, `description`, `location` and
-        `attendees` are refused with 422 (they arrive with Shared calendars) and
-        `envelopeSha256` is required, because a Private `VEVENT` carries exactly
-        one `X-CALFLEX-ENVELOPE-SHA256` (E03-R09, D-18).
+        `attendees` are refused with 422 (they arrive with Shared calendars).
+
+        On a Private calendar the create is **one request that commits skeleton
+        and envelope in D-06's order** (E13-R02). The client names the `UID`
+        (`uid` is required, a lowercase UUIDv4 — the envelope's AAD binds it,
+        D-14, so the API cannot mint one) and seals the envelope over the same
+        skeleton, which is why `envelope`, `epoch` and `envelopeSha256` are
+        required: `envelope` is the sealed bytes in standard base64, `epoch` is
+        the CCK epoch its header carries, and `envelopeSha256` is their SHA-256,
+        the value the skeleton's `X-CALFLEX-ENVELOPE-SHA256` will hold. The API
+        checks only the header (version `0x01`, the epoch), the size (at most
+        65,536 bytes, `spec/crypto.md` §1.1) and that the bytes hash to
+        `envelopeSha256`; it never opens an envelope (INV-07). It inserts the
+        sidecar row first, then writes the skeleton, so a crash between the two
+        steps leaves an orphan row no skeleton names — never a skeleton whose
+        envelope never existed — which the 24-hour sweep removes. A Shared create
+        (Phase 4) has no envelope and keeps minting the `UID`.
 
         The request body is validated by the route rather than by a schema: a
         schema-refused body is a 400, and every rule above must answer 422.
@@ -758,9 +771,10 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '409':
           description: >-
-            The `UID` this request minted already names an object in the
-            collection. A fresh UUIDv4 colliding can only mean another create
-            won; the client retries
+            The `UID` this request names already names an object in the
+            collection — a client-chosen `UID` on a Private calendar, or a
+            minted one that collided. The client re-reads and retries with a
+            fresh `UID`
           content:
             application/problem+json:
               schema:
@@ -792,17 +806,24 @@ paths:
             a yearly 29-February start, an `UNTIL` whose value type is not its
             start's (a UTC `DATE-TIME` for a timed start, a `TZID` one
             included), or an `end` that is not the same value type as its
-            `start` or is not later than it; `envelopeSha256` is absent or is not
-            64 lowercase hex digits; a content field (`summary`, `description`,
-            `location`, `attendees`) was sent for a Private calendar; `uid` was
-            sent on a calendar that is not Private or is not a lowercase
-            UUIDv4; or the body carries a member the operation does not take —
-            the recurrence itself, an exception or an occurrence override
-            included, which the API owns (INV-05); or the object's series has more
-            instances than a calendar collection accepts, which the CalDAV
-            service refuses with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances`
-            and this API reports as the `too-many-instances` kind. The body never
-            names a value.
+            `start` or is not later than it; `uid` is absent on a Private
+            calendar, was sent on a calendar that is not Private, or is not a
+            lowercase UUIDv4; `envelopeSha256` is absent on a Private calendar or
+            is not 64 lowercase hex digits; `envelope` is absent, is not
+            canonical standard base64, is shorter than the 45 fixed bytes or
+            over the 65,536-byte ceiling, has a version byte other than `0x01`,
+            or its header epoch is not `epoch`; `epoch` is absent, is not a
+            non-negative integer within 2147483647, or is not the epoch the
+            envelope header carries; the bytes do not hash to `envelopeSha256`;
+            `envelope` or `epoch` was sent for a calendar that is not Private; a
+            content field (`summary`, `description`, `location`, `attendees`) was
+            sent for a Private calendar; or the body carries a member the
+            operation does not take — the recurrence itself, an exception or an
+            occurrence override included, which the API owns (INV-05); or the
+            object's series has more instances than a calendar collection
+            accepts, which the CalDAV service refuses with RFC 4791 § 5.3.2.1's
+            `403` `CALDAV:max-instances` and this API reports as the
+            `too-many-instances` kind. The body never names a value.
           content:
             application/problem+json:
               schema:
@@ -2108,13 +2129,13 @@ components:
           $ref: '#/components/schemas/EventParsed'
     EventCreate:
       type: object
-      description: 'A create request. `start` is required; the API mints the `DTSTAMP` and, unless `uid` names one, the `UID`. A `local` time is written with its `TZID` and a generated `VTIMEZONE` for that zone embedded in the object (E05-R09). On a Private calendar the content fields (`summary`, `description`, `location`, `attendees`) are a 422 and `envelopeSha256` is required — a Private object is a skeleton and the content lives in the sidecar (D-18, E03-R09) — and `uid` may name the `UID`, because a client seals the envelope before it writes the skeleton and the envelope binds the `UID` (D-14, E10-R06). Any other member is a 422 as well.'
+      description: 'A create request. `start` is required; the API mints the `DTSTAMP` and, on a Shared calendar, the `UID`. A `local` time is written with its `TZID` and a generated `VTIMEZONE` for that zone embedded in the object (E05-R09). On a Private calendar `uid`, `envelope`, `epoch` and `envelopeSha256` are required and the content fields (`summary`, `description`, `location`, `attendees`) are a 422: the object is a skeleton and the content lives in the sidecar envelope, which the one request commits in D-06 order (D-18, E03-R09, E13-R02). The client names the `UID` because the envelope''s AAD binds it (D-14, E10-R06). Any other member is a 422 as well.'
       additionalProperties: false
       required: [start]
       properties:
         uid:
           type: string
-          description: 'The `UID` of a Private create: a lowercase UUIDv4 (INV-03), which the envelope''s AAD binds (D-14). Optional; absent, the API mints one. A calendar that is not Private does not take it.'
+          description: 'The `UID`: a lowercase UUIDv4 (INV-03). Required on a Private calendar, where the client seals the envelope over it (the AAD binds the `UID`, D-14) so the API cannot mint one; a calendar that is not Private mints it and does not take it.'
         start:
           $ref: '#/components/schemas/EventTime'
         end:
@@ -2126,7 +2147,13 @@ components:
           $ref: '#/components/schemas/EventAlarm'
         envelopeSha256:
           type: ['null', string]
-          description: 'The SHA-256 of the sealed content envelope, 64 lowercase hex digits. A Private VEVENT carries exactly one (E03-R09).'
+          description: 'The SHA-256 of the sealed content envelope, 64 lowercase hex digits. Required on a Private calendar, where the envelope and the skeleton are committed together (E03-R09, E13-R02); the API refuses bytes that do not hash to it.'
+        envelope:
+          type: string
+          description: 'The sealed envelope bytes in standard base64: version `0x01`, the big-endian uint32 epoch, the 24-byte nonce, ciphertext and tag. At least 45 bytes, at most 65,536 (`spec/crypto.md` §1.1). Required on a Private calendar and stored opaquely; the API never opens one (INV-07).'
+        epoch:
+          type: integer
+          description: 'The CCK epoch the envelope header carries, 0 through 2147483647. Required on a Private calendar and part of the sidecar key.'
         summary:
           type: ['null', string]
           description: 'The title. Refused with 422 on a Private calendar (D-18); Shared calendars take one from Phase 4.'
@@ -2143,7 +2170,7 @@ components:
             type: string
     EventUpdate:
       type: object
-      description: 'A patch request: the same fields as a create, minus `uid` and `rrule`. Every member is optional; `null` removes the property it names and an absent member is left alone. A time field takes the same three forms a create takes, and a zone the object does not define yet is embedded beside it (E05-R09). An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18), and moving `start` or `end` requires an `envelopeSha256` that differs from the stored skeleton''s, because both are bound into the envelope''s AAD (`spec/crypto.md` §2.2, E13-R02).'
+      description: 'A patch request: the same fields as a create, minus `uid`, `rrule`, `envelope` and `epoch`. Every member is optional; `null` removes the property it names and an absent member is left alone. A time field takes the same three forms a create takes, and a zone the object does not define yet is embedded beside it (E05-R09). An empty body is a 422, as are `uid`, `rrule` and any member naming a recurrence exception or an occurrence override — a recurring edit is an intent (E05-R06/R07), and the `UID` never changes (INV-05). `If-Match` is required (428 without it). On a Private calendar the content fields are a 422 (D-18), and moving `start` or `end` requires an `envelopeSha256` that differs from the stored skeleton''s, because both are bound into the envelope''s AAD (`spec/crypto.md` §2.2, E13-R02); a re-sealed envelope is written through `PUT /calendars/{calendarId}/envelopes/{uid}`, which commits it in D-06 order.'
       additionalProperties: false
       properties:
         start:

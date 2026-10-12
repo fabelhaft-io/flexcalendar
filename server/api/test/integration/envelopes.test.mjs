@@ -286,6 +286,8 @@ test('a committed envelope is the bytes the client sealed, read back through the
     const bytes = envelopeOf(1);
     const hash = sha256(bytes);
 
+    // A Private create is one request: it commits the skeleton and the envelope
+    // in D-06's order — the row first, then the skeleton `PUT` (E13-R02).
     const created = await request(
       app,
       'a',
@@ -296,21 +298,36 @@ test('a committed envelope is the bytes the client sealed, read back through the
         start: { utc: '20261014T090000Z' },
         end: { utc: '20261014T100000Z' },
         alarm: { trigger: '-PT15M' },
+        epoch: 1,
+        envelope: bytes.toString('base64'),
         envelopeSha256: hash,
       },
     );
     assert.equal(created.statusCode, 201, created.body);
     assert.equal(created.json().uid, uid);
 
+    // The row holds exactly the bytes the client sealed, and its own hash.
+    let rows = await rowsOf(calendarId);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].uid, uid);
+    assert.equal(rows[0].recurrence_id, null);
+    assert.equal(rows[0].envelope_sha256, hash);
+    assert.equal(rows[0].epoch, 1);
+    assert.equal(rows[0].envelope, bytes.toString('hex'));
+
+    // A re-seal goes through the sidecar write: the new row first, then the
+    // skeleton carrying the new hash.
+    const reSealed = envelopeOf(2, 0x22);
+    const reSealedHash = sha256(reSealed);
     const written = await request(
       app,
       'a',
       'PUT',
       `/calendars/${calendarId}/envelopes/${uid}`,
       {
-        envelope: bytes.toString('base64'),
-        epoch: 1,
-        envelopeSha256: hash,
+        envelope: reSealed.toString('base64'),
+        epoch: 2,
+        envelopeSha256: reSealedHash,
       },
       { 'if-match': created.json().etag },
     );
@@ -318,19 +335,15 @@ test('a committed envelope is the bytes the client sealed, read back through the
     assert.deepEqual(written.json(), {
       uid,
       recurrenceId: null,
-      epoch: 1,
-      envelopeSha256: hash,
+      epoch: 2,
+      envelopeSha256: reSealedHash,
       etag: written.json().etag,
     });
 
-    // The row holds exactly the bytes the client sealed, and its own hash.
-    const rows = await rowsOf(calendarId);
+    rows = await rowsOf(calendarId);
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].uid, uid);
-    assert.equal(rows[0].recurrence_id, null);
-    assert.equal(rows[0].envelope_sha256, hash);
-    assert.equal(rows[0].epoch, 1);
-    assert.equal(rows[0].envelope, bytes.toString('hex'));
+    assert.equal(rows[0].envelope_sha256, reSealedHash);
+    assert.equal(rows[0].envelope, reSealed.toString('hex'));
 
     // The read gate answers it, byte for byte.
     const read = await request(
@@ -342,9 +355,10 @@ test('a committed envelope is the bytes the client sealed, read back through the
     assert.equal(read.statusCode, 200, read.body);
     const envelopes = read.json().envelopes;
     assert.equal(envelopes.length, 1);
-    assert.equal(envelopes[0].envelopeSha256, hash);
-    assert.deepEqual(Buffer.from(envelopes[0].envelope, 'base64'), bytes);
+    assert.equal(envelopes[0].envelopeSha256, reSealedHash);
+    assert.deepEqual(Buffer.from(envelopes[0].envelope, 'base64'), reSealed);
     assert.ok(!capture.text().includes(bytes.toString('base64')));
+    assert.ok(!capture.text().includes(reSealed.toString('base64')));
   } finally {
     await app.close();
   }
@@ -359,6 +373,7 @@ test('a fault between the row insert and the skeleton PUT leaves the old envelop
     const first = envelopeOf(1, 0x11);
     const second = envelopeOf(2, 0x22);
 
+    // The create commits `first` in one request.
     const created = await request(
       app,
       'a',
@@ -369,29 +384,16 @@ test('a fault between the row insert and the skeleton PUT leaves the old envelop
         start: { utc: '20261014T090000Z' },
         end: { utc: '20261014T100000Z' },
         alarm: { trigger: '-PT15M' },
+        epoch: 1,
+        envelope: first.toString('base64'),
         envelopeSha256: sha256(first),
       },
     );
     assert.equal(created.statusCode, 201, created.body);
     const etag = created.json().etag;
 
-    // The first commit is clean: the skeleton names `first`.
-    const committed = await request(
-      app,
-      'a',
-      'PUT',
-      `/calendars/${calendarId}/envelopes/${uid}`,
-      {
-        envelope: first.toString('base64'),
-        epoch: 1,
-        envelopeSha256: sha256(first),
-      },
-      { 'if-match': etag },
-    );
-    assert.equal(committed.statusCode, 200, committed.body);
-
-    // The second commit is killed between the two steps: the row is inserted,
-    // the skeleton `PUT` never happens.
+    // The re-seal is killed between the two steps: the row is inserted, the
+    // skeleton `PUT` never happens.
     caldav.failNextPut(true);
     const killed = await request(
       app,
@@ -452,6 +454,88 @@ test('a fault between the row insert and the skeleton PUT leaves the old envelop
     );
     assert.equal(after.json().envelopes[0].envelopeSha256, sha256(second));
     assert.ok(!capture.text().includes(second.toString('base64')));
+  } finally {
+    await app.close();
+  }
+});
+
+test('a fault between the create row insert and the skeleton PUT leaves only an orphan row', async () => {
+  const caldav = faultyAdapter();
+  const { app, capture } = build({ caldav });
+  try {
+    const calendarId = await calendar(app);
+    const uid = randomUUID();
+    const bytes = envelopeOf(1, 0x33);
+
+    // The create is killed after the row insert: the skeleton `PUT` never
+    // happens, so no object exists — the crash leaves an orphan row, never a
+    // skeleton whose envelope never existed (D-06).
+    caldav.failNextPut(true);
+    const crashed = await request(
+      app,
+      'a',
+      'POST',
+      `/calendars/${calendarId}/events`,
+      {
+        uid,
+        start: { utc: '20261014T090000Z' },
+        end: { utc: '20261014T100000Z' },
+        epoch: 1,
+        envelope: bytes.toString('base64'),
+        envelopeSha256: sha256(bytes),
+      },
+    );
+    assert.equal(crashed.statusCode, 502, crashed.body);
+
+    // The row is there; no object is, and nothing is answered for the uid.
+    let rows = await rowsOf(calendarId);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].envelope_sha256, sha256(bytes));
+    const afterCrash = await request(
+      app,
+      'a',
+      'GET',
+      `/calendars/${calendarId}/events/${uid}`,
+    );
+    assert.equal(afterCrash.statusCode, 404, afterCrash.body);
+    const read = await request(
+      app,
+      'a',
+      'GET',
+      `/calendars/${calendarId}/envelopes?uid=${uid}`,
+    );
+    assert.equal(read.statusCode, 200, read.body);
+    assert.deepEqual(read.json().envelopes, []);
+
+    // The orphan is removed once it is a day old: age the row past the grace
+    // and let the next successful write run the sweep. No skeleton names it and
+    // the object is gone, so it is garbage.
+    await verifier.query(
+      `UPDATE public.event_envelopes SET created_at = now() - interval '25 hours'
+        WHERE calendar_id = $1 AND uid = $2`,
+      [calendarId, uid],
+    );
+    const other = envelopeOf(1, 0x44);
+    const created = await request(
+      app,
+      'a',
+      'POST',
+      `/calendars/${calendarId}/events`,
+      {
+        uid: randomUUID(),
+        start: { utc: '20261014T090000Z' },
+        end: { utc: '20261014T100000Z' },
+        epoch: 1,
+        envelope: other.toString('base64'),
+        envelopeSha256: sha256(other),
+      },
+    );
+    assert.equal(created.statusCode, 201, created.body);
+
+    rows = await rowsOf(calendarId);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].envelope_sha256, sha256(other));
+    assert.ok(!capture.text().includes(bytes.toString('base64')));
   } finally {
     await app.close();
   }

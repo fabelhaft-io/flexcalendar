@@ -199,9 +199,10 @@ async function call(
 }
 
 /**
- * Creates a Private event with a client-chosen `uid` and a skeleton carrying
- * the hash of `bytes`, then commits the envelope for it — the two steps a
- * client runs, in the order D-06 needs for the write itself.
+ * Creates a Private event with a client-chosen `uid` in **one request**, the
+ * shape E13-R02 asks for: the create body carries the sealed envelope, and the
+ * API commits skeleton and envelope in D-06's order (row first, then the
+ * skeleton `PUT`). The envelope bytes are what the returned `hash` names.
  *
  * @param {ReturnType<typeof setup> extends Promise<infer T> ? T : never} context
  * @param {{uid?: string, bytes?: Buffer, epoch?: number, start?: string, end?: string}} [options]
@@ -221,26 +222,12 @@ async function committed(context, options = {}) {
       start: { utc: start },
       end: { utc: end },
       alarm: { trigger: '-PT15M' },
-      envelopeSha256: sha256(bytes),
+      ...writeBody(bytes),
     },
   });
   assert.equal(created.statusCode, 201, created.body);
   const body = created.json();
-  const written = await call(app, {
-    method: 'PUT',
-    url: `/calendars/${calendarId}/envelopes/${uid}`,
-    subject: 'owner',
-    headers: { 'if-match': body.etag },
-    payload: writeBody(bytes),
-  });
-  assert.equal(written.statusCode, 200, written.body);
-  return {
-    uid,
-    bytes,
-    hash: sha256(bytes),
-    created: body,
-    written: written.json(),
-  };
+  return { uid, bytes, hash: sha256(bytes), created: body };
 }
 
 /** @param {Record<string, unknown>[]} events */
@@ -420,6 +407,57 @@ test('a row no skeleton names is never answered, and the old version stays reada
   }
 });
 
+test('a crash between the create row insert and the skeleton PUT leaves only an orphan', async () => {
+  const context = await setup();
+  const { app, caldav, envelopes, calendarId } = context;
+  try {
+    const uid = randomUUID();
+    const bytes = envelopeOf(1);
+    // The fault is injected after the row insert: the row lands, the skeleton
+    // `PUT` fails, so no object exists. The crash therefore leaves an orphan row
+    // — never a skeleton whose envelope never existed.
+    caldav.fail('putObject', new CalDavError('network'));
+    const crashed = await call(app, {
+      method: 'POST',
+      url: `/calendars/${calendarId}/events`,
+      subject: 'owner',
+      payload: {
+        uid,
+        start: { utc: STAMP },
+        end: { utc: '20261014T100000Z' },
+        ...writeBody(bytes),
+      },
+    });
+    assert.equal(crashed.statusCode, 502, crashed.body);
+    assertProblem(crashed.json(), 'bad-gateway');
+    assert.equal(caldav.stored(calendarId, `${uid}.ics`), undefined);
+    assert.equal(envelopes.rows().length, 1);
+    assert.equal(envelopes.rows()[0].uid, uid);
+
+    // A read answers nothing: no skeleton names the row.
+    const read = await call(app, {
+      url: `/calendars/${calendarId}/envelopes?uid=${uid}`,
+      subject: 'owner',
+    });
+    assert.equal(read.statusCode, 200, read.body);
+    assert.deepEqual(read.json().envelopes, []);
+
+    // The 24-hour sweep — here with a clock that has crossed the grace — removes
+    // the orphan, because no skeleton names it and the object is gone.
+    const collector = createOrphanCollector({
+      store: envelopes,
+      now: () => new Date(Date.now() + 25 * 60 * 60 * 1000),
+    });
+    assert.equal(
+      await collector.sweep({ calendarId, view: caldav.forUser(OWNER.id) }),
+      1,
+    );
+    assert.deepEqual(envelopes.rows(), []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('a write inserts the row before the skeleton PUT and garbage-collects the superseded row', async () => {
   const context = await setup();
   const { app, events, calendarId } = context;
@@ -460,7 +498,7 @@ test('a write refuses a bad envelope, a bad hash, a bad epoch and no If-Match', 
   try {
     const first = await committed(context);
     const url = `/calendars/${calendarId}/envelopes/${first.uid}`;
-    const etag = first.written.etag;
+    const etag = first.created.etag;
     const good = envelopeOf(1, { length: 48 });
 
     /** @type {[string, unknown][]} */
@@ -771,7 +809,8 @@ test('envelope bytes reach neither a body nor a log line', async () => {
     // A well-formed envelope carrying the canary in its opaque bytes.
     const bytes = envelopeOf(1, { length: 45 + CANARY.length });
     bytes.write(CANARY, 29, 'utf8');
-    const hash = sha256(bytes);
+    // The create itself carries the envelope now, so the canary is in the
+    // request the API commits (E13-R02).
     const created = await call(app, {
       method: 'POST',
       url: `/calendars/${calendarId}/events`,
@@ -780,13 +819,13 @@ test('envelope bytes reach neither a body nor a log line', async () => {
         uid: randomUUID(),
         start: { utc: STAMP },
         end: { utc: '20261014T100000Z' },
-        envelopeSha256: hash,
+        ...writeBody(bytes),
       },
     });
     assert.equal(created.statusCode, 201, created.body);
     const uid = created.json().uid;
 
-    // A write that fails the hash check, so the canary is in the request and
+    // A commit that fails the hash check, so the canary is in the request and
     // the refusal is the only thing that can echo it.
     const refused = await call(app, {
       method: 'PUT',
@@ -799,15 +838,7 @@ test('envelope bytes reach neither a body nor a log line', async () => {
     assert.ok(!refused.body.includes(CANARY), refused.body);
     assert.ok(!refused.body.includes(bytes.toString('base64')));
 
-    // A write that succeeds: the read answers the bytes, and nothing else does.
-    const written = await call(app, {
-      method: 'PUT',
-      url: `/calendars/${calendarId}/envelopes/${uid}`,
-      subject: 'owner',
-      headers: { 'if-match': created.json().etag },
-      payload: writeBody(bytes),
-    });
-    assert.equal(written.statusCode, 200, written.body);
+    // The read answers the bytes, and nothing else does.
     const read = await call(app, {
       url: `/calendars/${calendarId}/envelopes?uid=${uid}`,
       subject: 'owner',

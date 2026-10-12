@@ -30,7 +30,7 @@
 //     and left out when the outbox cannot say (Phase 4).
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { test } from 'node:test';
 
@@ -39,6 +39,7 @@ import { CalDavError } from '../src/caldav/adapter.mjs';
 import { readConfig } from '../src/config.mjs';
 import { createMemoryCalDavStore } from './support/caldav-store.mjs';
 import { createMemoryCalendarStore } from './support/calendar-store.mjs';
+import { createMemoryEnvelopeStore } from './support/envelope-store.mjs';
 import { assertProblem } from './support/problem.mjs';
 
 const ISSUER = 'https://auth.example.test';
@@ -72,8 +73,21 @@ const USERS = {
 
 /** A value that must never reach a body or a log line. */
 const CANARY = 'CALFLEX_CHANGES_CONTENT_CANARY';
-const HASH = 'a'.repeat(64);
 const STAMP = '20261014T090000Z';
+
+/**
+ * The sealed envelope a Private create commits beside its skeleton (E13-R02):
+ * a well-formed header and opaque bytes. The API checks the header, the size
+ * and that the bytes hash to `envelopeSha256`, and never opens one (INV-07).
+ */
+const ENVELOPE = (() => {
+  const bytes = Buffer.alloc(60, 0x22);
+  bytes[0] = 1;
+  bytes.writeUInt32BE(1, 1);
+  return bytes;
+})();
+/** The SHA-256 of the default envelope, which the skeleton carries. */
+const HASH = createHash('sha256').update(ENVELOPE).digest('hex');
 
 /** A three-segment token whose middle segment is the subject. */
 const token = (/** @type {string} */ subject) => `a.${subject}.c`;
@@ -134,6 +148,7 @@ async function setup() {
   const events = [];
   const calendars = createMemoryCalendarStore({ events });
   const caldav = createMemoryCalDavStore({ events });
+  const envelopes = createMemoryEnvelopeStore({ events });
   const app = buildApp({
     config: readConfig({
       CALFLEX_OIDC_ISSUER: ISSUER,
@@ -145,6 +160,7 @@ async function setup() {
     store: usersStore,
     calendars,
     caldav,
+    envelopes,
     logger: { stream: capture.stream },
   });
   const calendarId = randomUUID();
@@ -166,7 +182,16 @@ async function setup() {
     metaEnvelope: Buffer.alloc(45, 1),
     metaEpoch: 1,
   });
-  return { app, capture, calendars, caldav, events, calendarId, otherId };
+  return {
+    app,
+    capture,
+    calendars,
+    caldav,
+    envelopes,
+    events,
+    calendarId,
+    otherId,
+  };
 }
 
 /**
@@ -192,10 +217,13 @@ async function call(
   );
 }
 
-/** A create body with every optional member absent. */
+/** A create body with everything a Private create requires (E13-R02). */
 const createBody = (/** @type {Record<string, unknown>} */ over = {}) => ({
+  uid: randomUUID(),
   start: { utc: STAMP },
   end: { utc: '20261014T100000Z' },
+  epoch: 1,
+  envelope: ENVELOPE.toString('base64'),
   envelopeSha256: HASH,
   ...over,
 });
