@@ -1,6 +1,6 @@
 # ADR 0005 — Zitadel never runs as a cluster superuser
 
-- **Status**: Proposed
+- **Status**: Accepted (by the owner, 2026-10-12: option B2, with A as the fallback)
 - **Date**: 2026-10-12
 - **Relates to**: [`02-technology-choices.md`](../02-technology-choices.md) § Hosting (runtime layout,
   sizing, backups), [`adr/0001-calendar-privacy-modes.md`](0001-calendar-privacy-modes.md),
@@ -141,7 +141,7 @@ Two harnesses, both under `infra/dev/zitadel-role-eval/` (see its
 | `./option-c.sh`, `./option-a.sh`, `./option-b.sh` (expected to fail), `./option-b2.sh` | `results/2026-10-12-review-2/option-c.txt`, `option-a.txt`, `option-b.txt`, `option-b2.txt` |
 | `./option-c.sh --starts 10`, `./option-a.sh --starts 10`, `./option-b2.sh --starts 10` | `results/2026-10-12-review-2/option-c-starts.txt`, `option-a-starts.txt`, `option-b2-starts.txt` |
 | `./option-c.sh --upgrade`, `./option-a.sh --upgrade`, `./option-b2.sh --upgrade` | `results/2026-10-12-review-2/option-c-upgrade.txt`, `option-a-upgrade.txt`, `option-b2-upgrade.txt` |
-| the twelve runs in order | `results/2026-10-12-review-2/run.txt` |
+| the ten runs in order | `results/2026-10-12-review-2/run.txt` |
 
 The harness removes its own `podman compose` project on every exit, failure included (an `EXIT`
 trap), and prints no password: the SQL client reads a `.pgpass` written inside the Postgres
