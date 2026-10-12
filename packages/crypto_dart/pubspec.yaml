@@ -1,10 +1,38 @@
-# Dart SDK pin (E02-R02) for the crypto core consumed by `apps/mobile`. The
-# library itself arrives with E12; this file exists so the package cannot be
-# resolved or built with a Dart SDK other than the one Flutter 3.47.6 ships
-# (apps/mobile/.fvmrc).
+# Dart SDK pin (E02-R02) for the crypto core consumed by `apps/mobile`, plus the
+# library's own dependency pins (E12-R03).
+#
+# The API, the CalDAV service and the browser never load this package: nothing
+# under `server/**` links a content-crypto library (INV-07). E12-R04 adds the key
+# hierarchy (keypairs, the recovery code, HKDF); E12-R03 adds only the envelope.
+#
+# Every pin is exact, not a caret range: two implementations (this one and
+# `packages/crypto-ts`) must produce byte-identical output from the frozen vectors
+# in `spec/crypto-vectors/`, so a transitive upgrade should be a reviewable diff.
+# `pubspec.lock` is committed and holds the transitive versions.
 name: crypto_dart
 description: flexcalendar Dart crypto core — key hierarchy, envelopes, recovery code (E12).
 publish_to: "none"
 
 environment:
+  # The version Flutter 3.47.6 ships (`apps/mobile/.fvmrc`), pinned by E02-R02.
   sdk: ^3.13.5
+
+dependencies:
+  # SHA-256 for `X-CALFLEX-ENVELOPE-SHA256` (spec/crypto.md §5.1). A dart.dev
+  # first-party package, already in the graph as a transitive dependency of the
+  # test tooling; named here because the library itself uses it.
+  crypto: 3.0.7
+  # libsodium: XChaCha20-Poly1305 (`crypto_aead_xchacha20poly1305_ietf_*`) and the
+  # CSPRNG. `sodium` 4.1.1+2 builds libsodium 1.0.22 through a build hook that
+  # `dart test` and `dart run` honour (E12-R02: `sodium_libs` is discontinued and
+  # only re-exports this package).
+  sodium: 4.1.1+2
+  # Every `TZID` in Dart goes through the `timezone` package (ADR 0002). The AAD
+  # binds the `TZID` and the wall clock, never an instant a zone database computes
+  # (`spec/crypto.md` §3.5), but §3.4's RFC 5545 answer is still needed for the
+  # canonical `recurrence_id` (§5.2) and for the vectors' `instants`.
+  timezone: 0.11.2
+
+dev_dependencies:
+  # Pinned to the version `apps/mobile` pins, so one lockfile shape covers both.
+  test: 1.31.1
