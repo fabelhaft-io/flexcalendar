@@ -21,9 +21,13 @@ const databaseUrl = process.env.CALFLEX_DATABASE_URL;
 const origin = process.env.CALFLEX_CALDAV_ORIGIN;
 const delegationKeys = process.env.CALFLEX_DELEGATION_KEYS;
 
-/** A valid Private skeleton: no content properties, exactly one envelope hash. */
-const skeleton = () => {
-  const uid = randomUUID();
+/**
+ * A valid Private skeleton: no content properties, exactly one envelope hash,
+ * and — E03-R11 — a lowercase UUIDv4 `UID` so the object name below is the only
+ * one the guard accepts for it.
+ * @param {string} [uid]
+ */
+const skeleton = (uid = randomUUID()) => {
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -39,6 +43,18 @@ const skeleton = () => {
     '',
   ].join('\r\n');
 };
+
+/**
+ * A Private object as E03-R11 requires it: a lowercase UUIDv4 `UID` and the
+ * matching `<uid>.ics` name, minted together so every write in this suite has
+ * the shape the live guard accepts.
+ * @param {string} [uid]
+ */
+const privateObject = (uid = randomUUID()) => ({
+  uid,
+  name: `${uid}.ics`,
+  ics: skeleton(uid),
+});
 
 /** @param {string} ics @param {string} line */
 const withLine = (ics, line) =>
@@ -158,35 +174,38 @@ async function rejectionOf(promise) {
 }
 
 test('each user creates a Private calendar and reads their own object back', async () => {
-  const name = `${randomUUID()}.ics`;
-  const ics = skeleton();
-  const created = await put('a', calendars.a, name, ics, { ifNoneMatch: '*' });
+  const object = privateObject();
+  const created = await put('a', calendars.a, object.name, object.ics, {
+    ifNoneMatch: '*',
+  });
   assert.equal(created.status, 201);
   assert.match(String(created.etag), /^"?\S+"?$/);
 
-  const read = await adapter.forUser(users.a).getObject(calendars.a, name);
+  const read = await adapter
+    .forUser(users.a)
+    .getObject(calendars.a, object.name);
   assert.equal(read.status, 200);
-  assert.equal(read.data, ics, 'GET returns the stored bytes');
+  assert.equal(read.data, object.ics, 'GET returns the stored bytes');
   assert.equal(read.etag, created.etag);
 
   // B's own collection is empty and usable, so the isolation below is about
   // the principal, not about a missing calendar.
-  const own = `${randomUUID()}.ics`;
-  const bWrite = await put('b', calendars.b, own, skeleton(), {
+  const own = privateObject();
+  const bWrite = await put('b', calendars.b, own.name, own.ics, {
     ifNoneMatch: '*',
   });
   assert.equal(bWrite.status, 201);
   assert.equal(
-    (await adapter.forUser(users.b).getObject(calendars.b, own)).status,
+    (await adapter.forUser(users.b).getObject(calendars.b, own.name)).status,
     200,
   );
 });
 
 test("another user's object answers 404, like an id that exists nowhere", async () => {
-  const name = `${randomUUID()}.ics`;
-  await put('a', calendars.a, name, skeleton(), { ifNoneMatch: '*' });
+  const object = privateObject();
+  await put('a', calendars.a, object.name, object.ics, { ifNoneMatch: '*' });
   for (const call of [
-    () => adapter.forUser(users.b).getObject(calendars.a, name),
+    () => adapter.forUser(users.b).getObject(calendars.a, object.name),
     () =>
       adapter.forUser(users.b).listObjects(calendars.a, {
         start: '20260101T000000Z',
@@ -195,8 +214,8 @@ test("another user's object answers 404, like an id that exists nowhere", async 
     () =>
       adapter
         .forUser(users.b)
-        .putObject(calendars.a, name, skeleton(), { ifNoneMatch: '*' }),
-    () => adapter.forUser(users.b).deleteObject(calendars.a, name),
+        .putObject(calendars.a, object.name, object.ics, { ifNoneMatch: '*' }),
+    () => adapter.forUser(users.b).deleteObject(calendars.a, object.name),
   ]) {
     const error = await rejectionOf(call());
     assert.ok(error instanceof CalDavError);
@@ -205,61 +224,62 @@ test("another user's object answers 404, like an id that exists nowhere", async 
   }
   // The object is still there for its owner.
   assert.equal(
-    (await adapter.forUser(users.a).getObject(calendars.a, name)).status,
+    (await adapter.forUser(users.a).getObject(calendars.a, object.name)).status,
     200,
   );
 });
 
 test('create-only and stale preconditions answer 412', async () => {
-  const name = `${randomUUID()}.ics`;
-  const first = await put('a', calendars.a, name, skeleton(), {
+  const object = privateObject();
+  const first = await put('a', calendars.a, object.name, object.ics, {
     ifNoneMatch: '*',
   });
   assert.equal(first.status, 201);
   const createOnly = await rejectionOf(
     adapter
       .forUser(users.a)
-      .putObject(calendars.a, name, skeleton(), { ifNoneMatch: '*' }),
+      .putObject(calendars.a, object.name, object.ics, { ifNoneMatch: '*' }),
   );
   assert.ok(createOnly instanceof CalDavError);
   assert.equal(createOnly.kind, 'precondition-failed');
   const stale = await rejectionOf(
-    adapter
-      .forUser(users.a)
-      .putObject(calendars.a, name, skeleton(), { ifMatch: '"stale-etag"' }),
+    adapter.forUser(users.a).putObject(calendars.a, object.name, object.ics, {
+      ifMatch: '"stale-etag"',
+    }),
   );
   assert.ok(stale instanceof CalDavError);
   assert.equal(stale.kind, 'precondition-failed');
   const staleDelete = await rejectionOf(
     adapter
       .forUser(users.a)
-      .deleteObject(calendars.a, name, { ifMatch: '"stale-etag"' }),
+      .deleteObject(calendars.a, object.name, { ifMatch: '"stale-etag"' }),
   );
   assert.ok(staleDelete instanceof CalDavError);
   assert.equal(staleDelete.kind, 'precondition-failed');
   // The object is untouched by the three refusals.
   assert.equal(
-    (await adapter.forUser(users.a).getObject(calendars.a, name)).etag,
+    (await adapter.forUser(users.a).getObject(calendars.a, object.name)).etag,
     first.etag,
   );
-  // A matching If-Match does update it.
+  // A matching If-Match does update it — E03-R11's update rule: the body keeps
+  // the `UID` the store holds.
   const updated = await adapter
     .forUser(users.a)
-    .putObject(calendars.a, name, withLine(skeleton(), 'SEQUENCE:1'), {
+    .putObject(calendars.a, object.name, withLine(object.ics, 'SEQUENCE:1'), {
       ifMatch: /** @type {string} */ (first.etag),
     });
   assert.ok(updated.status < 300);
 });
 
 test('a content property is refused with the precondition and its name only', async () => {
-  const name = `${randomUUID()}.ics`;
+  const object = privateObject();
   const error = await rejectionOf(
     adapter
       .forUser(users.a)
       .putObject(
         calendars.a,
-        name,
-        withLine(skeleton(), 'SUMMARY:CALFLEX_INTEGRATION_MARKER'),
+        object.name,
+        withLine(object.ics, 'SUMMARY:CALFLEX_INTEGRATION_MARKER'),
         {
           ifNoneMatch: '*',
         },
@@ -280,7 +300,7 @@ test('a content property is refused with the precondition and its name only', as
   assert.ok(!serialised.includes('/calendars/'), 'the URL must not come out');
   // Nothing was stored.
   const stored = await rejectionOf(
-    adapter.forUser(users.a).getObject(calendars.a, name),
+    adapter.forUser(users.a).getObject(calendars.a, object.name),
   );
   assert.equal(/** @type {CalDavError} */ (stored).kind, 'not-found');
 });
@@ -294,14 +314,14 @@ test('a content property is refused with the precondition and its name only', as
 const REQUEST_ID = '11111111-2222-4333-8444-555555555555';
 
 test('a rejected content property becomes a problem naming it, never its value', async () => {
-  const name = `${randomUUID()}.ics`;
+  const object = privateObject();
   const error = await rejectionOf(
     adapter
       .forUser(users.a, { requestId: REQUEST_ID })
       .putObject(
         calendars.a,
-        name,
-        withLine(skeleton(), 'SUMMARY:CALFLEX_API_PROPERTY_CANARY'),
+        object.name,
+        withLine(object.ics, 'SUMMARY:CALFLEX_API_PROPERTY_CANARY'),
         { ifNoneMatch: '*' },
       ),
   );
@@ -326,15 +346,15 @@ test('a rejected content property becomes a problem naming it, never its value',
 test('envelope bytes and a request body reach CalDAV and never come back', async () => {
   // Envelope bytes, standing in for the sidecar blob: the guard refuses the
   // value and names only the property.
-  const envelopeName = `${randomUUID()}.ics`;
-  const envelopeIcs = skeleton().replace(
+  const envelope = privateObject();
+  const envelopeIcs = envelope.ics.replace(
     'a'.repeat(64),
     'CALFLEX_API_ENVELOPE_CANARY',
   );
   const envelopeError = await rejectionOf(
     adapter
       .forUser(users.a, { requestId: REQUEST_ID })
-      .putObject(calendars.a, envelopeName, envelopeIcs, { ifNoneMatch: '*' }),
+      .putObject(calendars.a, envelope.name, envelopeIcs, { ifNoneMatch: '*' }),
   );
   assert.ok(envelopeError instanceof CalDavError);
   assert.equal(envelopeError.kind, 'forbidden');
@@ -348,14 +368,14 @@ test('envelope bytes and a request body reach CalDAV and never come back', async
 
   // A request body that is not a calendar: the marker travels as the body and
   // the refusal names the component, never the bytes.
-  const bodyName = `${randomUUID()}.ics`;
+  const body = privateObject();
   const bodyError = await rejectionOf(
     adapter
       .forUser(users.a, { requestId: REQUEST_ID })
       .putObject(
         calendars.a,
-        bodyName,
-        `${skeleton()}CALFLEX_API_BODY_CANARY\r\n`,
+        body.name,
+        `${body.ics}CALFLEX_API_BODY_CANARY\r\n`,
         { ifNoneMatch: '*' },
       ),
   );
@@ -369,8 +389,9 @@ test('envelope bytes and a request body reach CalDAV and never come back', async
 });
 
 test('listObjects returns what was written, and only that', async () => {
-  const name = `${randomUUID()}.ics`;
-  const ics = skeleton();
+  const object = privateObject();
+  const { name } = object;
+  const ics = object.ics;
   await put('a', calendars.a, name, ics, { ifNoneMatch: '*' });
   const objects = await adapter.forUser(users.a).listObjects(calendars.a, {
     start: '20261001T000000Z',
@@ -414,8 +435,9 @@ test('syncChanges reports the collection, then only what changed, deletions incl
     .map((entry) => entry.href);
   assert.ok(known.length >= 1);
 
-  const name = `${randomUUID()}.ics`;
-  const ics = skeleton();
+  const object = privateObject();
+  const { name } = object;
+  const ics = object.ics;
   await put('a', calendars.a, name, ics, { ifNoneMatch: '*' });
   const href = `/calendars/${users.a}/${calendars.a}/${name}`;
   const delta = await user.syncChanges(

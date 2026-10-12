@@ -15,7 +15,7 @@ As of 2026-10-12: the owner's planning toward M1 (ADR 0003: the Android app with
 1. **Server fixes:** E03-R12 (the recurrence bound) is Done, 2026-10-12 (PR #91). E03-R11 (`agent+review`, the `UID` backstop; before E13-R02) is in review. The two fixes without a requirement ID are Done, 2026-10-12: the DST table follows the § 3.3.10 ruling (PR #88, no `daily-skipped` case is `todo` any more) and `unsupported[].href` is gone (PR #87).
 2. **E12**, the start of the critical path: R02 (library check, PR #92) and R01 (the wire spec, PR #96) are Done, 2026-10-12 → R03, then R04 (one package, so one after the other) → R05. R06 follows with E10 (item 5).
 3. **E08**: R10 (Zitadel's database role: the evaluation) is Done, 2026-10-12 (PR #95; ADR 0005 accepted, option B2) → R11 (its implementation) → R02 → R03 → R04 and R05 → R07 and R08. Staging checks by the coordinator (D-20). The owner's own part of the path is E08-R01: the staging Primary IP and its DNS records, and the two backup buckets.
-4. **E10** (Android only; iOS waits for Phase 5): R01 (Done, 2026-10-12, PR #93) → R02 → R04 and R03 → R05 and R07.
+4. **E10** (Android only; iOS waits for Phase 5): R01, R02 and R04 are Done, 2026-10-12 (PRs #93, #102, #104) → R03 (one `apps/mobile` requirement at a time) → R05 and R07.
 5. **Private mode end to end:** E13-R02 → E05-R07 → E13-R01, E13-R03, E13-R04, E06-R02, E06-R09 and E12-R06 → E13-R05 and E13-R07 → E10-R06 and E10-R10 → E14-R03, E14-R08, E14-R09 and E14-R06 → E13-R08 on staging → E10-R11 and E13-R09 (`human`, M1).
 
 ## Follow-ups waiting for their requirement
@@ -26,6 +26,9 @@ One file per source in [`follow-ups/`](follow-ups/): `from-<ID>.md` holds what t
 
 ## Open with the owner
 
-As of 2026-10-12 the owner accepted ADR 0005 (E08-R10, option B2) and the wire spec (E12-R01) with the ADR 0001 amendments it implies (PR #98), and merged E10-R01. Waiting for the owner:
+As of 2026-10-12, end of the second unattended run (stopped at the cap of three PRs waiting for the owner):
 
-- **E03-R11, the `UID` backstop** ([PR #99](https://github.com/fabelhaft-io/flexcalendar/pull/99), `agent+review`). E13-R02 is stacked on it.
+- **Approve and merge:** [PR #99](https://github.com/fabelhaft-io/flexcalendar/pull/99) (E03-R11, the `UID` backstop), [PR #101](https://github.com/fabelhaft-io/flexcalendar/pull/101) (E12-R03, envelope seal/open) and [PR #103](https://github.com/fabelhaft-io/flexcalendar/pull/103) (E12-R04, the key hierarchy, stacked on #101). All `agent+review`, CI green.
+- **E13-R02, the sidecar API** (branch `feat/E13-R02-sidecar-api`, stacked on #99): the owner allowed more runs on 2026-10-12, and run 4 passed review 4 (`docs/reviews/E13-R02.md`). Its PR is not open yet, because three PRs already wait for the owner (the cap); it opens, against #99's branch, once one of them merges.
+- **E12-R01's frozen vectors:** `aad-calendar-id-uppercase-refused` uppercases an all-digit UUID and cannot hold; two generator paths and two cases no vector pins disagree with `spec/crypto.md` (`from-E12-R03.md`, `from-E12-R04.md`). A `fix(E12-R01)` PR, `agent+review`, if you want it.
+- **Device checks** (`human` in E10): sign-in, relaunch and sign-out on a device (`from-E10-R02.md`); the device zone and its fallback (`from-E10-R04.md`).

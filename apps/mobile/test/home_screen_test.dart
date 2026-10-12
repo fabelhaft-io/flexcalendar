@@ -4,11 +4,14 @@ import 'dart:typed_data';
 import 'package:calendar_flex/api/rest_client.dart';
 import 'package:calendar_flex/src/api/api_providers.dart';
 import 'package:calendar_flex/src/app.dart';
+import 'package:calendar_flex/src/auth/auth_providers.dart';
 import 'package:calendar_flex/src/flavor.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/auth_test_support.dart';
 
 /// A `dio` adapter that answers the readiness probe without a socket, so the
 /// widget test never depends on a running API. It stays in-flight until the
@@ -56,6 +59,10 @@ void main() {
           restClientProvider.overrideWithValue(
             RestClient(dio, baseUrl: 'https://api.staging.flexcalendar.de'),
           ),
+          // The real controller reads the tokens at start-up (E10-R02), and the
+          // Keystore-backed store never answers on the test host, so the store
+          // is in-memory here — the same substitution the auth tests make.
+          tokenStoreProvider.overrideWithValue(FakeTokenStore()),
         ],
         child: const FlexCalendarApp(),
       ),

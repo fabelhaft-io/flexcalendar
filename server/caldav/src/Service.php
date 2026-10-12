@@ -65,6 +65,11 @@ final class Service
         $server->setBaseUri('/');
         $server->addPlugin(new \Sabre\DAV\Auth\Plugin(new Authenticated('principals/' . $id)));
         $server->addPlugin(new \Sabre\CalDAV\Plugin());
+        // E03-R11: the Private value backstop runs before the CalDAV plugin's
+        // own validation, so our `403` is what a mixed-`UID` body gets instead
+        // of its `415`. `GuardedCalendars` keeps the same check for the paths
+        // this event does not reach.
+        $server->addPlugin(new GuardPlugin($guard));
         // E03-R12: raise `sabre/vobject`'s recurrence bound to 50,000 and serve
         // it as the collection's `CALDAV:max-instances`. Adding the plugin is
         // what applies the setting, so it is applied once, here, and never in
