@@ -33,6 +33,10 @@ dependencies:
   drift: 2.35.2
   drift_flutter: 0.3.1
   timezone: 0.11.2
+  # OIDC Authorization Code + PKCE S256 against Zitadel (E10-R02, D-03), with
+  # the tokens in Keystore-backed `flutter_secure_storage` only.
+  flutter_appauth: 12.1.0
+  flutter_secure_storage: 11.2.0
   # UUIDv4 for every id the app generates (INV-03). Call it as `Uuid().v4()`
   # only; `infra/scripts/invariants.mjs` rejects the package's v1/v3/v5/v6/v7
   # accessors.
