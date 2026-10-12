@@ -87,9 +87,29 @@ final class GuardPlugin extends ServerPlugin
         }
         $text = $this->text($path, $data);
         if ($text !== null) {
-            $stored = PrivateSkeleton::storedUid($node->get());
+            $stored = $this->storedUid($node);
             $this->refuse(static fn () => PrivateSkeleton::updateObject($stored, $text));
         }
+    }
+
+    /**
+     * The `UID` the collection already holds, read without assuming a string.
+     * Sabre's `IFile::get()` "may either return a string or a readable stream
+     * resource" (`vendor/sabre/dav/lib/DAV/IFile.php`), and the Postgres PDO
+     * backend hands `calendardata` (a `bytea` column) back as exactly that
+     * stream, so it is read out first — the same move
+     * `Sabre\CalDAV\Plugin::validateICalendar` makes for the body. A stream
+     * that cannot be read, or any other shape, is `null`: the update rule then
+     * refuses it as a `UID` it cannot keep, never as "anything goes".
+     */
+    private function storedUid(IFile $node): ?string
+    {
+        $stored = $node->get();
+        if (is_resource($stored)) {
+            $stored = stream_get_contents($stored);
+        }
+
+        return is_string($stored) ? PrivateSkeleton::storedUid($stored) : null;
     }
 
     /**

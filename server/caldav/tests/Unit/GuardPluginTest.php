@@ -51,6 +51,28 @@ final class GuardPluginTest extends TestCase
         return $node;
     }
 
+    /**
+     * The same node, but whose `get()` hands back a readable stream the way the
+     * live Postgres backend does for `calendardata` (`bytea`): a fresh one per
+     * call, so a read cannot leave the next one at EOF.
+     */
+    private function streamObject(string $stored): ICalendarObject
+    {
+        $node = $this->createStub(ICalendarObject::class);
+        $node->method('get')->willReturnCallback(static function () use ($stored) {
+            $stream = fopen('php://memory', 'r+');
+            if ($stream === false) {
+                throw new \RuntimeException('Cannot open a memory stream');
+            }
+            fwrite($stream, $stored);
+            rewind($stream);
+
+            return $stream;
+        });
+
+        return $node;
+    }
+
     public function testAPrivateCalendarIsGuardedOnCreate(): void
     {
         $plugin = $this->plugin([self::CALENDAR => 'private']);
@@ -118,6 +140,30 @@ final class GuardPluginTest extends TestCase
         try {
             $plugin->beforeWriteContent($this->path(self::CALENDAR, GuardCases::uri()), $this->object($keeps), $changes, $modified);
             self::fail('An update that changes the stored UID passed the hook');
+        } catch (PrivateSkeletonOnly $exception) {
+            self::assertSame('UID', $exception->name);
+        }
+        self::assertFalse($modified);
+    }
+
+    /**
+     * The same decision when the stored object comes back as a stream, which is
+     * what the live Postgres backend does with `calendardata` (`bytea`) and what
+     * made every update answer `500` before the hook stopped assuming a string.
+     */
+    public function testAnUpdateReadsAStoredUidFromAStream(): void
+    {
+        $plugin = $this->plugin([self::CALENDAR => 'private']);
+        $modified = false;
+        $legacy = '1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D';
+        $keeps = GuardCases::skeleton($legacy);
+        // The stream's `UID` is the authority, so the update that keeps it
+        // passes even though it is not a lowercase UUIDv4.
+        $plugin->beforeWriteContent($this->path(self::CALENDAR, 'kept-name.ics'), $this->streamObject($keeps), $keeps, $modified);
+        $changes = GuardCases::skeleton();
+        try {
+            $plugin->beforeWriteContent($this->path(self::CALENDAR, GuardCases::uri()), $this->streamObject($keeps), $changes, $modified);
+            self::fail('An update that changes the UID stored in a stream passed the hook');
         } catch (PrivateSkeletonOnly $exception) {
             self::assertSame('UID', $exception->name);
         }
