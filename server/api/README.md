@@ -667,6 +667,7 @@ the e-mail address it names.
 | `unsupported-media-type` | 415 | The body's media type is not accepted |
 | `invalid-input` | 422 | Input refused by a write path's own rules (E05-R03, E05-R04): a member the operation does not take, a value it cannot write, a rule part RFC 5545 does not name, a `start`/`end` pair the RFC forbids, or a `PATCH` that names nothing — and by the occurrence window (E05-R05): a `from`/`to`/`tz` this API does not answer, or a query member the operation does not take |
 | `window-too-large` | 422 | The occurrence window would answer more than 10 000 occurrences (E05-R05); the client narrows it, and there is no pagination |
+| `too-many-instances` | 422 | The object's series has more instances than a calendar collection accepts (E03-R12): the CalDAV service refuses the write with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances` over its 50 000 bound, and an event create or update reports it as this kind; the client shortens the series |
 | `precondition-required` | 428 | A write carried no `If-Match`, so there is no version to be optimistic against (E05-R03, E05-R04) |
 | `rate-limited` | 429 | Over `CALFLEX_RATE_LIMIT_MAX`; `Retry-After` is set |
 | `internal-error` | 500 | Ours to fix; the body says nothing more |
@@ -758,7 +759,9 @@ builds is a skeleton the guard accepts. It covers the create refusals (one fixed
 `422` each, none reaching CalDAV), the roles, the UUIDv4 `UID` (INV-03), the
 `If-Match` (428/412 and a lost update), the guard's refusal mapped to
 `private-skeleton-only`, a collection holding an object the API cannot describe,
-and a canary that reaches neither a body nor a log line. A `TZID` event goes
+a series over CalDAV's recurrence bound mapped to `too-many-instances` on both a
+create and a patch (E03-R12), and a canary that reaches neither a body nor a log
+line. A `TZID` event goes
 through create, read and patch there too — its `VTIMEZONE` embedded once, the
 definition kept when a later patch names the same zone, a second one embedded
 when it names another — and the Microsoft fixture shows the stored zone that
@@ -769,8 +772,10 @@ runs the same operations against the real CalDAV service: create, read back byte
 for byte, a `412` with the current representation, a patch that bumps `SEQUENCE`
 and keeps the envelope hash, a delete, the same `TZID` create/read/patch against
 the **live** guard (which is where "the `VTIMEZONE` this API generates is one
-E03-R09 accepts" is actually proved), and the live guard refusing a content
-write with the property named and the marker absent.
+E03-R09 accepts" is actually proved), the live guard refusing a content
+write with the property named and the marker absent, and a series over the
+service's recurrence bound answering the API's `422` with the live `403`
+`CALDAV:max-instances` read from the adapter behind it (E03-R12).
 
 The E05-R09 suite needs nothing but Node: `test/zones.test.mjs` reads the DST
 table of E15-R02 from the file — never a copy of it — and checks every case of

@@ -44,7 +44,7 @@ import { Writable } from 'node:stream';
 import { test } from 'node:test';
 
 import { buildApp } from '../src/app.mjs';
-import { CalDavError } from '../src/caldav/adapter.mjs';
+import { CalDavError, parsePreconditions } from '../src/caldav/adapter.mjs';
 import { readConfig } from '../src/config.mjs';
 import { rawLines } from './ical-roundtrip.mjs';
 import { createMemoryCalDavStore } from './support/caldav-store.mjs';
@@ -1146,6 +1146,69 @@ test('a store failure and a CalDAV failure are fixed problems that echo nothing 
 
     assert.ok(!capture.text().includes(CANARY), capture.text());
     assert.ok(capture.text().includes('"type":"Error"'));
+  } finally {
+    await app.close();
+  }
+});
+
+test('a series over the recurrence bound is the `too-many-instances` 422 on create and on update', async () => {
+  const { app, capture, caldav, calendarId } = await setup();
+  try {
+    // The refusal the live service answers with, built the way the adapter
+    // builds one: a `403` whose `DAV:error` body carries RFC 4791's
+    // `<C:max-instances/>` beside a hostile canary the parser must not let out.
+    const hostile = Buffer.from(
+      '<d:error xmlns:d="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">' +
+        `<C:max-instances attr="${CANARY}">${CANARY}</C:max-instances>` +
+        '</d:error>',
+    );
+    const refusal = new CalDavError(
+      'forbidden',
+      403,
+      parsePreconditions(hostile),
+    );
+    assert.deepEqual(refusal.preconditions, ['C:max-instances']);
+
+    caldav.fail('putObject', refusal);
+    const create = await call(app, {
+      method: 'POST',
+      url: `/calendars/${calendarId}/events`,
+      subject: 'owner',
+      payload: createBody({ rrule: 'FREQ=MINUTELY;COUNT=60000' }),
+    });
+    assert.equal(create.statusCode, 422, create.body);
+    const refused = assertProblem(create.json(), 'too-many-instances');
+    assert.equal(
+      refused.type,
+      'https://flexcalendar.de/problems/too-many-instances',
+    );
+    assert.ok(!Object.hasOwn(refused, 'property'), create.body);
+    assert.ok(!create.body.includes(CANARY), create.body);
+    assert.ok(!capture.text().includes(CANARY), capture.text());
+
+    // The same bound on a rewrite: the object is read, patched and refused, and
+    // the stored revision is left where it was.
+    caldav.heal('putObject');
+    const stored = await created(app, calendarId);
+    caldav.fail(
+      'putObject',
+      new CalDavError('forbidden', 403, ['C:max-instances']),
+    );
+    const update = await call(app, {
+      method: 'PATCH',
+      url: `/calendars/${calendarId}/events/${stored.uid}`,
+      subject: 'owner',
+      headers: { 'if-match': stored.etag },
+      payload: { alarm: { trigger: '-PT30M' } },
+    });
+    assert.equal(update.statusCode, 422, update.body);
+    assertProblem(update.json(), 'too-many-instances');
+    assert.equal(
+      caldav.stored(calendarId, `${stored.uid}.ics`)?.ics,
+      stored.ical,
+      'a refused update moved the revision',
+    );
+    assert.ok(!capture.text().includes(CANARY), capture.text());
   } finally {
     await app.close();
   }

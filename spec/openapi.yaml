@@ -797,7 +797,11 @@ paths:
             `location`, `attendees`) was sent for a Private calendar; or the body
             carries a member the operation does not take — `uid` and the
             recurrence itself, an exception or an occurrence override included,
-            which the API owns (INV-05). The body never names a value.
+            which the API owns (INV-05); or the object's series has more
+            instances than a calendar collection accepts, which the CalDAV
+            service refuses with RFC 4791 § 5.3.2.1's `403` `CALDAV:max-instances`
+            and this API reports as the `too-many-instances` kind. The body never
+            names a value.
           content:
             application/problem+json:
               schema:
@@ -1096,9 +1100,12 @@ paths:
             same value type as its `start` or is not later than it; a time field
             of an object whose stored `TZID` cannot be resolved was patched
             without replacing both `start` and `end`; a content field was sent
-            for a Private calendar; a `PATCH` carried no member at all; or the
-            body carries a member the operation does not take. The body never
-            names a value.
+            for a Private calendar; a `PATCH` carried no member at all; the body
+            carries a member the operation does not take; or the object the patch
+            produces has more instances than a calendar collection accepts, which
+            the CalDAV service refuses with RFC 4791 § 5.3.2.1's `403`
+            `CALDAV:max-instances` and this API reports as the
+            `too-many-instances` kind. The body never names a value.
           content:
             application/problem+json:
               schema:
