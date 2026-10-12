@@ -170,8 +170,10 @@ final class GuardTest extends TestCase
     public function testPutGuardAndMarkers(): void
     {
         $path = $this->collection();
-        $object = $path . self::uuid() . '.ics';
-        $skeleton = \Calflex\Tests\GuardCases::skeleton();
+        // E03-R11: a create names the object after the `UID` it carries.
+        $uid = self::uuid();
+        $object = $path . $uid . '.ics';
+        $skeleton = \Calflex\Tests\GuardCases::skeleton($uid);
         self::assertSame(201, $this->request('PUT', $object, $skeleton, ['Content-Type' => 'text/calendar'])['status']);
         self::assertSame(204, $this->request('PUT', $object, $skeleton, ['Content-Type' => 'text/calendar'])['status']);
         $before = $this->request('GET', $object);
@@ -214,8 +216,8 @@ final class GuardTest extends TestCase
         $this->rejected($this->request('PROPPATCH', $path, $this->propertyBody('propertyupdate', '<a:calendar-color>CALFLEX_GUARD_MARKER_color</a:calendar-color>')), 'CALENDAR-COLOR');
         $this->rejected($this->request('PROPPATCH', $path, $this->propertyBody('propertyupdate', '<a:calendar-color>Private calendar</a:calendar-color>')), 'CALENDAR-COLOR');
         self::assertSame(207, $this->request('PROPPATCH', $path, $this->propertyBody('propertyupdate', '<d:displayname>Private calendar</d:displayname>'))['status']);
-        $object = $path . self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $object, \Calflex\Tests\GuardCases::skeleton(), ['Content-Type' => 'text/calendar'])['status']);
+        $object = $path . ($uid = self::uuid()) . '.ics';
+        self::assertSame(201, $this->request('PUT', $object, \Calflex\Tests\GuardCases::skeleton($uid), ['Content-Type' => 'text/calendar'])['status']);
         $this->rejected($this->request('PROPPATCH', $object, $this->propertyBody('propertyupdate', '<d:displayname>CALFLEX_GUARD_MARKER_object</d:displayname>')), 'DISPLAYNAME');
         $q = $this->dav->prepare('SELECT count(*) FROM sabredav.propertystorage WHERE path = ?');
         $q->execute([ltrim($object, '/')]);
@@ -239,8 +241,8 @@ final class GuardTest extends TestCase
         $source = $this->collection();
         $target = $this->register(self::uuid());
         self::assertSame(201, $this->request('MKCALENDAR', $target)['status']);
-        $object = $source . self::uuid() . '.ics';
-        self::assertSame(201, $this->request('PUT', $object, \Calflex\Tests\GuardCases::skeleton(), ['Content-Type' => 'text/calendar'])['status']);
+        $object = $source . ($uid = self::uuid()) . '.ics';
+        self::assertSame(201, $this->request('PUT', $object, \Calflex\Tests\GuardCases::skeleton($uid), ['Content-Type' => 'text/calendar'])['status']);
         // Simulate legacy or future Shared plaintext in an otherwise valid source.
         // Direct DB fixture injection is intentional: guarded PUT must not seed it.
         $legacy = \Calflex\Tests\GuardCases::eventLine('SUMMARY:CALFLEX_GUARD_MARKER_copy_move');
@@ -254,5 +256,80 @@ final class GuardTest extends TestCase
             self::assertSame(404, $this->request('GET', $destination)['status']);
             self::assertSame(200, $this->request('GET', $object)['status']);
         }
+    }
+
+    /**
+     * E03-R11 — the `UID` backstop over the listener, beside the E03-R09 table
+     * above. Every refusal is that same `403` with `cf:private-skeleton-only`,
+     * and `cf:name` names `UID`, `OBJECT-NAME` or `RRULE`, never a value: the
+     * marker a refused `UID`, object name or `X-` rule part carries appears in
+     * no response body and no response header (`make test-caldav` scans the
+     * service log for the same marker).
+     *
+     * `uid_mixed` and `update_mixed_uid` are the two rows SabreDAV answers
+     * itself: its CalDAV profile validation refuses components with different
+     * `UID`s with a level-3 message before the backend is reached, which is a
+     * `415`, never our `403`. The guard checks them anyway — a direct backend
+     * call is what the unit table pins — so the refusal exists where SabreDAV's
+     * check cannot answer first.
+     */
+    public function testUidBackstopRefusalsAndAcceptedShapes(): void
+    {
+        $path = $this->collection();
+        $at = fn (string $uri): string => $path . $uri;
+
+        // Accepted: the create shape the API's own path mints — a lowercase
+        // UUIDv4 under `<uid>.ics`, its `randomUUID()` and its name rule.
+        $uid = self::uuid();
+        self::assertSame(201, $this->request('PUT', $at($uid . '.ics'), \Calflex\Tests\GuardCases::skeleton($uid), ['Content-Type' => 'text/calendar'])['status']);
+
+        foreach (\Calflex\Tests\GuardCases::objectCreatesRejected() as $case => $row) {
+            $response = $this->request('PUT', $at($row['uri']), $row['text'], ['Content-Type' => 'text/calendar']);
+            if ($case === 'uid_mixed') {
+                self::assertSame(415, $response['status'], $case);
+                self::assertStringNotContainsString('CALFLEX_GUARD_MARKER', $response['body'], $case);
+                continue;
+            }
+            $this->rejected($response, $row['name']);
+        }
+
+        // Accepted: an update keeps the `UID` the store already holds, so an
+        // object written while the calendar was not Private keeps its stock-app
+        // `UID` (INV-03). Seeded directly in the store — a create can no longer
+        // write such a `UID`, and `mode` accepts only `private` until Phase 4.
+        // Its name is not `<uid>.ics` and its `UID` is not a lowercase UUIDv4,
+        // so the `204` is also what shows SabreDAV routed this `PUT` to
+        // `updateCalendarObject` and not to the create path.
+        $seed = self::uuid();
+        $seeded = $at($seed . '.ics');
+        self::assertSame(201, $this->request('PUT', $seeded, \Calflex\Tests\GuardCases::skeleton($seed), ['Content-Type' => 'text/calendar'])['status']);
+        $legacyUid = '1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D';
+        $legacy = \Calflex\Tests\GuardCases::skeleton($legacyUid);
+        $update = $this->dav->prepare('UPDATE sabredav.calendarobjects SET uid = ?, calendardata = ?, size = ?, etag = ? WHERE uri = ?');
+        $update->execute([$legacyUid, $legacy, strlen($legacy), md5($legacy), basename($seeded)]);
+        self::assertSame(1, $update->rowCount(), 'The seeded row must be the object just created');
+        self::assertSame(204, $this->request('PUT', $seeded, $legacy, ['Content-Type' => 'text/calendar'])['status'], 'An update keeps a stored UID that is not a UUIDv4');
+
+        // The update table's rows rewrite an object whose stored `UID` is the
+        // one they carry (`null` is a row without one, which only a direct
+        // backend call can produce, so the unit table pins that row).
+        $target = $at(\Calflex\Tests\GuardCases::uri());
+        self::assertSame(201, $this->request('PUT', $target, \Calflex\Tests\GuardCases::skeleton(), ['Content-Type' => 'text/calendar'])['status']);
+        $before = $this->request('GET', $target);
+        foreach (\Calflex\Tests\GuardCases::objectUpdatesRejected() as $case => $row) {
+            if ($row['stored'] === null) {
+                continue;
+            }
+            self::assertSame(\Calflex\Tests\GuardCases::UID, $row['stored'], $case);
+            $response = $this->request('PUT', $target, $row['text'], ['Content-Type' => 'text/calendar']);
+            if ($case === 'update_mixed_uid') {
+                self::assertSame(415, $response['status'], $case);
+                continue;
+            }
+            $this->rejected($response, $row['name']);
+        }
+        $after = $this->request('GET', $target);
+        self::assertTrue($before['body'] === $after['body'], 'A refused update changed the stored skeleton');
+        self::assertSame($before['headers']['etag'], $after['headers']['etag']);
     }
 }

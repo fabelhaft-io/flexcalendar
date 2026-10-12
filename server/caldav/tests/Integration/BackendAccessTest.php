@@ -127,27 +127,32 @@ final class BackendAccessTest extends TestCase
 
     public function testACreateFollowsTheMembershipRole(): void
     {
-        $uri = self::uuid() . '.ics';
+        // E03-R11: a create in a Private collection is named after the `UID` it
+        // carries, so a name and a body are minted together.
+        $uid = self::uuid();
+        $uri = $uid . '.ics';
         foreach ([$this->viewer, $this->stranger] as $actor) {
-            $this->forbidden(fn () => $this->backend($actor)->createCalendarObject($this->pair(), $uri, GuardCases::skeleton()));
+            $this->forbidden(fn () => $this->backend($actor)->createCalendarObject($this->pair(), $uri, GuardCases::skeleton($uid)));
             self::assertSame(0, $this->objects(), 'A refused create must store nothing');
             self::assertSame(0, $this->changes(), 'A refused create must record no Sabre change');
             self::assertSame(0, $this->outbox(), 'A refused create must not reach the outbox');
         }
 
-        self::assertIsString($this->backend($this->editor)->createCalendarObject($this->ids, $uri, GuardCases::skeleton()));
+        self::assertIsString($this->backend($this->editor)->createCalendarObject($this->ids, $uri, GuardCases::skeleton($uid)));
         self::assertSame(1, $this->objects());
         self::assertSame(1, $this->changes());
         self::assertSame(1, $this->outbox());
 
-        self::assertIsString($this->backend($this->owner)->createCalendarObject($this->ids, self::uuid() . '.ics', GuardCases::skeleton()));
+        $second = self::uuid();
+        self::assertIsString($this->backend($this->owner)->createCalendarObject($this->ids, $second . '.ics', GuardCases::skeleton($second)));
         self::assertSame(2, $this->objects());
     }
 
     public function testAnUpdateFollowsTheMembershipRole(): void
     {
-        $uri = self::uuid() . '.ics';
-        $this->backend($this->owner)->createCalendarObject($this->ids, $uri, GuardCases::skeleton());
+        $uid = self::uuid();
+        $uri = $uid . '.ics';
+        $this->backend($this->owner)->createCalendarObject($this->ids, $uri, GuardCases::skeleton($uid));
         $changes = $this->changes();
         $etag = $this->etag($uri);
 
@@ -166,8 +171,9 @@ final class BackendAccessTest extends TestCase
 
     public function testADeleteFollowsTheMembershipRole(): void
     {
-        $uri = self::uuid() . '.ics';
-        $this->backend($this->owner)->createCalendarObject($this->ids, $uri, GuardCases::skeleton());
+        $uid = self::uuid();
+        $uri = $uid . '.ics';
+        $this->backend($this->owner)->createCalendarObject($this->ids, $uri, GuardCases::skeleton($uid));
 
         foreach ([$this->viewer, $this->stranger] as $actor) {
             $this->forbidden(fn () => $this->backend($actor)->deleteCalendarObject($this->pair(), $uri));
@@ -187,7 +193,8 @@ final class BackendAccessTest extends TestCase
     public function testTheRoleIsCheckedBeforeTheWriteGuard(): void
     {
         $rejected = GuardCases::rejected()['SUMMARY'][0];
-        $uri = self::uuid() . '.ics';
+        $uid = self::uuid();
+        $uri = $uid . '.ics';
         foreach ([$this->viewer, $this->stranger] as $actor) {
             $this->forbidden(fn () => $this->backend($actor)->createCalendarObject($this->pair(), $uri, $rejected));
         }
@@ -195,7 +202,7 @@ final class BackendAccessTest extends TestCase
         self::assertSame(0, $this->changes());
         self::assertSame(0, $this->outbox());
 
-        $this->backend($this->owner)->createCalendarObject($this->ids, $uri, GuardCases::skeleton());
+        $this->backend($this->owner)->createCalendarObject($this->ids, $uri, GuardCases::skeleton($uid));
         $etag = $this->etag($uri);
         foreach ([$this->viewer, $this->stranger] as $actor) {
             $this->forbidden(fn () => $this->backend($actor)->updateCalendarObject($this->pair(), $uri, $rejected));
@@ -205,6 +212,10 @@ final class BackendAccessTest extends TestCase
         self::assertSame(1, $this->outbox());
 
         $this->skeletonOnly(fn () => $this->backend($this->editor)->createCalendarObject($this->pair(), self::uuid() . '.ics', $rejected));
+        // E03-R11 refusals reach the same precondition through the same guard.
+        $this->skeletonOnly(fn () => $this->backend($this->editor)->createCalendarObject($this->pair(), self::uuid() . '.ics', GuardCases::skeleton('CALFLEX_GUARD_MARKER_uid')));
+        $this->skeletonOnly(fn () => $this->backend($this->editor)->createCalendarObject($this->pair(), 'CALFLEX_GUARD_MARKER_object_name.ics', GuardCases::skeleton()));
+        $this->skeletonOnly(fn () => $this->backend($this->editor)->updateCalendarObject($this->pair(), $uri, GuardCases::skeleton()));
         $this->skeletonOnly(fn () => $this->backend($this->editor)->updateCalendarObject($this->pair(), $uri, $rejected));
         $this->skeletonOnly(fn () => $this->backend($this->owner)->updateCalendarObject($this->pair(), $uri, $rejected));
         self::assertSame(1, $this->objects(), 'A refused body must store nothing');

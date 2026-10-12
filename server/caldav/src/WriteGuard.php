@@ -30,10 +30,27 @@ final class WriteGuard
         return !in_array(($this->lookup)($uri), ['shared', 'published'], true);
     }
 
-    public function calendar(string $uri, string $text): void
+    /**
+     * E03-R09 plus E03-R11, for an object a Private collection does not hold yet
+     * — `createCalendarObject`, and the `COPY`/cross-collection `MOVE` SabreDAV
+     * turns into one. The name check is the one part that needs the object URI.
+     */
+    public function createObject(string $uri, string $objectUri, string $text): void
     {
         if ($this->private($uri)) {
-            $this->check(static fn () => PrivateSkeleton::calendar($text));
+            $this->check(static fn () => PrivateSkeleton::createObject($objectUri, $text));
+        }
+    }
+
+    /**
+     * E03-R09 plus E03-R11, for an object the collection already holds. The
+     * stored `UID` is the authority the body must keep; it is read by the
+     * caller, which owns the store, and never from the body.
+     */
+    public function updateObject(string $uri, string $text, ?string $storedUid): void
+    {
+        if ($this->private($uri)) {
+            $this->check(static fn () => PrivateSkeleton::updateObject($storedUid, $text));
         }
     }
 
